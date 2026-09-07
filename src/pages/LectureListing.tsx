@@ -18,6 +18,7 @@ import { safeGet, safeSet } from "@/lib/storage";
 
 import { LessonAttachmentsSheet } from "../components/lesson/LessonAttachmentsSheet";
 import { toast } from "sonner";
+import { useDownloads } from "../hooks/useDownloads";
 import doubtsIconAsset from "../assets/icons/doubts-3d.webp";
 
 const doubtsIcon = doubtsIconAsset;
@@ -128,6 +129,29 @@ const LectureListing = () => {
   // Inline notes-sheet state — opening the attachments Sheet on this page
   // (instead of navigating to LessonView with ?openPdf=1) removes the
   // full-screen route-transition flash that showed as "screen blink".
+  const { addDownload } = useDownloads();
+
+  /** Save a lesson's PDF (preferred) or direct video file to the device. */
+  const handleDownloadLesson = async (lesson: Lesson) => {
+    if (lesson.is_locked && !hasPurchased && !isAdminOrTeacher) {
+      toast.error("This lecture is locked. Please purchase the course.");
+      return;
+    }
+    const pdfUrl = lesson.class_pdf_url;
+    if (pdfUrl && !/^storage:\/\//i.test(pdfUrl)) {
+      const name = /\.[a-z0-9]{2,5}$/i.test(lesson.title) ? lesson.title : `${lesson.title}.pdf`;
+      await addDownload(lesson.title, pdfUrl, name, "PDF");
+      return;
+    }
+    const videoUrl = lesson.video_url;
+    if (videoUrl && !lesson.youtube_id && /^https?:\/\//i.test(videoUrl)) {
+      const name = /\.[a-z0-9]{2,5}$/i.test(videoUrl) ? `${lesson.title}.mp4` : `${lesson.title}.mp4`;
+      await addDownload(lesson.title, videoUrl, name, "VIDEO");
+      return;
+    }
+    toast.error("Nothing to download for this lecture yet.");
+  };
+
   const [notesSheet, setNotesSheet] = useState<{ lessonId: string; title: string; lessonType: string | null } | null>(null);
 
   const { isAdmin, isTeacher } = useAuth();
@@ -634,6 +658,7 @@ const LectureListing = () => {
                               attachmentCount={attachmentCounts[lesson.id] || 0}
                               isLocked={!!lesson.is_locked && !hasPurchased && !isAdminOrTeacher}
                               onClick={() => handleLectureClick(lesson)}
+                              onDownloadClick={() => { void handleDownloadLesson(lesson); }}
                               onNotesClick={() => {
                                 if (lesson.is_locked && !hasPurchased && !isAdminOrTeacher) {
                                   toast.error("This lecture is locked. Please purchase the course.");

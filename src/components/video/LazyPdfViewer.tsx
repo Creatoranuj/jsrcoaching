@@ -1,6 +1,6 @@
 import { Suspense, useEffect, type ComponentProps } from "react";
 import { lazyWithRetry } from "../../lib/lazyWithRetry";
-import { SpokeSpinner } from "../ui/spoke-spinner";
+import ReaderProgress from "../course/ReaderProgress";
 
 /**
  * Lazy wrapper around PdfViewerWithAutoScroll.
@@ -33,18 +33,19 @@ function prefetchPdfViewer() {
   ric(() => { void import("./PdfViewerWithAutoScroll"); });
 }
 
-/** Minimal fallback shown while the PDF chunk resolves. */
-function Fallback() {
+/** Fallback shown while the PDF chunk resolves — same screen as the reader's
+ *  own loading overlay so users never see two different "loading" designs. */
+function Fallback({ title, docKey }: { title?: string; docKey?: string }) {
   return (
     <div
       role="status"
       aria-live="polite"
       aria-busy="true"
       aria-label="Preparing your document"
-      className="flex h-full min-h-[320px] w-full items-center justify-center bg-background"
+      className="relative h-full min-h-[320px] w-full bg-background"
       data-testid="pdf-skeleton"
     >
-      <SpokeSpinner size={32} />
+      <ReaderProgress visible title={title} docKey={docKey} variant="pdf" />
       <span className="sr-only">Loading PDF viewer…</span>
     </div>
   );
@@ -53,7 +54,7 @@ function Fallback() {
 export default function LazyPdfViewer(props: Props) {
   useEffect(() => { prefetchPdfViewer(); }, []);
   return (
-    <Suspense fallback={<Fallback />}>
+    <Suspense fallback={<Fallback title={props.title} docKey={props.url} />}>
       <InnerPdfViewer {...props} />
     </Suspense>
   );

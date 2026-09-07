@@ -260,7 +260,7 @@ function LazyPage({
 
   // Fully blank sheet (trailing page of a Sheets export) — collapse it.
   if (fit?.blank) {
-    return <div ref={ref} data-page={pageNumber} data-blank="true" className="mx-auto mb-2 h-px w-full bg-border/40" />;
+    return <div ref={ref} data-page={pageNumber} data-blank="true" className="mx-auto h-0 w-full overflow-hidden" />;
   }
 
   if (fit) {
@@ -292,8 +292,8 @@ function LazyPage({
       ref={ref}
       data-page={pageNumber}
       data-page-rendered={render ? "true" : "false"}
-      className="mx-auto flex w-full justify-start overflow-hidden"
-      style={{ maxWidth: width }}
+      className="mx-auto flex w-full justify-start overflow-hidden leading-none"
+      style={{ maxWidth: width, fontSize: 0, lineHeight: 0 }}
     >
       {render ? (
         <Page
@@ -1550,7 +1550,7 @@ const FastPdfReader = forwardRef<FastPdfReaderHandle, Props>(
         ref={setScrollEl}
         data-archive-virtualized={isArchiveSource(src) ? "true" : undefined}
         className={cn(
-          "nb-reader-surface absolute inset-0 overflow-y-auto overscroll-contain [&_.react-pdf__Document]:w-full [&_.react-pdf__Page]:!mx-auto [&_.react-pdf__Page]:!w-full [&_.react-pdf__Page]:!max-w-full [&_.react-pdf__Page__canvas]:!h-auto [&_.react-pdf__Page__canvas]:!w-full [&_.react-pdf__Page__canvas]:!max-w-full [&_.react-pdf__Page__canvas]:!block [&_.annotationLayer_section]:!pointer-events-auto",
+          "nb-reader-surface absolute inset-0 overflow-y-auto overscroll-contain [&_.react-pdf__Document]:w-full [&_.react-pdf__Page]:!mx-auto [&_.react-pdf__Page]:!w-full [&_.react-pdf__Page]:!max-w-full [&_.react-pdf__Page__canvas]:!h-auto [&_.react-pdf__Page__canvas]:!w-full [&_.react-pdf__Page__canvas]:!max-w-full [&_.react-pdf__Page__canvas]:!block [&_.react-pdf__Page__canvas]:!align-top [&_.react-pdf__Page]:!mb-0 [&_.react-pdf__Page]:!border-0 [&_.react-pdf__Page]:!leading-none [&_.annotationLayer_section]:!pointer-events-auto",
           zoom > 1 ? "overflow-x-auto" : "overflow-x-hidden"
         )}
         onClick={onSurfaceTap}
@@ -1629,6 +1629,10 @@ const FastPdfReader = forwardRef<FastPdfReaderHandle, Props>(
               style={{
                 transformOrigin: "top left",
                 width: renderWidth,
+                // Kill inline-block whitespace + canvas baseline gaps so
+                // pages sit flush against each other (no strips between).
+                fontSize: 0,
+                lineHeight: 0,
                 marginLeft: "auto",
                 marginRight: "auto",
               }}
