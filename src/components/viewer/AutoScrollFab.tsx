@@ -2,7 +2,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePortalHost } from "../../hooks/usePortalHost";
 import { useOverlayBackClose } from "../../hooks/useOverlayBackClose";
-import { ChevronsDown, ChevronsUp } from "lucide-react";
+import { ChevronsDown, ChevronsUp, Settings2 } from "lucide-react";
 import { tapHaptic, selectionHaptic } from "../../lib/native/haptics";
 import { lazyWithRetry } from "../../lib/lazyWithRetry";
 import { MAX_SPEED } from "./autoScrollLimits";
@@ -41,6 +41,7 @@ export { MAX_SPEED };
  * - Tap → toggle on/off
  * - Long-press (≥280ms) → open speed picker (presets + fine slider, 0.01 step,
  *   floor 0.02x for ultra-slow reading)
+ * - Gear button → same settings sheet with a single tap, also while running
  */
 export default function AutoScrollFab({ targetRef, iframeRef, bottomOffset = 84, onActiveChange, visible = true, docKey }: Props): JSX.Element | null {
   const host = usePortalHost();
@@ -345,6 +346,17 @@ export default function AutoScrollFab({ targetRef, iframeRef, bottomOffset = 84,
     heldPause.current = false;
     startPos.current = null;
   };
+  // A touch that turns into a scroll/gesture fires pointercancel instead of
+  // pointerup — without this the hold-timer stayed armed and the FAB got stuck
+  // in "paused" state, which read as "nothing works".
+  const onPointerCancel = () => {
+    if (pressTimer.current) window.clearTimeout(pressTimer.current);
+    pressTimer.current = null;
+    if (heldPause.current) resume();
+    heldPause.current = false;
+    longPressed.current = false;
+    startPos.current = null;
+  };
 
   const fab = (
     <>
@@ -359,6 +371,8 @@ export default function AutoScrollFab({ targetRef, iframeRef, bottomOffset = 84,
 
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+        onContextMenu={(e) => e.preventDefault()}
         onClick={(e) => e.stopPropagation()}
         data-autoscroll-fab="true"
         className={`fixed right-4 sm:right-5 z-[68] flex h-12 w-12 select-none items-center justify-center rounded-full shadow-lg ring-1 ring-black/10 transition-all duration-200 active:scale-95 ${
@@ -368,13 +382,43 @@ export default function AutoScrollFab({ targetRef, iframeRef, bottomOffset = 84,
             ? "bg-primary text-primary-foreground ring-2 ring-primary"
             : "bg-card text-foreground"
         }`}
-        style={{ bottom: `calc(${bottomOffset}px + env(safe-area-inset-bottom, 0px))` }}
+        style={{
+          bottom: `calc(${bottomOffset}px + env(safe-area-inset-bottom, 0px))`,
+          touchAction: "none",
+          WebkitTouchCallout: "none",
+        }}
       >
         {reverse ? (
           <ChevronsUp className="h-6 w-6" aria-hidden="true" />
         ) : (
           <ChevronsDown className="h-6 w-6" aria-hidden="true" />
         )}
+      </button>
+
+      {/* Explicit settings button. The long-press gesture alone was
+          undiscoverable and unreliable on touch (context menu / scroll steals
+          it), so the sheet now always has a plain one-tap opener that also
+          works while autoscroll is running. */}
+      <button
+        data-testid="autoscroll-settings"
+        type="button"
+        aria-label="Autoscroll settings"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={(e) => {
+          e.stopPropagation();
+          void selectionHaptic();
+          setOpen(true);
+        }}
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
+        onContextMenu={(e) => e.preventDefault()}
+        className={`fixed right-4 sm:right-5 z-[68] flex h-9 w-9 select-none items-center justify-center rounded-full bg-card text-foreground shadow-lg ring-1 ring-black/10 transition-all duration-200 active:scale-95 ${
+          effectiveVisible ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
+        }`}
+        style={{ bottom: `calc(${bottomOffset + 56}px + env(safe-area-inset-bottom, 0px))` }}
+      >
+        <Settings2 className="h-4 w-4" aria-hidden="true" />
       </button>
 
       {open && (
