@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Android 11+ package visibility: without this the Razorpay native SDK
+         cannot enumerate installed UPI apps, so the UPI tab renders empty.
+         Keep this as ONE complete <queries> block; duplicate / partial blocks
+         make APK builds harder to audit and can hide scheme coverage mistakes. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="upi" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="upi" android:host="pay" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="phonepe" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="gpay" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="tez" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="paytmmp" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="paytm" />
+        </intent>
+        <package android:name="com.google.android.apps.nbu.paisa.user" />
+        <package android:name="com.phonepe.app" />
+        <package android:name="net.one97.paytm" />
+        <package android:name="in.org.npci.upiapp" />
+        <package android:name="in.amazon.mShop.android.shopping" />
+        <package android:name="com.dreamplug.androidapp" />
+        <package android:name="com.whatsapp" />
+        <package android:name="com.freecharge.android" />
+        <package android:name="com.mobikwik_new" />
+    </queries>
+
+
+
+    <application
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="false"
+        android:hardwareAccelerated="true"
+        android:enableOnBackInvokedCallback="true"
+        android:theme="@style/AppTheme">
+
+        <meta-data
+            android:name="com.sadguru.SMOKE_TEST_BUILD"
+            android:value="${smokeTestBuild}" />
+
+        <!-- largeHeap removed 2026-07-05: PDF.js streams pages via range
+             requests + revokes blob URLs; profiled peak <180MB on 50MB PDFs.
+             See docs/PATH-TO-5.0.md #4. -->
+
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
+            android:name=".MainActivity"
+            android:label="@string/title_activity_main"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:launchMode="singleTask"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.jsrcoaching.app" />
+            </intent-filter>
+
+            <!-- Android App Links: keep in sync with public/.well-known/assetlinks.json. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="sadguruclasses.vercel.app" />
+                <data android:pathPrefix="/course" />
+                <data android:pathPrefix="/my-courses" />
+                <data android:pathPrefix="/classes" />
+                <data android:pathPrefix="/lesson" />
+                <data android:pathPrefix="/chapter" />
+                <data android:pathPrefix="/quiz" />
+                <data android:pathPrefix="/live" />
+                <data android:pathPrefix="/reset-password" />
+                <data android:pathPrefix="/payment-callback" />
+                <data android:pathPrefix="/buy-course" />
+                <data android:pathPrefix="/dashboard" />
+                <data android:pathPrefix="/profile" />
+                <data android:pathPrefix="/settings" />
+                <data android:pathPrefix="/library" />
+            </intent-filter>
+
+        </activity>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"></meta-data>
+        </provider>
+    </application>
+
+    <!-- Permissions -->
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Required by @capacitor/haptics (Vibrator API on Android ≤ 12). No runtime prompt. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- Camera (avatar capture). READ_MEDIA_IMAGES for Android 13+ gallery picker. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <!-- Legacy write permission only needed on Android ≤ 9. Android 10+ uses
+         scoped storage; @capacitor/filesystem Directory.Data / Documents needs
+         no runtime permission there. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+
+    <!-- Push notifications: FCM (Android 13+ requires runtime POST_NOTIFICATIONS) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+
+</manifest>

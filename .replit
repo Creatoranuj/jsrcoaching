@@ -1,0 +1,59 @@
+modules = ["nodejs-20", "web"]
+[agent]
+expertMode = true
+integrations = ["javascript_database:1.0.0"]
+stack = "BEST_EFFORT_FALLBACK"
+
+[nix]
+channel = "stable-25_05"
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
+
+[[ports]]
+localPort = 24678
+externalPort = 3000
+
+[deployment]
+deploymentTarget = "autoscale"
+run = ["node", "./dist/index.cjs"]
+build = ["npm", "run", "build"]
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev"
+waitForPort = 5000
+
+[userenv]
+
+[userenv.shared]
+VITE_SUPABASE_URL = ""
+VITE_SUPABASE_PUBLISHABLE_KEY = ""
+NODE_ENV = "development"
+SUPABASE_URL = ""
+SUPABASE_ANON_KEY = ""
+PORT = "5000"

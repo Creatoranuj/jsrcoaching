@@ -1,0 +1,1 @@
+UPDATE lessons SET video_url = 'https://player.mediadelivery.net/embed/631493/c7958a9b-f522-47ec-806a-cff93c28dfcd' WHERE id = 'af4d84ca-85e4-4e45-9378-f0a85255fedf';

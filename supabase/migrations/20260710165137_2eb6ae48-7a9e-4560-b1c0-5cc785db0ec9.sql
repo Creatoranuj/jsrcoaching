@@ -1,0 +1,1 @@
+GRANT EXECUTE ON FUNCTION public.get_dashboard_snapshot() TO authenticated;

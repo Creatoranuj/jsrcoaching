@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider path roots. MUST cover every directory we hand to
+  @capacitor-community/file-opener or @capacitor/share, otherwise
+  FileProvider.getUriForFile() throws "Failed to find configured root
+  that contains ..." and the open/share call silently fails (blank
+  screen on "Open", error toast on "Share").
+
+  Mappings (Android 14, minSdk 24, targetSdk 36):
+    files-path           -> Context.getFilesDir()           = /data/user/0/<pkg>/files          (Directory.Data, Directory.Documents)
+    cache-path           -> Context.getCacheDir()           = /data/user/0/<pkg>/cache          (Directory.Cache)
+    external-path        -> Environment.getExternalStorageDirectory() = /storage/emulated/0     (Directory.ExternalStorage)
+    external-files-path  -> Context.getExternalFilesDir()   = /sdcard/Android/data/<pkg>/files  (Directory.External)
+    external-cache-path  -> Context.getExternalCacheDir()   = /sdcard/Android/data/<pkg>/cache  (Directory.ExternalCache)
+
+  Keep `path="."` on every entry — narrower paths would force us to
+  re-edit this file every time we add a new downloads subfolder.
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <files-path          name="internal_files"  path="." />
+    <cache-path          name="internal_cache"  path="." />
+    <external-path       name="external"        path="." />
+    <external-files-path name="external_files"  path="." />
+    <external-cache-path name="external_cache"  path="." />
+</paths>

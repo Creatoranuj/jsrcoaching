@@ -1,0 +1,64 @@
+name: Code Guards
+
+# Cheap grep-based ceilings that fail CI when NEW hardcoded colors or raw
+# console.* calls are added above the snapshot budget. Ratchet down by
+# lowering the BUDGET constant in each script after cleanup PRs land.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'bun.lock'
+      - 'bun.lockb'
+      - 'package-lock.json'
+      - 'package.json'
+      - 'scripts/check-design-tokens.mjs'
+      - 'scripts/check-console-usage.mjs'
+      - 'scripts/check-lockfile-registry.mjs'
+      - '.github/workflows/code-guards.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'bun.lock'
+      - 'bun.lockb'
+      - 'package-lock.json'
+      - 'package.json'
+      - 'scripts/check-design-tokens.mjs'
+      - 'scripts/check-console-usage.mjs'
+      - 'scripts/check-lockfile-registry.mjs'
+  workflow_dispatch:
+
+concurrency:
+  group: code-guards-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  guards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      # Runs before anything expensive: a lockfile pinned to a sandbox-private
+      # registry (Replit / Lovable mirror) makes every downstream CI install
+      # fail with ConnectionRefused / EAI_AGAIN. Catch it at PR time, not at
+      # release-tag time.
+      - name: Lockfile registry guard
+        run: |
+          node scripts/check-lockfile-registry.mjs || {
+            echo "::error::Lockfile pins sandbox-private registry tarballs. Remedy: run 'bun run fix:lockfile' locally and commit bun.lock + package-lock.json." >&2
+            exit 1
+          }
+
+      - name: Design-token ceiling
+        run: node scripts/check-design-tokens.mjs
+
+      - name: Console-usage ceiling
+        run: node scripts/check-console-usage.mjs
+

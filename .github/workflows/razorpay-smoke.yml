@@ -1,0 +1,115 @@
+name: Razorpay Smoke (test mode)
+
+# Verifies the Razorpay test-mode key pair and the payment edge functions.
+# NEVER add live keys (rzp_live_*) to this repo's secrets — this workflow
+# creates real API objects against whatever key it is given.
+#
+# Required repository secrets:
+#   RAZORPAY_KEY_ID        rzp_test_XXXXXXXXXXXX
+#   RAZORPAY_KEY_SECRET    the secret shown once when the key was generated
+#   VITE_SUPABASE_URL      https://<ref>.supabase.co
+#   VITE_SUPABASE_PUBLISHABLE_KEY (or VITE_SUPABASE_ANON_KEY)
+# Optional (enables the authenticated order-creation probe):
+#   TEST_USER_EMAIL / TEST_USER_PASSWORD / TEST_PAID_COURSE_ID
+
+on:
+  schedule:
+    # Nightly 04:10 UTC
+    - cron: '10 4 * * *'
+  workflow_dispatch:
+
+jobs:
+  razorpay-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Check required secrets
+        id: gate
+        env:
+          KEY_ID: ${{ secrets.RAZORPAY_KEY_ID }}
+          KEY_SECRET: ${{ secrets.RAZORPAY_KEY_SECRET }}
+        run: |
+          if [ -z "$KEY_ID" ] || [ -z "$KEY_SECRET" ]; then
+            echo "Razorpay secrets not configured — skipping."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Reject live keys
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          KEY_ID: ${{ secrets.RAZORPAY_KEY_ID }}
+        run: |
+          case "$KEY_ID" in
+            rzp_test_*) echo "Test-mode key detected." ;;
+            *) echo "::error::RAZORPAY_KEY_ID is not a test-mode key (expected rzp_test_ prefix). Refusing to run."; exit 1 ;;
+          esac
+
+      - name: Razorpay API key pair is valid (create ₹1 test order)
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          KEY_ID: ${{ secrets.RAZORPAY_KEY_ID }}
+          KEY_SECRET: ${{ secrets.RAZORPAY_KEY_SECRET }}
+        run: |
+          set -euo pipefail
+          code=$(curl -s -o /tmp/order.json -w '%{http_code}' \
+            -u "$KEY_ID:$KEY_SECRET" \
+            -X POST https://api.razorpay.com/v1/orders \
+            -H 'Content-Type: application/json' \
+            -d '{"amount":100,"currency":"INR","receipt":"ci-smoke"}')
+          echo "HTTP $code"
+          if [ "$code" != "200" ] && [ "$code" != "201" ]; then
+            echo "::error::Razorpay order creation failed with HTTP $code"
+            jq -r '.error.description // "no description"' /tmp/order.json || true
+            exit 1
+          fi
+          jq -e '.id | startswith("order_")' /tmp/order.json > /dev/null
+          echo "Order created OK (id masked)."
+
+      - name: Edge function rejects unauthenticated order creation
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_URL:-}" ]; then echo "VITE_SUPABASE_URL missing — skipping."; exit 0; fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -X POST "$SUPABASE_URL/functions/v1/create-razorpay-order" \
+            -H 'Content-Type: application/json' -d '{"course_id":"00000000-0000-0000-0000-000000000000"}')
+          echo "HTTP $code"
+          case "$code" in
+            401|403) echo "Correctly rejected." ;;
+            *) echo "::error::Expected 401/403 for unauthenticated order creation, got $code"; exit 1 ;;
+          esac
+
+      - name: Edge function rejects a forged payment signature
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          ANON_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          ANON_FALLBACK: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          TEST_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+          TEST_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEY="${ANON_KEY:-$ANON_FALLBACK}"
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "$KEY" ] || [ -z "${TEST_EMAIL:-}" ] || [ -z "${TEST_PASSWORD:-}" ]; then
+            echo "Supabase/test-user secrets missing — skipping."
+            exit 0
+          fi
+          JWT=$(curl -s -X POST "$SUPABASE_URL/auth/v1/token?grant_type=password" \
+            -H "apikey: $KEY" -H 'Content-Type: application/json' \
+            --data "$(jq -nc --arg e "$TEST_EMAIL" --arg p "$TEST_PASSWORD" '{email:$e,password:$p}')" \
+            | jq -r '.access_token // empty')
+          if [ -z "$JWT" ]; then echo "::error::Test user sign-in failed"; exit 1; fi
+          code=$(curl -s -o /tmp/verify.json -w '%{http_code}' \
+            -X POST "$SUPABASE_URL/functions/v1/verify-razorpay-payment" \
+            -H "apikey: $KEY" -H "Authorization: Bearer $JWT" \
+            -H 'Content-Type: application/json' \
+            -d '{"razorpay_order_id":"order_ci_forged","razorpay_payment_id":"pay_ci_forged","razorpay_signature":"deadbeef","course_id":"00000000-0000-0000-0000-000000000000"}')
+          echo "HTTP $code"
+          case "$code" in
+            4*) echo "Forged signature correctly rejected." ;;
+            *) echo "::error::Expected a 4xx for a forged signature, got $code"; cat /tmp/verify.json; exit 1 ;;
+          esac

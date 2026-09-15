@@ -1,0 +1,1 @@
+DROP POLICY IF EXISTS "Admins can manage syllabus" ON public.syllabus;

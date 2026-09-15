@@ -1,0 +1,86 @@
+name: Lighthouse CI
+
+# DISABLED (auto-triggers removed) — user request 2026-07-19: repeatedly
+# failing PR/push checks. Kept as manual-only until perf budget is tuned.
+# Do NOT re-add `pull_request` / `push` without explicit user approval.
+# See mem://constraints/ci-disabled-workflows.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: lhci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  lighthouse:
+    name: Mobile perf budget (Moto-G class)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache node_modules
+        id: cache-nm
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-lhci-nm-${{ hashFiles('bun.lock', 'bun.lockb', 'package.json') }}
+
+      - name: Install deps (bun)
+        if: steps.cache-nm.outputs.cache-hit != 'true'
+        run: |
+          # NOTE: do NOT pass --ignore-scripts here — esbuild + @rollup/*
+          # native postinstall scripts must run or `vite build` fails with
+          # "You installed esbuild for another platform".
+          if [ -f bun.lockb ] || [ -f bun.lock ]; then
+            bun install --frozen-lockfile --no-progress \
+              || bun install --no-progress
+          else
+            bun install --no-progress
+          fi
+
+      - name: Build production bundle
+        run: bun run build
+        env:
+          NODE_ENV: production
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SUPABASE_PROJECT_ID: ${{ secrets.VITE_SUPABASE_PROJECT_ID }}
+
+      - name: Install Lighthouse CI
+        run: npm i -g @lhci/cli@0.14.x
+
+      - name: Run Lighthouse CI
+        run: lhci autorun --config=./lighthouserc.json
+        env:
+          LHCI_BUILD_CONTEXT__CURRENT_BRANCH: ${{ github.head_ref || github.ref_name }}
+          LHCI_BUILD_CONTEXT__COMMIT_TIME: ${{ github.event.head_commit.timestamp }}
+          # Optional: set LHCI_GITHUB_APP_TOKEN in repo secrets so LHCI can
+          # post status checks back on PRs. Missing token = silent skip.
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: lighthouse-report-${{ github.run_id }}
+          path: .lighthouseci/
+          retention-days: 7
+          if-no-files-found: warn
+

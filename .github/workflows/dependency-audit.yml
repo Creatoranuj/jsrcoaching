@@ -1,0 +1,103 @@
+name: Dependency Security Audit
+
+# Runs OUT of the APK build hot path so a npm registry outage or a slow
+# audit response never blocks a release. Weekly schedule + on dependency
+# bumps catches new CVEs without slowing down every commit.
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # Monday 06:00 UTC
+  push:
+    branches: [main]
+    paths:
+      - 'package.json'
+      - 'package-lock.json'
+      - 'bun.lock'
+      - 'bun.lockb'
+  pull_request:
+    paths:
+      - 'package.json'
+      - 'package-lock.json'
+      - 'bun.lock'
+      - 'bun.lockb'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22.18.0'
+
+      - name: Run npm audit (HIGH+)
+        run: |
+          set +e
+          rm -f audit.json audit.err
+          if [ -f package-lock.json ]; then
+            timeout 60s npm audit --omit=dev --audit-level=high --json \
+              > audit.json 2>audit.err
+            STATUS=$?
+          else
+            echo "::warning::package-lock.json missing — skipping npm audit."
+            STATUS=0
+          fi
+          if [ "${STATUS:-0}" = "124" ] || { [ "${STATUS:-0}" -ne 0 ] && [ -s audit.err ] && grep -qiE 'request failed|status 404|endpoint returned|not supported|not found|timeout' audit.err; }; then
+            echo "::warning::npm audit endpoint unavailable; not failing."
+            STATUS=0
+          fi
+          if [ "${STATUS:-0}" -ne 0 ]; then
+            echo "::warning::HIGH/CRITICAL vulnerabilities found — review audit artifact."
+            node -e "try{const a=require('./audit.json');console.log(JSON.stringify(a.metadata?.vulnerabilities||a,null,2));}catch(e){}" || true
+          else
+            echo "✅ No HIGH/CRITICAL vulnerabilities."
+          fi
+          set -e
+
+      - name: Informational moderate+ audit (does not fail build)
+        run: |
+          set +e
+          if [ -f package-lock.json ]; then
+            npm audit --omit=dev --audit-level=moderate || true
+          fi
+
+      - name: Verify OSV findings against lockfile
+        # Fails the build when:
+        #   - the scanner reports a vulnerability for a package NOT in the
+        #     lockfile (phantom / stale finding), OR
+        #   - a HIGH/CRITICAL vulnerability affects a package we actually ship.
+        # Exit code 2 (OSV outage) is treated as a warning, not a hard fail.
+        run: |
+          set +e
+          node scripts/verify-osv-findings.mjs
+          STATUS=$?
+          set -e
+          if [ "$STATUS" = "2" ]; then
+            echo "::warning::osv.dev unreachable; skipping strict verification."
+            exit 0
+          fi
+          exit "$STATUS"
+
+      - name: Audit edge function callers (orphan detection)
+        # Fails the job if a new edge function ships without a UI caller and
+        # is not on the BACKEND_ONLY_ALLOWLIST. Prevents silent orphan buildup.
+        run: node scripts/audit-edge-function-callers.mjs
+
+
+
+      - name: Upload audit report
+        if: always() && hashFiles('audit.json') != ''
+        uses: actions/upload-artifact@v6
+        with:
+          name: dependency-audit
+          path: audit.json
+          retention-days: 1
+          if-no-files-found: ignore

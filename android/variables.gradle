@@ -1,0 +1,22 @@
+ext {
+    // STABLE BASELINE — pinned to versions that match Capacitor 7's tested
+    // matrix. compileSdk/targetSdk 35 is Play Store compliant (deadline was
+    // Aug 31, 2025 for 35; 36 is not required until late 2026) and avoids
+    // bleeding-edge AAR resolution failures we hit on 36 + AGP 8.9.1.
+    // @capacitor/inappbrowser requires Android API 26+ for embedded WebView mode.
+    minSdkVersion = 26
+    compileSdkVersion = 35
+    targetSdkVersion = 35
+    androidxActivityVersion = '1.9.3'
+    androidxAppCompatVersion = '1.7.0'
+    androidxCoordinatorLayoutVersion = '1.2.0'
+    androidxCoreVersion = '1.15.0'
+    androidxFragmentVersion = '1.8.5'
+    coreSplashScreenVersion = '1.0.1'
+    androidxWebkitVersion = '1.12.1'
+    androidxBrowserVersion = '1.8.0'
+    junitVersion = '4.13.2'
+    androidxJunitVersion = '1.2.1'
+    androidxEspressoCoreVersion = '3.6.1'
+    cordovaAndroidVersion = '14.0.1'
+}

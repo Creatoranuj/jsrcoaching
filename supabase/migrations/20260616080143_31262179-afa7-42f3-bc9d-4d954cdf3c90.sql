@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS idx_razorpay_payments_status_created_at ON public.razorpay_payments USING btree (status, created_at DESC);

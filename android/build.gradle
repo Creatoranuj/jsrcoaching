@@ -1,0 +1,72 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+
+buildscript {
+
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.7.3'
+        classpath 'com.google.gms:google-services:4.4.4'
+        // Load the Kotlin Gradle plugin at the ROOT so subprojects
+        // (:capacitor-file-viewer, :capacitor-filesystem) that apply the Kotlin
+        // plugin via the legacy `apply plugin: 'kotlin-android'` block reuse
+        // the same classloader. Without this, Gradle prints:
+        //   "The Kotlin Gradle plugin was loaded multiple times in different
+        //    subprojects, which is not supported and may break the build."
+        // Version MUST match the kotlin-stdlib pin below (1.9.25) so ABI stays
+        // aligned across all Capacitor plugins.
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25'
+
+        // NOTE: Do not place your application dependencies here; they belong
+        // in the individual module build.gradle files
+    }
+}
+
+apply from: "variables.gradle"
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    configurations.all {
+        resolutionStrategy {
+            force "org.jetbrains.kotlin:kotlin-stdlib:1.9.25"
+            force "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.25"
+            force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.25"
+            force "org.jetbrains.kotlin:kotlin-stdlib-common:1.9.25"
+            // BUILD GUARD — androidx.browser 1.9.0 requires compileSdk 36 + AGP 8.9.1.
+            // We are on the Capacitor 7 stable baseline: compileSdk 35 + AGP 8.7.3
+            // (see variables.gradle + top of this file). A transitive bump to 1.9.0
+            // breaks `:app:checkDebugAarMetadata` with:
+            //   "Dependency 'androidx.browser:browser:1.9.0' requires ... compile
+            //    against version 36 or later" and "requires AGP 8.9.1 or higher".
+            // Pinning to ${rootProject.ext.androidxBrowserVersion} (1.8.0) prevents
+            // any plugin (e.g. @capacitor/browser updates) from dragging in 1.9.x
+            // until we deliberately move the whole toolchain to SDK 36 / AGP 8.9+.
+            force "androidx.browser:browser:${rootProject.ext.androidxBrowserVersion}"
+            // Razorpay APK checkout must be deterministic. The capacitor plugin
+            // depends on `com.razorpay:checkout:1.6.+`; leaving that floating can
+            // make CI/local APKs resolve different native SDK builds and change
+            // UPI availability between installs. Pin to the latest known 1.6.x
+            // release so Android UPI behavior stays stable.
+            force "com.razorpay:checkout:1.6.41"
+        }
+    }
+    // LOG HYGIENE — Suppress `Note: ... uses unchecked/unsafe operations` and
+    // `Note: ... uses or overrides a deprecated API` notes emitted by upstream
+    // Capacitor / Cordova / Razorpay / Capgo plugin sources we don't own.
+    // These are javac INFO notes (not warnings, not errors) — the build
+    // already passes. Hiding them keeps the GitHub Actions log readable so
+    // real failures stand out. `-nowarn` + `-Xlint:none` together silence the
+    // notes without affecting our own app code's compile checks.
+    tasks.withType(JavaCompile).configureEach {
+        options.compilerArgs += ['-Xlint:none', '-nowarn']
+    }
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}

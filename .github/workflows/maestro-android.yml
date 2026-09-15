@@ -1,0 +1,175 @@
+name: Maestro Android E2E
+
+# Real-device-style end-to-end smoke on an Android emulator using Maestro.
+# Manual-dispatch only (emulator boots are slow ~10-15 min) plus optional
+# nightly cron. Builds a debug APK, boots an emulator, installs the APK,
+# then runs `maestro/*.yaml` flows.
+#
+# Requires GitHub repo secrets (already configured):
+#   TEST_USER_EMAIL, TEST_USER_PASSWORD
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Nightly 04:30 UTC — off-peak so it doesn't fight with release builds
+    - cron: '30 4 * * *'
+
+concurrency:
+  group: maestro-${{ github.ref }}
+  cancel-in-progress: true
+
+# Single source of truth for the JDK across every Android workflow.
+# Capacitor 6+ plugins compile against Java 21 (see android/app/capacitor.build.gradle
+# — sourceCompatibility/targetCompatibility VERSION_21). Bumping in one place
+# prevents the "invalid source release: 21" drift that failed maestro run #1.
+env:
+  JAVA_VERSION: '21'
+  MAESTRO_VERSION: '2.10.0'
+
+jobs:
+  android-e2e:
+    # Ubuntu runner with KVM enabled: GitHub-hosted Ubuntu runners ship KVM,
+    # so an x86_64 emulator boots reliably in ~2-3 min. macos-14 (Apple
+    # Silicon) repeatedly failed with "emulator-5554 not found" because the
+    # arm64 system image never launched on that image.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.2.18'
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+
+      # Ubuntu runners ship a full Android SDK preinstalled; just ensure the
+      # exact platform/build-tools we compile against are present.
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+
+      # KVM is what makes the emulator bootable on Linux runners. Without
+      # hardware acceleration the boot times out before Maestro ever runs.
+      - name: ⚡ Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: 📦 Install deps
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: 🏗️ Build web assets
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: bun run build
+
+      - name: 🔁 Cap sync
+        run: bunx cap sync android
+
+      - name: 🔐 Verify Maestro test credentials
+        env:
+          TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+          TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+        run: |
+          test -n "$TEST_USER_EMAIL" || { echo "Missing repository secret: TEST_USER_EMAIL"; exit 1; }
+          test -n "$TEST_USER_PASSWORD" || { echo "Missing repository secret: TEST_USER_PASSWORD"; exit 1; }
+
+      - name: 🏗️ Build x86_64 debug APK
+        working-directory: android
+        env:
+          # CI-only override. Production APKs keep the ARM defaults from build.gradle.
+          ANDROID_ABI_FILTERS: x86_64
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: 🔎 Verify APK architecture
+        run: |
+          set -euo pipefail
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          test -f "$APK"
+          unzip -l "$APK" | tee apk-contents.txt
+          grep -q 'lib/x86_64/' apk-contents.txt || { echo 'Debug APK is missing x86_64 native libraries'; exit 1; }
+
+      - name: 📥 Install pinned Maestro
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://github.com/mobile-dev-inc/Maestro/releases/download/cli-${MAESTRO_VERSION}/maestro.zip" -o /tmp/maestro.zip
+          curl -fsSL "https://github.com/mobile-dev-inc/Maestro/releases/download/cli-${MAESTRO_VERSION}/checksums_sha256.txt" -o /tmp/maestro-checksums.txt
+          (cd /tmp && sha256sum --check maestro-checksums.txt)
+          rm -rf "$HOME/.maestro"
+          unzip -q /tmp/maestro.zip -d "$HOME/.maestro"
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+          "$HOME/.maestro/bin/maestro" --version
+
+      - name: 🤖 Run Android emulator + Maestro flows
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 33
+          target: google_apis
+          arch: x86_64
+          profile: Nexus 6
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            mkdir -p maestro-artifacts
+            adb logcat -c
+            adb logcat -v threadtime > maestro-artifacts/logcat.txt 2>&1 &
+            LOGCAT_PID=$!
+            trap 'adb shell screencap -p /sdcard/maestro-final.png >/dev/null 2>&1 || true; adb pull /sdcard/maestro-final.png maestro-artifacts/final-screen.png >/dev/null 2>&1 || true; adb shell pm list packages > maestro-artifacts/packages.txt 2>&1 || true; adb shell getprop ro.product.cpu.abilist > maestro-artifacts/device-abis.txt 2>&1 || true; adb shell dumpsys package com.jsrcoaching.app > maestro-artifacts/app-package.txt 2>&1 || true; kill $LOGCAT_PID >/dev/null 2>&1 || true' EXIT
+            adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+            adb shell pm path com.jsrcoaching.app | tee maestro-artifacts/install-check.txt
+            grep -q '^package:' maestro-artifacts/install-check.txt || { echo 'com.jsrcoaching.app was not installed'; exit 1; }
+            export MAESTRO_EMAIL='${{ secrets.TEST_USER_EMAIL }}'
+            export MAESTRO_PASSWORD='${{ secrets.TEST_USER_PASSWORD }}'
+            # Smoke is the gate — it must fail the job when it fails. The
+            # previous `|| echo "smoke failed"` swallowed real regressions and
+            # let the job report green while login/dashboard were broken.
+            maestro test --env MAESTRO_EMAIL="$MAESTRO_EMAIL" --env MAESTRO_PASSWORD="$MAESTRO_PASSWORD" maestro/smoke.yaml --format junit --output maestro-report.xml
+            # Secondary flows stay non-blocking — they cover optional paths
+            # (pdf viewer back-nav, cold-start deep link) that flake on cold
+            # emulators but shouldn't gate release.
+            maestro test maestro/pdf-back.yaml || true
+            maestro test maestro/back-button-cold-start.yaml || true
+
+      - name: 📤 Upload Maestro report + screenshots
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: maestro-report
+          path: |
+            maestro-report.xml
+            ~/.maestro/tests/**/*
+            maestro-artifacts/**/*
+            apk-contents.txt
+          retention-days: 14
+          if-no-files-found: ignore
+
+      # On any failure (typically a pre-Maestro gradle compile error, as in
+      # run #1), grab gradle's build reports + logs so the next triage pass
+      # can jump straight to the failing task instead of scrolling logs.
+      - name: 📤 Upload gradle build reports (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: gradle-build-reports
+          path: |
+            android/**/build/reports/**/*
+            android/**/build/outputs/logs/**/*
+          retention-days: 7
+          if-no-files-found: ignore

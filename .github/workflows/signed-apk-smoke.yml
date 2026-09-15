@@ -1,0 +1,1173 @@
+name: Signed APK Smoke
+
+# Runs Maestro smoke flow against the SIGNED release APK on tag pushes.
+# This catches ProGuard/R8 stripping regressions that debug builds miss.
+# Debug-APK Maestro run lives in maestro-android.yml (nightly/manual).
+#
+# Required GitHub secrets:
+#   KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD,
+#   MAESTRO_EMAIL, MAESTRO_PASSWORD,
+#   VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY, VITE_SUPABASE_ANON_KEY
+# Optional (P2 auto-promote to Play internal track):
+#   PLAY_SERVICE_ACCOUNT_JSON — Google Play Console service account JSON.
+#   When present, a green matrix triggers an AAB build + upload to the Play
+#   internal testing track as a DRAFT release. When absent, the job soft-skips.
+
+# DISABLED (auto-triggers removed) — user request 2026-07-19: workflow
+# repeatedly fails on tag pushes; kept as manual-only until fixed. Do NOT
+# re-add `push.tags` without explicit user approval. See
+# mem://constraints/ci-disabled-workflows.
+on:
+  workflow_dispatch:
+    inputs:
+      run_advisory_legs:
+        description: 'Run flaky advisory API 28 / API 35 smoke legs. Manual lab only; release tags run the stable hard gate.'
+        type: boolean
+        default: false
+      run_secondary_flows:
+        description: 'Run non-blocking secondary Maestro flows on a separate emulator. Manual lab only.'
+        type: boolean
+        default: false
+      promote_dry_run:
+        description: 'Also run promote-to-play job (requires PLAY_SERVICE_ACCOUNT_JSON). Soft-skips when secret is missing.'
+        type: boolean
+        default: false
+
+concurrency:
+  group: signed-apk-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+# Red-team hardening (#17 secrets, #22 supply-chain): least-privilege token.
+# Default GITHUB_TOKEN is write-all at repo level; this workflow only needs
+# read on contents to checkout tags. promote-to-play uses its own PLAY_*
+# service-account JSON, not GITHUB_TOKEN, so no write scope required.
+permissions:
+  contents: read
+
+
+
+# Match maestro-android.yml + build-apk.yml — Capacitor 6+ needs Java 21.
+env:
+  JAVA_VERSION: '21'
+
+jobs:
+  plan-smoke-matrix:
+    name: Plan smoke matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      include: ${{ steps.matrix.outputs.include }}
+    steps:
+      - id: matrix
+        env:
+          RUN_ADVISORY_LEGS: ${{ github.event_name == 'workflow_dispatch' && inputs.run_advisory_legs }}
+        run: |
+          set -e
+          if [ "${RUN_ADVISORY_LEGS}" = "true" ]; then
+            cat >> "$GITHUB_OUTPUT" <<'EOF'
+          include=[{"api-level":28,"maestro-version":"1.39.0"},{"api-level":33,"maestro-version":"1.39.0"},{"api-level":35,"maestro-version":"1.40.3"},{"api-level":35,"maestro-version":"2.6.1"}]
+          EOF
+          else
+            cat >> "$GITHUB_OUTPUT" <<'EOF'
+          include=[{"api-level":33,"maestro-version":"1.39.0"}]
+          EOF
+          fi
+
+  smoke-signed-apk:
+    needs: plan-smoke-matrix
+    # Ubuntu + KVM: macOS runners no longer expose HVF reliably to
+    # android-emulator-runner (adb device-not-found loop for 15 min then
+    # cleanup). Ubuntu with /dev/kvm boots deterministically in ~2 min.
+    #
+    # Runner tier (current state, 2026-07-15):
+    #   - ALL legs → ubuntu-latest (2 vCPU / 7GB). API 33 hard-gates; API 28 /
+    #     API 35 are advisory (continue-on-error).
+    # NOTE: `ubuntu-latest-4-cores` was previously tried for API 28 to shorten
+    # Chromium 66 cold-parse, but larger runners require org-level provisioning
+    # (Settings → Actions → Runners → Larger runners). Without it the job sits
+    # in Queued until the 60-min timeout. To compensate, `maestro/smoke.yaml`
+    # raises the first-paint `extendedWaitUntil` to 300s. Re-enable the 4-core
+    # tier only after provisioning it at the org level; then promote API 28 to
+    # hard gate only after ≥5 consecutive greens.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Release tags run ONLY the stable hard gate (API 33 + Maestro 1.39.0).
+    # API 28 / API 35 A/B legs are useful lab signal but repeatedly produce
+    # red GitHub matrix nodes from Maestro/emulator driver flakes even when the
+    # app is healthy. They now run only via workflow_dispatch → run_advisory_legs.
+    continue-on-error: ${{ !(matrix.api-level == 33 && matrix.maestro-version == '1.39.0') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.plan-smoke-matrix.outputs.include) }}
+
+    name: smoke (API ${{ matrix.api-level }} · maestro ${{ matrix.maestro-version }})
+
+
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.2.18'
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: 🏷️ Derive ANDROID_PACKAGE from build.gradle
+        # Single source of truth for the applicationId. Prevents drift between
+        # the workflow's hardcoded package name and android/app/build.gradle
+        # (flagged 3× in observer reports). If gradle rename ever happens,
+        # this step auto-picks it up; no workflow edit needed.
+        run: |
+          PKG=$(grep -oE 'applicationId[[:space:]]+"[^"]+"' android/app/build.gradle | head -1 | sed -E 's/applicationId[[:space:]]+"([^"]+)"/\1/')
+          if [ -z "$PKG" ]; then
+            echo "::error::Could not derive applicationId from android/app/build.gradle"; exit 1
+          fi
+          echo "ANDROID_PACKAGE=$PKG" >> "$GITHUB_ENV"
+          echo "Derived ANDROID_PACKAGE=$PKG"
+
+      - name: 📦 Install deps
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: 🏗️ Build web assets
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+        run: bun run build
+
+      - name: 🔁 Cap sync
+        run: bunx cap sync android
+
+      - name: 🔐 Decode signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::KEYSTORE_BASE64 secret missing — cannot build signed release APK"; exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+          echo "✅ Keystore decoded ($(wc -c < android/app/release.keystore) bytes)"
+
+      - name: 🏗️ Build signed release APK
+        working-directory: android
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          # Required for Maestro `androidWebViewHierarchy: devtools` on signed
+          # smoke APKs. This is a CI-only test build; normal release builds keep
+          # WebView debugging disabled by default in capacitor.config.ts.
+          CAP_DEBUG: '1'
+          # CI-only native hook used by API 35 smoke to fill React controlled
+          # login inputs without Maestro inputText / Android 15 gRPC flake.
+          SMOKE_TEST_BUILD: '1'
+          # Emulator runs x86_64; ship-release ABIs alone yield
+          # INSTALL_FAILED_NO_MATCHING_ABIS. Widen only for the smoke build.
+          ANDROID_ABI_FILTERS: "arm64-v8a,armeabi-v7a,x86_64"
+        run: |
+          ./gradlew assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file="$(pwd)/app/release.keystore" \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+
+      - name: 📥 Install Maestro (pinned)
+        env:
+          MAESTRO_VERSION: ${{ matrix.maestro-version }}
+          MATRIX_API_LEVEL: ${{ matrix.api-level }}
+
+        run: |
+          set -e
+          emit_install_failure_telemetry() {
+            local exit_code="${1:-127}"
+            cat > flake-telemetry.json <<TELEMETRY_EOF
+          {
+            "api_level": "${{ matrix.api-level }}",
+            "maestro_version": "${MAESTRO_VERSION}",
+            "package": "${ANDROID_PACKAGE:-unknown}",
+            "phase": "maestro-install",
+            "failure_class": "maestro-install-failed",
+            "smoke_exit": ${exit_code},
+            "attempt1_exit": null,
+            "attempts_used": 0,
+            "retried": false,
+            "boot_ms": 0,
+            "boot_raw": "",
+            "smoke_duration_s": 0,
+            "crash_lines": 0,
+            "first_fail_assertion": "",
+            "last_stderr_line": "",
+            "run_id": "${{ github.run_id }}",
+            "run_attempt": "${{ github.run_attempt }}",
+            "ref": "${{ github.ref }}"
+          }
+          TELEMETRY_EOF
+            : > logcat.txt
+            : > logcat-crashes.txt
+          }
+          if ! curl -fsSL "https://get.maestro.mobile.dev" | MAESTRO_VERSION="$MAESTRO_VERSION" bash; then
+            echo "::error::Maestro install failed for version ${MAESTRO_VERSION}"
+            emit_install_failure_telemetry 127
+            exit 127
+          fi
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+          if [ ! -x "$HOME/.maestro/bin/maestro" ]; then
+            echo "::error::Maestro binary missing after install for version ${MAESTRO_VERSION}"
+            emit_install_failure_telemetry 127
+            exit 127
+          fi
+          "$HOME/.maestro/bin/maestro" --version
+
+      - name: 🖥️ Enable KVM (Ubuntu runner)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: 📝 Write smoke script to file
+        # Runner executes each line of `script:` as its own `sh -c` — shell
+        # vars don't persist. Workaround: stage the full script here so the
+        # emulator step can invoke it with a single command.
+        env:
+          MAESTRO_EMAIL: ${{ secrets.MAESTRO_EMAIL }}
+          MAESTRO_PASSWORD: ${{ secrets.MAESTRO_PASSWORD }}
+        run: |
+          if [ -z "${MAESTRO_EMAIL:-}" ] || [ -z "${MAESTRO_PASSWORD:-}" ]; then
+            echo "::error::MAESTRO_EMAIL or MAESTRO_PASSWORD secret missing — cannot run signed APK smoke login"; exit 1
+          fi
+          cat > /tmp/smoke.sh <<'SMOKE_EOF'
+          #!/usr/bin/env bash
+          set -eo pipefail
+          export MAESTRO_CLI_NO_ANALYTICS=1
+          APK=$(find android/app/build/outputs/apk/release -name "*.apk" | head -1)
+          if [ -z "$APK" ]; then
+            echo "::error::No release APK found under android/app/build/outputs/apk/release"
+            ls -la android/app/build/outputs/apk/release || true
+            exit 1
+          fi
+          wait_for_adb_device() {
+            local label="${1:-adb}"
+            local state="offline"
+            for i in $(seq 1 20); do
+              state=$(adb get-state 2>/dev/null || echo "offline")
+              if [ "$state" = "device" ]; then
+                echo "✅ adb device online before ${label} (${i}x2s)"
+                return 0
+              fi
+              echo "adb state=$state before ${label} — waiting…"
+              sleep 2
+            done
+            echo "::warning::adb stayed ${state} before ${label}; restarting adb server"
+            adb kill-server || true
+            adb start-server || true
+            adb wait-for-device
+            state=$(adb get-state 2>/dev/null || echo "offline")
+            if [ "$state" != "device" ]; then
+              echo "::error::adb did not recover before ${label} (state=${state})"
+              return 1
+            fi
+            echo "✅ adb recovered before ${label}"
+          }
+
+          api35_driver_exists() {
+            adb shell pm path dev.mobile.maestro >/dev/null 2>&1
+          }
+
+          apply_api35_app_mitigations() {
+            if [ "${MATRIX_API_LEVEL:-0}" != "35" ]; then return 0; fi
+            echo "🩹 Applying API 35 app mitigations"
+            adb shell cmd deviceidle whitelist "+$ANDROID_PACKAGE" || true
+            # Pin both processes to the `active` app-standby bucket. Deviceidle
+            # whitelist alone doesn't prevent Android 15 from demoting a
+            # freshly-installed app+companion to `rare`/`restricted` within
+            # seconds, which is the true root of the gRPC-deadline flake.
+            adb shell am set-standby-bucket "$ANDROID_PACKAGE" active || true
+            adb shell cmd appops set "$ANDROID_PACKAGE" RUN_IN_BACKGROUND allow || true
+            adb shell settings put global hidden_api_policy 1 || true
+            adb shell settings put secure long_press_timeout 1500 || true
+          }
+
+          apply_api35_driver_mitigations_if_present() {
+            if [ "${MATRIX_API_LEVEL:-0}" != "35" ]; then return 0; fi
+            if ! api35_driver_exists; then
+              echo "ℹ️ dev.mobile.maestro not installed yet; skipping driver package mitigations"
+              return 0
+            fi
+            echo "🩹 Applying API 35 Maestro-driver mitigations"
+            adb shell pm path dev.mobile.maestro || true
+            adb shell cmd deviceidle whitelist +dev.mobile.maestro || true
+            adb shell am set-standby-bucket dev.mobile.maestro active || true
+            adb shell cmd appops set dev.mobile.maestro RUN_IN_BACKGROUND allow || true
+          }
+
+          smoke_fill_login_credentials() {
+            # CI-only signed APKs expose a guarded native path that evaluates JS
+            # inside the trusted Capacitor WebView. This sets React controlled
+            # inputs through the native value setter and dispatches real
+            # bubbling input/change events, avoiding Android 15 `inputText` and
+            # clipboard-paste paths that can leave React state empty.
+            local email_b64 password_b64
+            email_b64=$(SMOKE_VALUE="$MAESTRO_EMAIL" python3 - <<'PY'
+          import base64, os
+          print(base64.b64encode(os.environ["SMOKE_VALUE"].encode()).decode())
+          PY
+          )
+            password_b64=$(SMOKE_VALUE="$MAESTRO_PASSWORD" python3 - <<'PY'
+          import base64, os
+          print(base64.b64encode(os.environ["SMOKE_VALUE"].encode()).decode())
+          PY
+          )
+            adb shell am start \
+              -n "$ANDROID_PACKAGE/.MainActivity" \
+              --ez safar_smoke_fill_login true \
+              --es safar_smoke_email_b64 "$email_b64" \
+              --es safar_smoke_password_b64 "$password_b64" \
+              >/dev/null 2>/dev/null
+          }
+
+          json_escape() {
+            python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().strip())[1:-1])'
+          }
+
+          extract_failure_signals() {
+            local search_dir="${1:-}"
+            FIRST_FAIL_ASSERTION=""
+            LAST_STDERR_LINE=""
+            FAILED_STEP_CONTEXT=""
+            if [ -n "$search_dir" ] && [ -d "$search_dir" ]; then
+              FIRST_FAIL_ASSERTION=$(grep -Rhm1 -oE 'Assertion is false: "[^"]{0,200}"|Assertion failed[^[:cntrl:]]{0,200}|Element not found[^[:cntrl:]]{0,200}' "$search_dir" 2>/dev/null | head -1 | head -c 240 || true)
+              LAST_STDERR_LINE=$(grep -RhE 'ERROR|Error:|Exception|DEADLINE_EXCEEDED|UNAVAILABLE|Android driver unreachable|Screenshot returned null|Assertion is false|Assertion failed|Element not found' "$search_dir" 2>/dev/null | tail -1 | head -c 240 || true)
+              FAILED_STEP_CONTEXT=$(grep -RhnE 'Assertion is false|Assertion failed|Element not found|visible:|tapOn:|extendedWaitUntil' "$search_dir" 2>/dev/null | tail -20 | head -c 1000 || true)
+            fi
+            if [ -z "$FAILED_STEP_CONTEXT" ] && [ -f signed-smoke.xml ]; then
+              FAILED_STEP_CONTEXT=$(tail -80 signed-smoke.xml | head -c 1000 || true)
+            fi
+          }
+
+          run_api35_split_smoke() {
+            local attempt_timeout="${1:-240s}"
+            local debug_base="${2:-maestro-debug/attempt-unknown}"
+            local exit_code=0
+            mkdir -p "$debug_base"
+
+            echo "API 35 path: avoiding Maestro inputText; using CI-only WebView JS fill to keep React state in sync"
+            timeout --preserve-status --kill-after=20s 240s \
+              maestro test \
+              --env APP_ID="$ANDROID_PACKAGE" \
+              --debug-output "$debug_base/api35-focus-email" \
+              --flatten-debug-output \
+              maestro/split-smoke/focus-email.yaml || return $?
+            apply_api35_driver_mitigations_if_present
+            smoke_fill_login_credentials
+            adb shell input keyevent 4 || true
+            sleep 1
+
+            timeout --preserve-status --kill-after=20s 90s \
+              maestro test \
+              --env APP_ID="$ANDROID_PACKAGE" \
+              --debug-output "$debug_base/api35-focus-password" \
+              --flatten-debug-output \
+              maestro/split-smoke/focus-password.yaml || return $?
+            apply_api35_driver_mitigations_if_present
+            smoke_fill_login_credentials
+            adb shell input keyevent 4 || true
+            sleep 1
+
+            timeout --preserve-status --kill-after=30s "$attempt_timeout" \
+              maestro test \
+              --env APP_ID="$ANDROID_PACKAGE" \
+              --env MAESTRO_EMAIL="$MAESTRO_EMAIL" \
+              --debug-output "$debug_base/api35-submit-and-nav" \
+              --flatten-debug-output \
+              --format junit \
+              --output signed-smoke.xml \
+              maestro/split-smoke/submit-and-nav.yaml || exit_code=$?
+            apply_api35_driver_mitigations_if_present
+            return $exit_code
+          }
+
+          echo "Installing signed APK: $APK ($(wc -c < "$APK") bytes)"
+          # Option 2: guard against `adb: device offline` before install/warmup.
+          # android-emulator-runner returns as soon as sys.boot_completed=1, but
+          # ADB can still be in offline state for a few seconds. Poll until we
+          # see `device` (not `offline`/`unauthorized`) — up to 60s.
+          for i in $(seq 1 30); do
+            STATE=$(adb get-state 2>/dev/null || echo "offline")
+            if [ "$STATE" = "device" ]; then echo "✅ adb device online (${i}x2s)"; break; fi
+            echo "adb state=$STATE — waiting…"; sleep 2
+          done
+          adb wait-for-device
+          adb install -r "$APK"
+          # --- Emulator warm-up (Step 3) ---
+          # Wake device, force-kill all animation scales (belt+suspenders on top
+          # of android-emulator-runner's disable-animations), and prime the
+          # WebView provider by launching+killing the app once. Removes cold
+          # WebView JIT flake that was racing API 35 selectors.
+          adb shell input keyevent 82 || true
+          adb shell settings put global window_animation_scale 0 || true
+          adb shell settings put global transition_animation_scale 0 || true
+          adb shell settings put global animator_duration_scale 0 || true
+          # --- API 35 (Android 15) mitigations ---
+          # App mitigations are safe immediately after APK install. Maestro
+          # driver mitigations are conditional because dev.mobile.maestro does
+          # not exist until the CLI installs its driver; unconditional package
+          # commands cause Android 15 `Unknown package` / `No UID` stack traces.
+          # No-ops on API 28/33.
+          apply_api35_app_mitigations
+          apply_api35_driver_mitigations_if_present
+          sleep 8
+          echo "::group::App launch sanity check"
+          adb logcat -c || true
+          adb shell monkey -p "$ANDROID_PACKAGE" -c android.intent.category.LAUNCHER 1 || true
+          sleep 8
+          if adb shell pidof "$ANDROID_PACKAGE" >/dev/null 2>&1; then
+            echo "✅ App launch sanity check passed"
+            LAUNCH_SANITY_OK=1
+          else
+            echo "::error::App launch sanity check failed — ${ANDROID_PACKAGE} has no running process after launcher intent"
+            mkdir -p maestro-debug
+            adb exec-out screencap -p > "maestro-debug/app-launch-sanity-failed.png" || true
+            adb shell dumpsys window windows > "maestro-debug/dumpsys-window-app-launch-sanity.txt" 2>&1 || true
+            LAUNCH_SANITY_OK=0
+          fi
+          echo "::endgroup::"
+          adb shell am force-stop "$ANDROID_PACKAGE" || true
+          sleep 2
+          echo "✅ Emulator warm-up complete"
+          SMOKE_EXIT=0
+          ATTEMPT1_EXIT=""
+          ATTEMPTS_USED=0
+          FAILURE_CLASS="unknown"
+          FIRST_FAIL_ASSERTION=""
+          LAST_STDERR_LINE=""
+          LAST_ATTEMPT_DEBUG_DIR=""
+          PHASE="smoke"
+          SMOKE_START_EPOCH=$(date +%s)
+          mkdir -p maestro-debug
+          # --- Primary smoke: login + core nav (blocking) ---
+          # Auto-retry once on flake. Attempt 1 gets 420s (covers slow API 28
+          # cold paint ~180s + full flow). Attempt 2 gets 240s — if the
+          # driver is genuinely dead, more time won't help; fail fast so the
+          # matrix doesn't burn 14 minutes on a known-bad channel (seen on
+          # API 35 v1.0.24-smoke: attempt 2 sat at 420s then SIGTERM).
+          if [ "$LAUNCH_SANITY_OK" -eq 0 ]; then
+            PHASE="app-launch"
+            FAILURE_CLASS="app-launch-failed"
+            SMOKE_EXIT=101
+            ATTEMPT1_EXIT=null
+          else
+            for attempt in 1 2; do
+              SMOKE_EXIT=0
+              ATTEMPTS_USED=$attempt
+              ATTEMPT_DEBUG_DIR="maestro-debug/attempt-${attempt}"
+              LAST_ATTEMPT_DEBUG_DIR="$ATTEMPT_DEBUG_DIR"
+              mkdir -p "$ATTEMPT_DEBUG_DIR"
+              if [ "$attempt" -eq 1 ]; then ATTEMPT_TIMEOUT=420s; else ATTEMPT_TIMEOUT=240s; fi
+              wait_for_adb_device "Maestro attempt ${attempt}"
+              apply_api35_app_mitigations
+              if [ "${MATRIX_API_LEVEL:-0}" = "35" ]; then
+                echo "Maestro driver before attempt ${attempt}: $(adb shell pm path dev.mobile.maestro 2>/dev/null || echo absent)"
+              fi
+              apply_api35_driver_mitigations_if_present
+              echo "::group::Maestro smoke attempt $attempt/2 (timeout=$ATTEMPT_TIMEOUT)"
+              if [ "${MATRIX_API_LEVEL:-0}" = "35" ]; then
+                run_api35_split_smoke "$ATTEMPT_TIMEOUT" "$ATTEMPT_DEBUG_DIR" || SMOKE_EXIT=$?
+              else
+                # API 33 google_apis can return a null Bitmap for Maestro's
+                # driver-side screenshot API (`FB is protected`). `--debug-output`
+                # captures screenshots after commands, so it can kill an otherwise
+                # healthy flow even when WebView devtools hierarchy is working.
+                # Keep assertion/JUnit output; use workflow-level `adb screencap`
+                # on failure for evidence instead of Maestro screenshots.
+                timeout --preserve-status --kill-after=30s "$ATTEMPT_TIMEOUT" \
+                  maestro test \
+                  --env MAESTRO_EMAIL="$MAESTRO_EMAIL" \
+                  --env MAESTRO_PASSWORD="$MAESTRO_PASSWORD" \
+                  --format junit \
+                  --output signed-smoke.xml \
+                  maestro/smoke.yaml || SMOKE_EXIT=$?
+              fi
+              echo "::endgroup::"
+              if [ "${MATRIX_API_LEVEL:-0}" = "35" ]; then
+                echo "Maestro driver after attempt ${attempt}: $(adb shell pm path dev.mobile.maestro 2>/dev/null || echo absent)"
+              fi
+              if [ "$SMOKE_EXIT" -eq 124 ] || [ "$SMOKE_EXIT" -eq 137 ] || [ "$SMOKE_EXIT" -eq 143 ]; then
+                echo "::warning::Maestro attempt $attempt hit driver timeout/termination (exit $SMOKE_EXIT, timeout=$ATTEMPT_TIMEOUT) — treating as driver flake"
+              fi
+              if [ "$attempt" -eq 1 ]; then ATTEMPT1_EXIT=$SMOKE_EXIT; fi
+              if [ "$SMOKE_EXIT" -eq 0 ]; then break; fi
+              mkdir -p maestro-debug
+              adb exec-out screencap -p > "maestro-debug/failure-attempt-${attempt}.png" || true
+              adb shell dumpsys window windows > "maestro-debug/dumpsys-window-attempt-${attempt}.txt" 2>&1 || true
+              adb shell dumpsys activity activities > "maestro-debug/dumpsys-activity-attempt-${attempt}.txt" 2>&1 || true
+              if api35_driver_exists; then
+                adb shell dumpsys package dev.mobile.maestro > "maestro-debug/dumpsys-maestro-driver-attempt-${attempt}.txt" 2>&1 || true
+              else
+                echo "dev.mobile.maestro absent after attempt ${attempt}" > "maestro-debug/dumpsys-maestro-driver-attempt-${attempt}.txt"
+              fi
+              if [ "$attempt" -eq 1 ]; then
+                echo "::warning::Smoke attempt 1 failed (exit $SMOKE_EXIT) — resetting driver/app state before retry"
+                if [ "${MATRIX_API_LEVEL:-0}" = "35" ]; then
+                  echo "Preserving API 35 Maestro driver package for retry so mitigations can be applied before the next flow"
+                  adb shell am force-stop dev.mobile.maestro || true
+                  adb shell pm clear dev.mobile.maestro || true
+                  apply_api35_driver_mitigations_if_present
+                else
+                  adb shell am force-stop dev.mobile.maestro || true
+                  adb shell pm clear dev.mobile.maestro || true
+                  adb uninstall dev.mobile.maestro || true
+                fi
+                adb shell am force-stop "$ANDROID_PACKAGE" || true
+                adb logcat -c || true
+                # Re-apply only app-safe API 35 mitigations. The Maestro driver
+                # is preserved on API 35 so package-specific mitigations can run
+                # before attempt 2 instead of returning to the known-bad `absent` state.
+                wait_for_adb_device "retry reset"
+                apply_api35_app_mitigations
+                sleep 5
+              fi
+            done
+            case "$SMOKE_EXIT" in
+              0) FAILURE_CLASS="pass" ;;
+              124|137|143) FAILURE_CLASS="driver-timeout-terminated" ;;
+              *) FAILURE_CLASS="app-smoke-failed" ;;
+            esac
+            if [ "$SMOKE_EXIT" -ne 0 ]; then
+              # Dump logcat before classification. The driver-screenshot-null
+              # signature lives only in logcat; classifying before this dump
+              # mislabels the exact SurfaceFlinger NPE as generic
+              # `android-driver-unreachable`.
+              adb logcat -d > logcat.txt || true
+              extract_failure_signals "$LAST_ATTEMPT_DEBUG_DIR"
+              if [ -n "$FIRST_FAIL_ASSERTION" ]; then
+                FAILURE_CLASS="app-assertion-failed"
+                if grep -q 'visible: ${MAESTRO_EMAIL}' maestro/smoke.yaml 2>/dev/null; then
+                  FAILURE_CLASS="profile-email-assertion"
+                fi
+              elif grep -qE "FB is protected: PERMISSION_DENIED|Service\.screenshot\(MaestroDriverService" logcat.txt 2>/dev/null; then
+                # Distinct from generic driver-unreachable: SurfaceFlinger
+                # refused UiAutomation screenshot → Bitmap NPE → gRPC dies.
+                # Fix is emulator-options `-writable-system -selinux permissive`
+                # + `androidWebViewHierarchy: devtools` in smoke.yaml. If this
+                # class fires again, one of those regressed.
+                FAILURE_CLASS="driver-screenshot-null"
+              elif [ "$FAILURE_CLASS" != "driver-timeout-terminated" ] && grep -RqiE "Android driver unreachable|DEADLINE_EXCEEDED|UNAVAILABLE|Screenshot returned null" "$LAST_ATTEMPT_DEBUG_DIR" 2>/dev/null; then
+                FAILURE_CLASS="android-driver-unreachable"
+              fi
+            fi
+          fi
+          SMOKE_DURATION=$(( $(date +%s) - SMOKE_START_EPOCH ))
+          # Per-leg flake signal for trend analysis — a leg that consistently
+          # needs attempt 2 to pass is flaky even when the tag stays green.
+          # (attempts_used is also emitted in the JSON telemetry below.)
+          if [ "$ATTEMPTS_USED" -gt 1 ] && [ "$SMOKE_EXIT" -eq 0 ]; then
+            echo "::warning::flake_attempt=2 API${MATRIX_API_LEVEL:-?} — passed on retry"
+            echo "- ⚠️ API ${MATRIX_API_LEVEL:-?} flaked: passed on attempt ${ATTEMPTS_USED}/2" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "flake_attempt=${ATTEMPTS_USED} API${MATRIX_API_LEVEL:-?} exit=${SMOKE_EXIT}"
+          fi
+          # Secondary flows (pdf-back, back-button-cold-start) moved to a
+          # dedicated `secondary-flows` job — they no longer share the primary
+          # emulator or noise the critical-path log.
+          if [ "$SMOKE_EXIT" -ne 0 ]; then
+            echo "::group::Maestro debug artifacts"
+            find maestro-debug -maxdepth 2 -type f -print || true
+            for f in maestro-debug/*.log maestro-debug/*.json; do
+              [ -f "$f" ] || continue
+              echo "--- $f (tail) ---"
+              tail -n 120 "$f" || true
+            done
+            echo "::endgroup::"
+          fi
+          adb logcat -d > logcat.txt || true
+          # --- Perf gate: cold-boot time regression detector ---
+          # Cold-start metric: ActivityTaskManager's "Displayed <pkg>/.MainActivity: +XXms"
+          # is the canonical Android cold-start line. Previous parser looked for
+          # "Boot completed in X ms" which only appears in the emulator provider's
+          # stdout (not logcat), so BOOT_MS was silently always 0 and the perf
+          # gate never fired. Handles "+1s234ms", "+45s", and "+678ms" formats.
+          DISPLAYED_RAW=$(python3 - "$ANDROID_PACKAGE" logcat.txt <<'PY'
+          import re
+          import sys
+
+          pkg, path = sys.argv[1], sys.argv[2]
+          raw = ""
+          patterns = [
+              re.compile(rf"Displayed\s+{re.escape(pkg)}/[^:]+:\s+\+([0-9hms]+)"),
+              re.compile(rf"Displayed\s+{re.escape(pkg)}[^:]*:\s+\+([0-9hms]+)"),
+              re.compile(rf"Displayed.*{re.escape(pkg)}.*\+([0-9hms]+)"),
+          ]
+          try:
+              with open(path, "r", errors="ignore") as fh:
+                  for line in fh:
+                      for pattern in patterns:
+                          match = pattern.search(line)
+                          if match:
+                              raw = match.group(1)
+          except FileNotFoundError:
+              pass
+          print(raw)
+          PY
+          )
+          BOOT_MS=$(python3 - "$DISPLAYED_RAW" <<'PY'
+          import re
+          import sys
+
+          raw = sys.argv[1]
+          hours = int(re.search(r"(\d+)h", raw).group(1)) if re.search(r"(\d+)h", raw) else 0
+          minutes = int(re.search(r"(\d+)m(?!s)", raw).group(1)) if re.search(r"(\d+)m(?!s)", raw) else 0
+          seconds = int(re.search(r"(\d+)s", raw).group(1)) if re.search(r"(\d+)s", raw) else 0
+          millis = int(re.search(r"(\d+)ms", raw).group(1)) if re.search(r"(\d+)ms", raw) else 0
+          print((((hours * 60) + minutes) * 60 + seconds) * 1000 + millis)
+          PY
+          )
+          echo "Cold boot: ${BOOT_MS} ms (raw: ${DISPLAYED_RAW:-not-found})"
+          # P1 — Hard regression gate. Signed APK cold-boot has been ~50s on
+          # API 33 / x86_64. 120s is a conservative ceiling that still catches
+          # real regressions (WebView init hang, splash-hider stall, JS parse
+          # blowup) without flaking on the slower API 28 image.
+          if [ -n "$BOOT_MS" ] && [ "$BOOT_MS" -gt 0 ]; then
+            if [ "$BOOT_MS" -gt 120000 ]; then
+              echo "::error::Cold boot ${BOOT_MS}ms exceeds 120s hard budget — perf regression"
+              exit 1
+            elif [ "$BOOT_MS" -gt 75000 ]; then
+              echo "::warning::Cold boot ${BOOT_MS}ms exceeds 75s soft budget"
+            fi
+          fi
+          # --- Crash pre-filter for fast triage ---
+          # Tight signals only: real dalvik/native crashes and ANRs scoped to
+          # OUR package. Previous filter matched benign `AndroidRuntime: START
+          # ZygoteInit` boot lines and Pixel-launcher ANRs, generating
+          # false-positive "Crash/ANR signals detected" warnings on every run.
+          # Extra exclude: `uiautomator|UiAutomationService|DumpCommand` — if
+          # any future debug step re-introduces uiautomator dump, its
+          # "already registered" fatal must NOT taint app-crash counts.
+          grep -E "ANR in ${ANDROID_PACKAGE}|E AndroidRuntime.*${ANDROID_PACKAGE}|Process: ${ANDROID_PACKAGE}|>>> ${ANDROID_PACKAGE} <<<" logcat.txt \
+            | grep -v -E "uiautomator|UiAutomationService|DumpCommand|already registered" \
+            > logcat-crashes.txt || true
+          if [ -s logcat-crashes.txt ]; then
+            echo "::warning::Real crash/ANR signals detected for ${ANDROID_PACKAGE} — see logcat-crashes.txt artifact"
+            head -50 logcat-crashes.txt
+          fi
+          # --- Flake telemetry (JSON) ---
+          # Machine-readable per-run summary so trend analysis (attempts,
+          # boot_ms, retry rate per API level) doesn't require log scraping.
+          CRASH_LINES=$(wc -l < logcat-crashes.txt 2>/dev/null | tr -d ' ' || echo 0)
+          FIRST_FAIL_ASSERTION_JSON=$(printf '%s' "$FIRST_FAIL_ASSERTION" | json_escape)
+          LAST_STDERR_LINE_JSON=$(printf '%s' "$LAST_STDERR_LINE" | json_escape)
+          FAILED_STEP_CONTEXT_JSON=$(printf '%s' "$FAILED_STEP_CONTEXT" | json_escape)
+          cat > flake-telemetry.json <<TELEMETRY_EOF
+          {
+            "api_level": "${{ matrix.api-level }}",
+            "maestro_version": "${{ matrix.maestro-version }}",
+            "package": "${ANDROID_PACKAGE}",
+            "phase": "${PHASE}",
+            "failure_class": "${FAILURE_CLASS}",
+            "smoke_exit": ${SMOKE_EXIT},
+            "attempt1_exit": ${ATTEMPT1_EXIT:-null},
+            "attempts_used": ${ATTEMPTS_USED},
+            "retried": $([ "${ATTEMPTS_USED}" -gt 1 ] && echo true || echo false),
+            "boot_ms": ${BOOT_MS},
+            "boot_raw": "${DISPLAYED_RAW:-}",
+            "smoke_duration_s": ${SMOKE_DURATION},
+            "crash_lines": ${CRASH_LINES},
+            "first_fail_assertion": "${FIRST_FAIL_ASSERTION_JSON}",
+            "last_stderr_line": "${LAST_STDERR_LINE_JSON}",
+            "failed_step_context": "${FAILED_STEP_CONTEXT_JSON}",
+            "run_id": "${{ github.run_id }}",
+            "run_attempt": "${{ github.run_attempt }}",
+            "ref": "${{ github.ref }}"
+          }
+          TELEMETRY_EOF
+          echo "::group::Flake telemetry"
+          cat flake-telemetry.json
+          echo "::endgroup::"
+
+          exit $SMOKE_EXIT
+
+          SMOKE_EOF
+          chmod +x /tmp/smoke.sh
+          echo "✅ smoke script staged ($(wc -l < /tmp/smoke.sh) lines)"
+
+      - name: 🤖 Boot emulator + install SIGNED APK + smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          MAESTRO_EMAIL: ${{ secrets.MAESTRO_EMAIL }}
+          MAESTRO_PASSWORD: ${{ secrets.MAESTRO_PASSWORD }}
+          ANDROID_PACKAGE: ${{ env.ANDROID_PACKAGE }}
+          MATRIX_API_LEVEL: ${{ matrix.api-level }}
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          # Option 2 fix: fresh AVD + no snapshot save/load.
+          # Root cause of `adb: device offline` at teardown: snapshot save
+          # racing an emulator whose ADB channel was mid-close. Disabling
+          # snapshot save+load makes each run a clean cold boot and lets
+          # the emulator terminate cleanly without the shutdown-time
+          # "device offline" exit-1 that was tainting API 28.
+          force-avd-creation: true
+          disable-animations: true
+          emulator-boot-timeout: 600
+          # `-writable-system -selinux permissive`: allow `adb root` and let
+          # UiAutomation read SurfaceFlinger's framebuffer. Without this, API 33
+          # google_apis returns null from Bitmap screenshot ("FB is protected:
+          # PERMISSION_DENIED") the moment Maestro falls back to OCR — which
+          # took down v1.0.29 (see docs/observer/2026-07-16-signed-smoke-driver-unreachable.md).
+          # Combined with `androidWebViewHierarchy: devtools` in smoke.yaml the
+          # screenshot path is a rarely-hit safety net, not the hot path.
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save -no-snapshot-load -camera-back none -camera-front none -writable-system -selinux permissive
+          script: bash /tmp/smoke.sh
+
+      - name: 📤 Upload logcat (always)
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: signed-smoke-logcat-api${{ matrix.api-level }}-maestro${{ matrix.maestro-version }}
+          path: |
+            logcat.txt
+            logcat-crashes.txt
+            flake-telemetry.json
+          retention-days: 7
+          if-no-files-found: ignore
+
+
+      - name: 🧹 Cleanup keystore
+        if: always()
+        run: rm -f android/app/release.keystore
+
+      - name: 📤 Upload smoke report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: signed-apk-smoke-report-api${{ matrix.api-level }}-maestro${{ matrix.maestro-version }}
+          path: |
+            signed-smoke.xml
+            maestro-debug/**/*
+            android/app/build/outputs/apk/release/*.apk
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: 📤 Upload gradle build reports (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: gradle-build-reports-signed-api${{ matrix.api-level }}-maestro${{ matrix.maestro-version }}
+          path: |
+            android/**/build/reports/**/*
+            android/**/build/outputs/logs/**/*
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Telemetry rollup — download per-API flake-telemetry.json and print a
+  # markdown table to $GITHUB_STEP_SUMMARY. Non-blocking, always runs.
+  # First tag = 3 rows baseline; later tags feed trend analysis without
+  # manual artifact downloads.
+  # ─────────────────────────────────────────────────────────────────────
+  telemetry-rollup:
+    name: Flake telemetry rollup
+    needs: smoke-signed-apk
+    if: always() && needs.smoke-signed-apk.result != 'cancelled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      - name: 📥 Download telemetry artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: signed-smoke-logcat-api*
+          path: telemetry
+          merge-multiple: false
+
+      - name: 📊 Render rollup + advisory-leg warnings
+        # Advisory reporter: API 28/35 are `continue-on-error: true`, so a
+        # failure there shows the parent workflow as ✅ green. Reviewers miss
+        # 2/3 red legs. This step re-scans telemetry, prints a status column,
+        # and emits `::warning::` for every advisory leg that failed — visible
+        # in the Actions annotations bar without blocking the tag/promote.
+        run: |
+          set -e
+          {
+            echo "## 📊 Signed smoke telemetry (run ${{ github.run_id }})"
+            echo ""
+            echo "| API | Maestro | Status | Gate | Phase | Failure | Exit | Attempt1 | Attempts | Boot (ms) | Duration (s) | Crash lines | First assertion | Last stderr |"
+            echo "|-----|---------|--------|------|-------|---------|------|----------|----------|-----------|--------------|-------------|-----------------|-------------|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          shopt -s nullglob
+          FOUND=0
+          ADVISORY_FAILS=0
+          HARD_FAILS=0
+          for f in telemetry/*/flake-telemetry.json; do
+            FOUND=1
+            API=$(jq -r '.api_level' "$f")
+            MV=$(jq -r '.maestro_version // "unknown"' "$f")
+            PH=$(jq -r '.phase // "unknown"' "$f")
+            FC=$(jq -r '.failure_class // "unknown"' "$f")
+            EXIT=$(jq -r '.smoke_exit' "$f")
+            A1=$(jq -r '.attempt1_exit // "n/a"' "$f")
+            AT=$(jq -r '.attempts_used' "$f")
+            BM=$(jq -r '.boot_ms' "$f")
+            DUR=$(jq -r '.smoke_duration_s' "$f")
+            CL=$(jq -r '.crash_lines' "$f")
+            ASSERT=$(jq -r '(.first_fail_assertion // "") | gsub("\\|"; "\\\\|") | if length > 80 then .[0:77] + "..." else . end' "$f")
+            STDERR=$(jq -r '(.last_stderr_line // "") | gsub("\\|"; "\\\\|") | if length > 80 then .[0:77] + "..." else . end' "$f")
+            # Gate classification must match `continue-on-error` in smoke-signed-apk:
+            # only API 33 + Maestro 1.39.0 hard-gates; API 28 and all API 35 A/B legs are advisory.
+            if [ "$API" = "33" ] && [ "$MV" = "1.39.0" ]; then GATE="hard"; else GATE="advisory"; fi
+            if [ "$EXIT" = "0" ]; then
+              STATUS="✅ pass"
+            else
+              if [ "$GATE" = "advisory" ]; then
+                STATUS="⚠️ fail (advisory)"
+                ADVISORY_FAILS=$((ADVISORY_FAILS + 1))
+                echo "::warning::API $API / Maestro $MV smoke failed in phase $PH ($FC, exit $EXIT). assertion='${ASSERT:-n/a}' stderr='${STDERR:-n/a}' — advisory leg, tag not blocked."
+              else
+                STATUS="❌ fail (hard)"
+                HARD_FAILS=$((HARD_FAILS + 1))
+              fi
+            fi
+            echo "| $API | $MV | $STATUS | $GATE | $PH | $FC | $EXIT | $A1 | $AT | $BM | $DUR | $CL | ${ASSERT:-—} | ${STDERR:-—} |" >> "$GITHUB_STEP_SUMMARY"
+          done
+          if [ "$FOUND" -eq 0 ]; then
+            echo "_No telemetry JSONs found — smoke step likely failed before emit._" >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::Telemetry rollup found no flake-telemetry.json artifacts."
+          fi
+          {
+            echo ""
+            echo "**Advisory failures:** $ADVISORY_FAILS &nbsp;·&nbsp; **Hard failures:** $HARD_FAILS"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 📦 Emit advisory-history.json (durable flake trend)
+        # Per-run compact JSON, uploaded as an artifact. Aggregating across
+        # runs (via a nightly job or manual `gh run download`) gives a
+        # queryable flake-rate trend without log scraping. Retained 90 days.
+        if: always()
+        run: |
+          set -e
+          mkdir -p advisory-history
+          OUT="advisory-history/run-${{ github.run_id }}-attempt-${{ github.run_attempt }}.json"
+          LEGS="[]"
+          if compgen -G "telemetry/*/flake-telemetry.json" > /dev/null; then
+            LEGS=$(jq -s '[.[] | {api_level, maestro_version, phase, failure_class, smoke_exit, attempts_used, attempt1_exit, boot_ms, smoke_duration_s, crash_lines, first_fail_assertion, last_stderr_line}]' telemetry/*/flake-telemetry.json)
+          fi
+          jq -n \
+            --arg run_id "${{ github.run_id }}" \
+            --arg run_attempt "${{ github.run_attempt }}" \
+            --arg sha "${{ github.sha }}" \
+            --arg ref "${{ github.ref }}" \
+            --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --argjson legs "$LEGS" \
+            '{run_id: $run_id, run_attempt: $run_attempt, sha: $sha, ref: $ref, timestamp_utc: $ts, legs: $legs}' \
+            > "$OUT"
+          echo "wrote $OUT"
+
+      - name: 📤 Upload advisory-history artifact
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: advisory-history-${{ github.run_id }}-${{ github.run_attempt }}
+          path: advisory-history/
+          retention-days: 90
+
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Step 4 — Secondary (non-blocking) Maestro flows on a fresh emulator.
+  # Split out of the primary smoke matrix so pdf-back / back-button-cold-start
+  # noise never gates a tag and never leaves the primary emulator in a dirty
+  # state before the retry loop. Runs on API 33 only (baseline); soft-fails.
+  # ─────────────────────────────────────────────────────────────────────
+  secondary-flows:
+    name: Secondary flows (pdf-back, back-button) — non-blocking
+    needs: smoke-signed-apk
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_secondary_flows && needs.smoke-signed-apk.result != 'cancelled' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.2.18'
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: 🏷️ Derive ANDROID_PACKAGE from build.gradle
+        run: |
+          PKG=$(grep -oE 'applicationId[[:space:]]+"[^"]+"' android/app/build.gradle | head -1 | sed -E 's/applicationId[[:space:]]+"([^"]+)"/\1/')
+          if [ -z "$PKG" ]; then
+            echo "::error::Could not derive applicationId from android/app/build.gradle"; exit 1
+          fi
+          echo "ANDROID_PACKAGE=$PKG" >> "$GITHUB_ENV"
+
+
+      - name: 📦 Install deps
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: 🏗️ Build web assets
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+        run: bun run build
+
+      - name: 🔁 Cap sync
+        run: bunx cap sync android
+
+      - name: 🔐 Decode signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::KEYSTORE_BASE64 secret missing"; exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+
+      - name: 🏗️ Build signed release APK
+        working-directory: android
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          ANDROID_ABI_FILTERS: "arm64-v8a,armeabi-v7a,x86_64"
+        run: |
+          ./gradlew assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file="$(pwd)/app/release.keystore" \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+
+      - name: 📥 Install Maestro (pinned)
+        env:
+          MAESTRO_VERSION: "1.39.0"
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | MAESTRO_VERSION="$MAESTRO_VERSION" bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+          "$HOME/.maestro/bin/maestro" --version
+
+      - name: 🖥️ Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: 📝 Stage secondary flows script
+        env:
+          MAESTRO_EMAIL: ${{ secrets.MAESTRO_EMAIL }}
+          MAESTRO_PASSWORD: ${{ secrets.MAESTRO_PASSWORD }}
+        run: |
+          cat > /tmp/secondary.sh <<'SEC_EOF'
+          #!/usr/bin/env bash
+          set -e
+          export MAESTRO_CLI_NO_ANALYTICS=1
+          APK=$(find android/app/build/outputs/apk/release -name "*.apk" | head -1)
+          adb install -r "$APK"
+          adb shell settings put global window_animation_scale 0 || true
+          adb shell settings put global transition_animation_scale 0 || true
+          adb shell settings put global animator_duration_scale 0 || true
+          sleep 5
+          mkdir -p maestro-debug-secondary
+          maestro test \
+            --env MAESTRO_EMAIL="$MAESTRO_EMAIL" \
+            --env MAESTRO_PASSWORD="$MAESTRO_PASSWORD" \
+            --debug-output maestro-debug-secondary \
+            --flatten-debug-output \
+            maestro/pdf-back.yaml || echo "::warning::pdf-back flow failed (non-blocking)"
+          maestro test \
+            --debug-output maestro-debug-secondary \
+            --flatten-debug-output \
+            maestro/back-button-cold-start.yaml || echo "::warning::back-button-cold-start flow failed (non-blocking)"
+          adb logcat -d > logcat-secondary.txt || true
+          exit 0
+          SEC_EOF
+          chmod +x /tmp/secondary.sh
+
+      - name: 🤖 Boot emulator + run secondary flows
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          MAESTRO_EMAIL: ${{ secrets.MAESTRO_EMAIL }}
+          MAESTRO_PASSWORD: ${{ secrets.MAESTRO_PASSWORD }}
+        with:
+          api-level: 33
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          force-avd-creation: true
+          disable-animations: true
+          emulator-boot-timeout: 600
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save -no-snapshot-load -camera-back none -camera-front none
+          script: bash /tmp/secondary.sh
+
+      - name: 🧹 Cleanup keystore
+        if: always()
+        run: rm -f android/app/release.keystore
+
+      - name: 📤 Upload secondary flows report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: signed-secondary-flows-report
+          path: |
+            maestro-debug-secondary/**/*
+            logcat-secondary.txt
+          retention-days: 14
+          if-no-files-found: ignore
+
+
+
+  # ─────────────────────────────────────────────────────────────────────
+  # P2 — Auto-promote signed AAB to Google Play internal testing track.
+  # Runs only when the entire matrix (API 28/33/35) passed green, and only
+  # for real tag pushes (not workflow_dispatch smoke runs). Soft-skips when
+  # PLAY_SERVICE_ACCOUNT_JSON is not configured so first-time contributors
+  # aren't blocked.
+  # ─────────────────────────────────────────────────────────────────────
+  promote-to-play:
+    name: Promote AAB → Play internal (draft)
+    needs: smoke-signed-apk
+    if: |
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.promote_dry_run == true)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: 🔍 Check Play service-account secret
+        id: gate
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -z "${PLAY_SERVICE_ACCOUNT_JSON:-}" ]; then
+            echo "::warning::PLAY_SERVICE_ACCOUNT_JSON not set — skipping Play upload. Add the secret in repo settings to enable auto-promote."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v5
+        if: steps.gate.outputs.skip != 'true'
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v5
+        if: steps.gate.outputs.skip != 'true'
+        with:
+          node-version: '24'
+
+      - uses: oven-sh/setup-bun@v2
+        if: steps.gate.outputs.skip != 'true'
+        with:
+          bun-version: '1.2.18'
+
+      - uses: actions/setup-java@v5
+        if: steps.gate.outputs.skip != 'true'
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: 🏷️ Derive ANDROID_PACKAGE from build.gradle
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          PKG=$(grep -oE 'applicationId[[:space:]]+"[^"]+"' android/app/build.gradle | head -1 | sed -E 's/applicationId[[:space:]]+"([^"]+)"/\1/')
+          if [ -z "$PKG" ]; then
+            echo "::error::Could not derive applicationId from android/app/build.gradle"; exit 1
+          fi
+          echo "ANDROID_PACKAGE=$PKG" >> "$GITHUB_ENV"
+
+      - name: 📦 Install deps
+        if: steps.gate.outputs.skip != 'true'
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: 🏗️ Build web assets
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+        run: bun run build
+
+      - name: 🔁 Cap sync
+        if: steps.gate.outputs.skip != 'true'
+        run: bunx cap sync android
+
+      - name: 🔐 Decode signing keystore
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::KEYSTORE_BASE64 secret missing"; exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+
+      - name: 🏗️ Build signed release AAB
+        if: steps.gate.outputs.skip != 'true'
+        working-directory: android
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          # Play upload AAB uses production ABIs only (arm64-v8a, armeabi-v7a).
+          # Do NOT widen with x86_64 here — that was only for the emulator smoke.
+        run: |
+          ./gradlew bundleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file="$(pwd)/app/release.keystore" \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+          AAB=$(find app/build/outputs/bundle/release -name "*.aab" | head -1)
+          echo "AAB: $AAB ($(wc -c < "$AAB") bytes)"
+
+      - name: 🚀 Upload AAB to Play internal (draft)
+        if: steps.gate.outputs.skip != 'true'
+        # Pinned to v1.1.2 SHA to prevent supply-chain risk from mutable tags.
+        uses: r0adkll/upload-google-play@935ef9c68bb393a8e6116b1575626a7f5be3a7fb
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: ${{ env.ANDROID_PACKAGE }}
+          releaseFiles: android/app/build/outputs/bundle/release/*.aab
+          track: internal
+          status: draft
+          # Draft = does NOT auto-notify testers. Reviewer must click
+          # "Review release" → "Start rollout" in Play Console. This keeps a
+          # human in the loop; flip to `status: completed` only when the team
+          # trusts the pipeline end-to-end.
+          whatsNewDirectory: distribution/whatsnew
+          mappingFile: android/app/build/outputs/mapping/release/mapping.txt
+
+      - name: 📤 Upload AAB artifact (always)
+        if: steps.gate.outputs.skip != 'true' && always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: signed-aab-${{ github.ref_name }}
+          path: android/app/build/outputs/bundle/release/*.aab
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: 🧹 Cleanup keystore
+        if: always()
+        run: rm -f android/app/release.keystore

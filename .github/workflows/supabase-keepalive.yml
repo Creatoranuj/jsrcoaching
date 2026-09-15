@@ -1,0 +1,67 @@
+name: Supabase Keepalive
+
+# Prevents free-tier 7-day inactivity auto-pause by hitting the project
+# with a harmless, RLS-independent read-only health check every 5 days.
+
+on:
+  schedule:
+    - cron: '0 3 */5 * *'   # every 5 days at 03:00 UTC (max gap ~5 days, well inside 7-day window)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write   # needed only to open an alert issue if the ping fails
+
+jobs:
+  ping:
+    name: Ping Supabase (read-only health check)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read-only keepalive query
+        id: ping
+        run: |
+          BASE="${{ secrets.SUPABASE_URL || secrets.VITE_SUPABASE_URL }}"
+          ANON_KEY="${{ secrets.SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}"
+          if [ -z "$BASE" ] || [ -z "$ANON_KEY" ]; then
+            echo "::error::Missing SUPABASE_URL/VITE_SUPABASE_URL or SUPABASE_ANON_KEY/VITE_SUPABASE_ANON_KEY/VITE_SUPABASE_PUBLISHABLE_KEY repo secret"
+            exit 1
+          fi
+          # PostgREST root: returns 200 with the OpenAPI spec for any valid
+          # anon key, regardless of RLS. /auth/v1/health was previously used
+          # but returns non-2xx on managed Supabase for unauthenticated
+          # callers, causing a false-positive alert issue every 5 days.
+          URL="${BASE%/}/rest/v1/"
+          echo "Pinging Supabase PostgREST root (read-only)..."
+          STATUS=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
+            -H "apikey: $ANON_KEY" \
+            -H "Authorization: Bearer $ANON_KEY" \
+            -H "Accept: application/openapi+json" \
+            "$URL")
+          echo "HTTP status: $STATUS"
+          head -c 200 /tmp/resp.json || true
+          echo ""
+          # Any HTTP answer below 500 proves the project is awake and serving.
+          # Publishable/anon keys get 401 on the PostgREST root (service_role
+          # only), which is still a live response - the old strict 2xx check
+          # turned that into a false alert every 5 days. A paused or down
+          # project yields 000 (no connection) or a 5xx gateway error.
+          if [ -z "$STATUS" ] || [ "$STATUS" = "000" ] || [ "$STATUS" -ge 500 ]; then
+            echo "::error::Supabase keepalive failed with status $STATUS"
+            exit 1
+          fi
+          echo "Keepalive OK (status $STATUS)."
+
+      - name: Open alert issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `⚠️ Supabase keepalive failed (run ${context.runId})`,
+              body: `The scheduled Supabase keepalive ping failed.\n\n` +
+                    `Check the [workflow run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}).\n\n` +
+                    `If the project is paused, restore it from the Supabase dashboard.`,
+              labels: ['supabase', 'keepalive'],
+            });

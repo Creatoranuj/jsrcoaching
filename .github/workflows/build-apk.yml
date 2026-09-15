@@ -1,0 +1,1166 @@
+name: JSR COACHING
+
+on:
+  push:
+    tags:
+      - 'v*'
+    # NOTE: no `paths-ignore` here on purpose — path filters are INERT on tag
+    # events (GitHub always runs a tag-triggered workflow regardless of which
+    # files the tagged commit touches). If branch triggers are ever re-added,
+    # add `paths-ignore` under that `branches:` trigger instead. Also note
+    # path filters use minimatch, NOT extglob — `!(build-apk.yml)` is silently
+    # ignored; list other workflow files explicitly.
+  workflow_dispatch:
+    inputs:
+      debug_webview:
+        description: 'Enable Chrome WebView inspection for QA crash debugging'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+env:
+  # Keep Gradle from spawning a long-lived daemon in CI (the daemon is
+  # warm-start optimization that hurts cold CI runs). --no-daemon below
+  # is enforced per-invocation; this var is the belt-and-braces.
+  # Removed -Dkotlin.incremental=false — it was counter-productive with the
+  # Gradle build-cache enabled (cost ~20-30s per run). Daemon stays off for
+  # cold CI runners.
+  GRADLE_OPTS: "-Xmx4g -Dorg.gradle.workers.max=4 -Dorg.gradle.daemon=false"
+  # Opt-in to Node.js 24 for JS actions ahead of the June 16, 2026 forced
+  # cutover. Silences the "Node.js 20 actions are deprecated" warning that
+  # GitHub now prints at the end of every run.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  # Single source of truth for JDK across every Android workflow.
+  # Capacitor 6+ plugins target Java 21 — see android/app/capacitor.build.gradle.
+  JAVA_VERSION: '21'
+
+
+permissions:
+  contents: write
+  # Needed by the "Auto-delete old artifacts" step. Without this the
+  # cleanup step hits `gh: Resource not accessible by integration (HTTP 403)`
+  # and the failure shows up as a job annotation even though the step is
+  # wrapped in continue-on-error.
+  actions: write
+
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build APK and Create Release
+    runs-on: ubuntu-latest
+    # Cold Gradle + web build averages ~18min. 40min = ~2x safety before a
+    # hung Gradle process starts eating GitHub Actions minutes.
+    timeout-minutes: 40
+
+
+    steps:
+      - name: 🧹 Auto-delete old artifacts (free storage quota)
+        # Runs FIRST so even if the build fails later, quota is already
+        # reclaimed. Keeps artifacts from the 3 most recent runs AND every
+        # tag-run artifact (AAB / size-history) so we can roll back to any
+        # released version without re-building. Prevents the "Artifact
+        # storage quota has been hit" upload failure from ever recurring.
+        continue-on-error: true
+        run: |
+          # `workflow_run.event == "push"` + ref starting with `refs/tags/` =
+          # a release build; keep those artifacts indefinitely. Everything
+          # else is subject to the "keep 3 most recent" window.
+          gh api "repos/${{ github.repository }}/actions/artifacts?per_page=100" --paginate \
+            --jq '[.artifacts[] | select((.workflow_run.head_branch // "") | startswith("v") | not)] | sort_by(.created_at) | reverse | .[3:] | .[].id' \
+            | while read id; do
+                [ -n "$id" ] && gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id" || true
+              done
+          echo "✅ Old artifacts cleaned up (tag-run artifacts preserved)"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: ⬇️ Checkout repository
+        uses: actions/checkout@v7
+        with:
+          # Shallow clone — full history isn't needed for the build. Saves
+          # 10–30s on cold runs vs fetch-depth: 0.
+          fetch-depth: 1
+          submodules: false
+          clean: true
+
+      - name: 🧹 Clear stale submodule references
+        run: |
+          git submodule deinit --all --force 2>/dev/null || true
+          git config --remove-section submodule 2>/dev/null || true
+          if [ -f .gitmodules ]; then
+            git config -f .gitmodules --remove-section submodule 2>/dev/null || true
+            [ -s .gitmodules ] || rm -f .gitmodules
+          fi
+          git rm --cached sadguruclasses 2>/dev/null || true
+
+      - name: 🏷️ Set version name
+        run: |
+          if [[ "${{ github.ref_name }}" == "main" || "${{ github.ref_name }}" == "master" ]]; then
+            VERSION="v1.0-$(date +%Y%m%d-%H%M)"
+            echo "VERSION=${VERSION}" >> $GITHUB_ENV
+            echo "IS_MANUAL=true" >> $GITHUB_ENV
+          else
+            VERSION="${{ github.ref_name }}"
+            echo "VERSION=${VERSION}" >> $GITHUB_ENV
+            echo "IS_MANUAL=false" >> $GITHUB_ENV
+          fi
+          # Numeric versionName for Android (consumed by build.gradle).
+          # MUST be in X.Y[.Z] form because ForceUpdateGate compares it
+          # numerically against app_config.min_android_version. Bump the
+          # patch segment with the CI run number so each build is unique.
+          # Prefer the tag (v1.2.3 → 1.2.3) so the installed APK's Settings
+          # → About version matches the GitHub Release tag. Fall back to
+          # run-number scheme for manual/main runs where VERSION is generated.
+          RAW="${VERSION#v}"
+          if [[ "$RAW" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            APP_VERSION_NAME="$RAW"
+          else
+            APP_VERSION_NAME="1.0.${GITHUB_RUN_NUMBER:-0}"
+          fi
+          echo "APP_VERSION_NAME=${APP_VERSION_NAME}" >> $GITHUB_ENV
+          # Artifact names and file names cannot contain "/" (branch names
+          # like fix/upi-native do). Sanitize once and use SAFE_VERSION
+          # wherever the value lands on a filesystem or an artifact `name:`.
+          SAFE_VERSION="$(printf '%s' "${VERSION}" | tr '/\\:<>|*?"' '-')"
+          echo "SAFE_VERSION=${SAFE_VERSION}" >> $GITHUB_ENV
+          # Guard: on a real vX.Y.Z tag, versionName MUST equal the tag.
+          if [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ && "v$APP_VERSION_NAME" != "$VERSION" ]]; then
+            echo "❌ tag/versionName mismatch: tag=$VERSION, versionName=$APP_VERSION_NAME"
+            exit 1
+          fi
+
+      - name: 🔖 Create git tag (manual runs only)
+        if: env.IS_MANUAL == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag ${{ env.VERSION }}
+          git push origin ${{ env.VERSION }}
+
+      - name: 🟢 Setup Node (from .nvmrc, satisfies vite@8 engines)
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          # check-latest removed: it pings the npm registry on every cold run
+          # for a newer 22.18.x patch (~3-5s wasted). Pin is exact; we don't
+          # need auto-bump. No npm cache — we install via bun.
+
+      - name: 🥟 Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.2.18'
+
+      # Cache node_modules directly (keyed on lockfiles) — when the lockfile
+      # is unchanged we skip `bun install` entirely (~2m saved per warm run).
+      # Bun's global tarball cache is a secondary fallback for lockfile bumps.
+      - name: 🗂️ Cache node_modules (warm-run fast path)
+        id: cache-node-modules
+        uses: actions/cache@v6
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-bun-${{ hashFiles('bun.lock', 'bun.lockb', 'package.json') }}
+      - name: 🗂️ Cache Bun install cache (fallback for lockfile bumps)
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock', 'bun.lockb', 'package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      # PERF — cache Vite + SWC transform caches so warm web builds reuse
+      # parsed/transformed module graphs. Saves ~10-25s on `bun run build`
+      # when source has minor changes. Keyed loosely on lockfile + vite config.
+      - name: 🗂️ Cache Vite / SWC build caches
+        uses: actions/cache@v6
+        with:
+          path: |
+            node_modules/.vite
+            node_modules/.cache
+            .vite
+          key: ${{ runner.os }}-vite-${{ hashFiles('vite.config.ts', 'bun.lock', 'bun.lockb') }}
+          restore-keys: |
+            ${{ runner.os }}-vite-${{ hashFiles('vite.config.ts', 'bun.lock', 'bun.lockb') }}-
+
+      - name: 🔎 Print toolchain versions
+        run: node -v && bun -v
+
+      # Skip the install entirely when node_modules was restored from cache.
+      # On cache miss: --ignore-scripts skips postinstall hooks that aren't
+      # needed for a CI build (esbuild/sharp install themselves on demand);
+      # --no-progress quiets the log and shaves a few seconds.
+      - name: 📦 Install dependencies (bun)
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        # Hosted runners DO occasionally hit transient `ConnectionRefused` /
+        # `FailedToOpenSocket` on tarball fetches — hence retry + backoff.
+        # But when the SAME packages fail on every attempt, it is not transient:
+        # the lockfile pins tarball URLs on a sandbox-private host (Replit's
+        # package-firewall.replit.local, Lovable's *-npm.pkg.dev mirror) that no
+        # runner can resolve. `bun run check:lockfile` below fails fast on that
+        # class instead of burning ~4 minutes and then silently degrading to a
+        # npm fallback that inherits the exact same broken URLs.
+        # --network-concurrency 8 keeps the runner from saturating sockets.
+        env:
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org
+          BUN_CONFIG_REGISTRY: https://registry.npmjs.org
+        run: |
+          set -e
+          if [ ! -f bun.lockb ] && [ ! -f bun.lock ]; then
+            echo "::error::No bun.lock or bun.lockb found — commit a lockfile before building." >&2
+            exit 1
+          fi
+
+          # Self-heal: rewrite any sandbox-private tarball URL (Replit /
+          # Lovable mirror) back to the public registry. The mapping is
+          # mechanical and integrity hashes stay valid, so this never changes
+          # the dependency tree — it only unblocks the fetch.
+          repair_log="$(node scripts/fix-lockfile-registry.mjs 2>&1)" || true
+          echo "$repair_log"
+          if echo "$repair_log" | grep -q 'Repaired'; then
+            echo "::warning::Lockfile(s) contained sandbox-private registry URLs; auto-repaired for this build. Run 'bun run fix:lockfile' locally and commit."
+            {
+              echo "### ♻️ Lockfile registry auto-repair"
+              echo ''
+              echo '```'
+              echo "$repair_log"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # Guard: anything still unreachable is a genuinely unknown host.
+          node scripts/check-lockfile-registry.mjs || {
+            echo "::error::Lockfile pins private-registry tarballs that CI cannot reach and could not be auto-repaired — see output above." >&2
+            exit 1
+          }
+
+          attempt=1
+          max_attempts=3
+          installed=0
+          while [ "$attempt" -le "$max_attempts" ]; do
+            echo "::group::bun install (attempt $attempt/$max_attempts)"
+            if bun install --frozen-lockfile --no-progress --ignore-scripts --network-concurrency 8; then
+              installed=1
+              echo "::endgroup::"
+              break
+            fi
+            echo "::endgroup::"
+            echo "::warning::bun install attempt $attempt failed (registry/network error)."
+            attempt=$((attempt + 1))
+            if [ "$attempt" -le "$max_attempts" ]; then
+              backoff=$(( (attempt - 1) * 10 ))
+              echo "Retrying in ${backoff}s..."
+              sleep "$backoff"
+            fi
+          done
+
+          if [ "$installed" -ne 1 ]; then
+            echo "::warning::bun install failed $max_attempts times — falling back to npm."
+            echo "⚠️ bun install failed ${max_attempts}x; used npm fallback (check registry health)." >> "$GITHUB_STEP_SUMMARY"
+            # --registry is explicit: npm must never inherit a proxy host from a
+            # stale ~/.npmrc or a `resolved` URL baked into package-lock.json.
+            npm install --legacy-peer-deps --no-audit --no-fund --ignore-scripts \
+              --registry=https://registry.npmjs.org
+          fi
+
+
+
+
+      - name: 🧩 Verify Capacitor plugin compatibility
+        run: bun run verify:capacitor-deps
+
+      # Canonical build order (capacitor-bun-apk-build skill, step 4): typecheck
+      # BEFORE the web build so a type error fails in ~15s instead of after a
+      # full Vite + Gradle cycle. Uses tsgo (native-preview) — never `tsc`,
+      # which is ~10x slower on this codebase.
+      - name: 🔎 TypeScript typecheck (tsgo)
+        run: bun run typecheck
+
+
+
+      # Refuse to bake in-app DevTools (Eruda) into a signed release APK.
+      # Manual dispatcher can enable it for internal builds, but tag pushes
+      # (v*) MUST ship without DevTools regardless of the input.
+      - name: 🛡️ Block Eruda on release tags
+        if: startsWith(github.ref, 'refs/tags/v') && inputs.debug_webview == 'true'
+        run: |
+          echo "::error::debug_webview=true is not allowed on release tags. Re-run without the debug toggle." >&2
+          exit 1
+
+      # Batch 2 CI gate — warn (do NOT fail) release builds when
+      # VITE_SENTRY_DSN is empty. Sentry silently disables itself in that
+      # case; we surface a loud warning in the run summary but still allow
+      # the APK to build so releases aren't blocked on an optional secret.
+      # Set the VITE_SENTRY_DSN repo secret to re-enable crash reporting.
+      - name: 🔐 Verify release secrets
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+        run: |
+          if [ -z "$VITE_SENTRY_DSN" ]; then
+            echo "::warning::VITE_SENTRY_DSN secret is empty — Sentry will be disabled in this release build. Add the secret in repo Settings → Secrets to re-enable crash reporting."
+          else
+            echo "✅ VITE_SENTRY_DSN present — Sentry enabled"
+          fi
+          # NOTE: assetlinks.json + apple-app-site-association placeholder
+          # gates were removed — Play Store / App Store submission is deferred.
+          # Restore them (see git history) once real SHA-256 / TEAMID are available.
+          echo "✅ Release secrets verified"
+
+      - name: 🏗️ Build web app
+        run: bun run build
+        env:
+          # Names must match the keys read by src/integrations/supabase/client.ts
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SUPABASE_PROJECT_ID: ${{ secrets.VITE_SUPABASE_PROJECT_ID }}
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+          # When QA toggle is ON, bake Eruda (in-app DevTools) into the bundle.
+          # Floating button appears in the app → tap → console/network/storage
+          # visible on the phone itself. No laptop / USB needed.
+          VITE_ENABLE_ERUDA: ${{ inputs.debug_webview == 'true' && 'true' || 'false' }}
+
+      - name: 🧾 Stamp web bundle version
+        run: |
+          cat > dist/nb-build.json <<EOF
+          {"sha":"${{ github.sha }}","run":"${{ github.run_number }}","version":"${{ env.VERSION }}","builtAt":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+          EOF
+          if [ -f dist/sw.js ]; then
+            sed -i "s/__NB_BUILD_SHA__/${{ github.sha }}/g" dist/sw.js
+          fi
+          cat dist/nb-build.json
+
+      - name: 🔍 Verify built bundle has Supabase config
+        run: |
+          if ! grep -rq "supabase.co" dist/assets/ 2>/dev/null; then
+            echo "❌ Built bundle is missing Supabase URL — APK will show a blank screen."
+            echo "   Make sure these GitHub secrets are set in repo Settings → Secrets and variables → Actions:"
+            echo "   - VITE_SUPABASE_URL"
+            echo "   - VITE_SUPABASE_PUBLISHABLE_KEY"
+            echo "   - VITE_SUPABASE_PROJECT_ID"
+            exit 1
+          fi
+          echo "✅ Supabase config bundled into dist/"
+
+      - name: 📏 JS bundle-size gate (fail if entry/vendor grows past ceiling)
+        # PERF/OBS — catches accidental bundle bloat (e.g. a heavy dep pulled
+        # into the initial chunk) BEFORE it lands in the APK. Budgets are
+        # gzip sizes; bump deliberately with a PR comment explaining why.
+        run: |
+          set -euo pipefail
+          # Per-file budgets (gzip KB). Tune when a chunk legitimately grows.
+          ENTRY_MAX_KB=180        # index-*.js — top of the entry graph
+          VENDOR_REACT_MAX_KB=140 # vendor-react
+          VENDOR_MOTION_MAX_KB=80
+          VENDOR_SUPABASE_MAX_KB=90
+          TOTAL_INITIAL_MAX_KB=900 # entry + all vendor-*.js gzipped
+          fail=0
+          check() {
+            local pattern="$1" limit="$2" label="$3"
+            local file
+            file=$(ls -1 dist/assets/${pattern} 2>/dev/null | head -n1 || true)
+            if [ -z "$file" ]; then
+              echo "::warning::No file matching ${pattern} — skipping ${label} budget"
+              return 0
+            fi
+            local kb
+            kb=$(gzip -c "$file" | wc -c | awk '{printf "%d", ($1/1024)+0.5}')
+            printf "  %-24s %6s KB (limit %s KB)  %s\n" "$label" "$kb" "$limit" "$file"
+            echo "- **${label}:** ${kb} KB / ${limit} KB" >> "$GITHUB_STEP_SUMMARY"
+            if [ "$kb" -gt "$limit" ]; then
+              echo "::error::${label} gzipped size ${kb}KB exceeds ${limit}KB ceiling"
+              fail=1
+            fi
+          }
+          echo "### 📏 JS bundle-size gate" >> "$GITHUB_STEP_SUMMARY"
+          check "index-*.js"           "$ENTRY_MAX_KB"          "entry"
+          check "vendor-react-*.js"    "$VENDOR_REACT_MAX_KB"   "vendor-react"
+          check "vendor-motion-*.js"   "$VENDOR_MOTION_MAX_KB"  "vendor-motion"
+          check "vendor-supabase-*.js" "$VENDOR_SUPABASE_MAX_KB" "vendor-supabase"
+          # Total-initial: entry + every vendor-*.js (excludes lazy route chunks).
+          total_kb=$(for f in dist/assets/index-*.js dist/assets/vendor-*.js; do
+            [ -f "$f" ] && gzip -c "$f" | wc -c
+          done | awk '{s+=$1} END{printf "%d", (s/1024)+0.5}')
+          echo "  total-initial            ${total_kb} KB (limit ${TOTAL_INITIAL_MAX_KB} KB)"
+          echo "- **total-initial:** ${total_kb} KB / ${TOTAL_INITIAL_MAX_KB} KB" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$total_kb" -gt "$TOTAL_INITIAL_MAX_KB" ]; then
+            echo "::error::Initial JS payload ${total_kb}KB exceeds ${TOTAL_INITIAL_MAX_KB}KB ceiling"
+            fail=1
+          fi
+          if [ "$fail" -eq 1 ]; then
+            echo "Bundle-size gate failed. Options: (1) lazy-import the new dep,"
+            echo "(2) move it to a new vendor-* chunk in vite.config.ts, or"
+            echo "(3) if the growth is intentional, bump the budget with reason."
+            exit 1
+          fi
+          echo "✅ JS bundle-size gate passed"
+
+      - name: 📦 Zip web bundle for OTA live updates
+        run: |
+          cd dist && zip -rq ../web-bundle.zip . && cd ..
+          ls -lh web-bundle.zip
+
+      # NOTE: Dependency security audit moved to .github/workflows/dependency-audit.yml
+      # (runs weekly + on package.json changes). Keeping it out of the APK build
+      # path saves ~30-45s per release and prevents npm registry outages from
+      # blocking shipping.
+
+
+      - name: ✅ Check android/ folder exists
+        run: |
+          if [ ! -d "android" ]; then
+            echo "❌ ERROR: The android/ folder does not exist in the repo."
+            exit 1
+          fi
+          echo "✅ android/ folder found"
+
+      - name: 💾 Cache Gradle wrapper distribution
+        # actions/setup-java's `cache: gradle` only persists ~/.gradle/caches,
+        # NOT the wrapper dist (the 150MB gradle-X.Y-bin.zip). Caching it here
+        # saves ~25-35s every cold run.
+        uses: actions/cache@v6
+        with:
+          path: ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-wrapper-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties') }}
+
+      # PERF — Gradle build-cache (dex/resources). Reuses task outputs across
+      # runs so dexBuilder/mergeDex skip on warm hits. Key bumps when any
+      # gradle file changes; restore-keys lets us reuse from the nearest
+      # ancestor build for ~30-60s saved on typical PRs.
+      - name: 💾 Cache Gradle build-cache (dex / resource outputs)
+        uses: actions/cache@v6
+        with:
+          path: ~/.gradle/caches/build-cache-1
+          # PERF: dropped the per-SHA suffix that was forcing a cache *save*
+          # on every run but never producing a clean *hit*. Keyed on the
+          # files that actually change the dex/resource graph; restore-keys
+          # widens the fallback so unrelated edits still benefit.
+          key: ${{ runner.os }}-gradle-buildcache-${{ hashFiles('android/**/*.gradle', 'android/gradle.properties', 'android/variables.gradle', 'capacitor.config.ts', 'bun.lock', 'bun.lockb') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-buildcache-
+
+      - name: ☕ Setup Java 21 (with Gradle cache)
+        id: setup-java
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: 'gradle'
+          # Finer cache key — only invalidate when actual gradle/dependency
+          # files change, not on every project file edit. Cuts the 22s
+          # cold-restore down on warm hits.
+          cache-dependency-path: |
+            android/gradle/wrapper/gradle-wrapper.properties
+            android/build.gradle
+            android/variables.gradle
+            android/app/build.gradle
+            android/app/capacitor.build.gradle
+
+      - name: 🔄 Clean-copy Capacitor web assets (dist → android)
+        # Android stale-web fix: never rely on an existing assets/public tree.
+        # Delete it first, then run Capacitor copy+update with the local CLI.
+        # `--deployment` is iOS/CocoaPods-only; it does not make Android copies safer.
+        run: |
+          rm -rf android/app/src/main/assets/public \
+                 android/app/src/main/assets/capacitor.config.json \
+                 android/app/src/main/assets/capacitor.plugins.json
+          ./node_modules/.bin/cap copy android
+          ./node_modules/.bin/cap update android
+          test -f android/app/src/main/assets/public/index.html
+          test -f android/app/src/main/assets/public/nb-build.json
+          grep -q "${{ github.sha }}" android/app/src/main/assets/public/nb-build.json
+        env:
+          CAP_DEBUG: ${{ inputs.debug_webview == 'true' && '1' || '0' }}
+
+      - name: 🧯 Neutralize Gradle offline/config-cache leftovers
+        run: |
+          rm -rf android/.gradle/configuration-cache android/.gradle/noVersion
+          for file in android/gradle.properties "$HOME/.gradle/gradle.properties"; do
+            [ -f "$file" ] || continue
+            sed -i '/^org\.gradle\.offline\s*=\s*true\s*$/d;/^org\.gradle\.configuration-cache\s*=\s*true\s*$/d' "$file"
+          done
+          echo "✅ Gradle will resolve online for missing artifacts and use only safe build caches."
+
+      - name: 🎨 Restore custom app icon
+        # Single git command instead of a 5-iteration loop. `git restore`
+        # silently no-ops on missing files, so the explicit per-file checks
+        # are unnecessary.
+        run: |
+          git restore --source=HEAD --staged --worktree \
+            'android/app/src/main/res/mipmap-*/ic_launcher.png' \
+            'android/app/src/main/res/mipmap-*/ic_launcher_round.png' \
+            'android/app/src/main/res/mipmap-*/ic_launcher_foreground.png' 2>/dev/null || true
+          echo "✅ Custom app icons restored"
+
+      - name: 🔧 Make Gradlew executable
+        run: chmod +x android/gradlew
+
+      - name: 🏗️ Prepare SDK directory permissions (restore fix)
+        run: |
+          sudo mkdir -p /usr/local/lib/android/sdk/platforms/android-35
+          sudo mkdir -p /usr/local/lib/android/sdk/build-tools/35.0.0
+          sudo chown -R $USER:$USER /usr/local/lib/android/sdk/platforms/android-35
+          sudo chown -R $USER:$USER /usr/local/lib/android/sdk/build-tools/35.0.0
+
+      - name: 💾 Cache Android SDK platform + build-tools
+        id: android-sdk-cache
+        continue-on-error: true
+        uses: actions/cache@v6
+        with:
+          path: |
+            /usr/local/lib/android/sdk/platforms/android-35
+            /usr/local/lib/android/sdk/build-tools/35.0.0
+          key: ${{ runner.os }}-android-sdk-35-build-tools-35.0.0-v1
+      - name: 📲 Install Android SDK 35 (if not cached)
+        run: |
+          if [ ! -d "$ANDROID_HOME/platforms/android-35" ] || [ ! -d "$ANDROID_HOME/build-tools/35.0.0" ]; then
+            echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-35" "build-tools;35.0.0" || true
+          else
+            echo "✅ Android SDK 35 restored from cache — skipping sdkmanager"
+          fi
+
+      - name: 🔐 Normalize SDK ownership for cache save
+        # actions/cache runs as the non-root `runner` user. The Android SDK on
+        # the hosted runner is installed under root, so the post-step `tar`
+        # save (and any subsequent restore) hits "Operation not permitted"
+        # on `utime`/`chmod`, leaving the warning:
+        #   "Failed to restore: '/usr/bin/tar' failed with exit code 2".
+        # Chowning the two cached subtrees to the runner user makes the
+        # saved tarball restorable on future runs without sudo.
+        run: |
+          sudo chown -R "$USER":"$USER" \
+            /usr/local/lib/android/sdk/platforms/android-35 \
+            /usr/local/lib/android/sdk/build-tools/35.0.0 || true
+          # Ensure mtimes are writable too — some SDK files ship read-only.
+          sudo chmod -R a+rwX \
+            /usr/local/lib/android/sdk/platforms/android-35 \
+            /usr/local/lib/android/sdk/build-tools/35.0.0 || true
+
+      # NOTE: do NOT cache `android/.gradle` — the project-local configuration
+      # cache stores resolved dependency coordinates that, when restored from
+      # a stale key, force Gradle into "offline" replay and fail with:
+      #   "No cached version of com.android.tools.build:gradle:X available
+      #    for offline mode". The shared ~/.gradle/caches restored by
+      #    actions/setup-java (cache: 'gradle') is enough.
+
+      - name: 🔑 Check keystore availability + password validity
+        run: |
+          set -euo pipefail
+          require_release_keystore='${{ startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' }}'
+          event_name='${{ github.event_name }}'
+
+          invalid_keystore() {
+            echo "HAS_KEYSTORE=false" >> $GITHUB_ENV
+            if [ "$require_release_keystore" = "true" ] && [ "$event_name" != "workflow_dispatch" ]; then
+              echo "::error::Release channel (${{ github.ref }}) requires a valid Android signing key. Fix KEYSTORE_BASE64 + KEYSTORE_PASSWORD + KEY_ALIAS; set KEY_PASSWORD only if it differs from the store password. Refusing to publish an unsigned debug APK."
+              exit 1
+            fi
+            echo "::warning::No valid keystore configured — building debug fallback APK. Do NOT distribute this build to end users."
+          }
+
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ]; then
+            invalid_keystore
+            exit 0
+          fi
+
+          CHECK_KEYSTORE="$RUNNER_TEMP/release-keystore-check.jks"
+          if ! printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$CHECK_KEYSTORE" 2>/dev/null; then
+            echo "::warning::KEYSTORE_BASE64 is not valid base64."
+            invalid_keystore
+            exit 0
+          fi
+
+          # Detect the keystore format. Modern `keytool` defaults to PKCS12,
+          # and PKCS12 has NO per-key password — the private key is unlocked
+          # with the STORE password. keytool -importkeystore silently ignores a
+          # wrong -srckeypass on PKCS12 sources and exits 0, so the old probe
+          # returned a false positive for KEY_PASSWORD. Gradle then tried to
+          # decrypt the key with that wrong KEY_PASSWORD and crashed with
+          # "Get Key failed: Given final block not properly padded".
+          STORE_TYPE="$(keytool -list \
+            -keystore "$CHECK_KEYSTORE" \
+            -storepass "$KEYSTORE_PASSWORD" 2>/dev/null \
+            | sed -n 's/^Keystore type:[[:space:]]*//p' | tr -d '[:space:]')"
+          echo "Detected keystore type: ${STORE_TYPE:-unknown}"
+
+          # Proves <candidate> can actually decrypt the private key (mirrors
+          # Gradle's signing read). Reliable for JKS; see PKCS12 note above.
+          verify_keypass() {
+            local candidate="$1"
+            local probe="$RUNNER_TEMP/probe-${RANDOM}.p12"
+            keytool -importkeystore \
+              -srckeystore "$CHECK_KEYSTORE" \
+              -srcstorepass "$KEYSTORE_PASSWORD" \
+              -srcalias "$KEY_ALIAS" \
+              -srckeypass "$candidate" \
+              -destkeystore "$probe" \
+              -deststoretype PKCS12 \
+              -deststorepass probe-password \
+              -destkeypass probe-password \
+              -noprompt >/dev/null 2>&1
+          }
+
+          if [ "$STORE_TYPE" = "PKCS12" ]; then
+            # PKCS12: the key ALWAYS uses the store password. Never forward a
+            # separate KEY_PASSWORD to Gradle — that is the crash root cause.
+            if verify_keypass "$KEYSTORE_PASSWORD"; then
+              echo "HAS_KEYSTORE=true" >> $GITHUB_ENV
+              echo "KEYPASS_MODE=store" >> $GITHUB_ENV
+              echo "✅ PKCS12 keystore verified (key unlocked with the store password)."
+              if [ -n "${KEY_PASSWORD:-}" ] && [ "$KEY_PASSWORD" != "$KEYSTORE_PASSWORD" ]; then
+                echo "ℹ️  KEY_PASSWORD is set but this is a PKCS12 keystore — using the store password (PKCS12 keys share the store password). This is expected; no action needed."
+              fi
+            else
+              echo "::warning::PKCS12 keystore alias '$KEY_ALIAS' could not be read with the store password. Check KEY_ALIAS / KEYSTORE_PASSWORD."
+              invalid_keystore
+            fi
+          elif [ -n "${KEY_PASSWORD:-}" ] && verify_keypass "$KEY_PASSWORD"; then
+            echo "HAS_KEYSTORE=true" >> $GITHUB_ENV
+            echo "KEYPASS_MODE=provided" >> $GITHUB_ENV
+            echo "✅ JKS keystore verified with KEY_PASSWORD."
+          elif verify_keypass "$KEYSTORE_PASSWORD"; then
+            echo "HAS_KEYSTORE=true" >> $GITHUB_ENV
+            echo "KEYPASS_MODE=store" >> $GITHUB_ENV
+            echo "✅ JKS keystore verified using store password as key password."
+          else
+            echo "::warning::Android keystore exists but cannot read alias '$KEY_ALIAS'. This is usually a wrong KEY_PASSWORD or KEY_ALIAS."
+            invalid_keystore
+          fi
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+
+      # Build ONLY the variant we'll actually ship — previously both debug and
+      # release were built when a keystore was present, doubling the Gradle
+      # phase. Now we build debug only as a fallback. `--no-daemon` matches
+      # the GRADLE_OPTS daemon=false; --parallel + --build-cache are the safe
+      # speed flags for cold/warm CI runs.
+
+      # Skip every task that isn't required to produce app-debug.apk:
+      #  -x lint -x lintVitalRelease -x test -x check        → no static analysis / tests
+      # NOTE: --offline was REMOVED. On a cold cache (or when the cache key
+      # changes — e.g. after editing build.gradle), Gradle needs network
+      # access to resolve com.android.tools.build:gradle and
+      # com.google.gms:google-services. With --offline it fails with
+      # "No cached version of ... available for offline mode" and aborts.
+      # Gradle still uses the restored cache when entries exist; it only
+      # hits Maven for missing artifacts.
+      # `--configuration-cache` removed: it stores resolved dependency graphs
+      # in `android/.gradle/configuration-cache/`. Even without the project-
+      # local cache, a stale CC entry that survived between steps causes a
+      # replay that hits "offline mode" for transitive deps. The build-cache
+      # alone is the safe set of flags.
+      - name: 🤖 Build Debug APK (no keystore)
+        if: env.HAS_KEYSTORE != 'true'
+        # Robust pipeline: tee raw log to disk, filter only for stdout display.
+        # Exit status is taken from gradle (PIPESTATUS[0]) — NOT from grep, which
+        # exits 1 when every line was filtered out (the previous false-failure
+        # cause). On failure, tail the raw log so the real error is visible.
+        run: |
+          set +e
+          mkdir -p android/build-logs
+          cd android
+          RAW_LOG="build-logs/assembleDebug.raw.log"
+          heartbeat() {
+            while true; do
+              sleep 30
+              echo "⏱️ Gradle assembleDebug still running — last log line follows"
+              [ -s "$RAW_LOG" ] && tail -n 1 "$RAW_LOG" || true
+            done
+          }
+          heartbeat & HEARTBEAT_PID=$!
+          # Tee FIRST to keep a true raw log, then filter noisy javac notes only
+          # for the Actions console. PIPESTATUS[0] remains Gradle's real exit.
+          ./gradlew :app:assembleDebug \
+            -x lint -x lintVitalRelease -x test -x check \
+            -x processDebugAndroidTestManifest \
+            --no-daemon --no-configuration-cache --no-watch-fs \
+            --parallel --max-workers=4 --build-cache \
+            --stacktrace 2>&1 \
+            | tee "$RAW_LOG" \
+            | grep --line-buffered -vE '^Note: (Some input files|Recompile with|/home/runner/.*(uses unchecked|uses or overrides))'
+          STATUS=${PIPESTATUS[0]}
+          kill "$HEARTBEAT_PID" 2>/dev/null || true
+          wait "$HEARTBEAT_PID" 2>/dev/null || true
+          cd ..
+          if [ "$STATUS" -ne 0 ]; then
+            echo "::group::❌ Gradle failed (status $STATUS) — last 200 lines of raw log"
+            tail -n 200 "android/$RAW_LOG"
+            echo "::endgroup::"
+            exit "$STATUS"
+          fi
+          echo "✅ assembleDebug completed (exit 0)"
+
+      - name: 🔐 Build Signed Release APK
+        if: env.HAS_KEYSTORE == 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+          KEYPASS="$KEY_PASSWORD"
+          if [ "${KEYPASS_MODE:-provided}" = "store" ]; then
+            KEYPASS="$KEYSTORE_PASSWORD"
+          fi
+          export RELEASE_STORE_FILE="release.keystore"
+          export RELEASE_STORE_PASSWORD="$KEYSTORE_PASSWORD"
+          export RELEASE_KEY_ALIAS="$KEY_ALIAS"
+          export RELEASE_KEY_PASSWORD="$KEYPASS"
+          ls -lh android/app/release.keystore
+          set +e
+          mkdir -p android/build-logs
+          cd android
+          RAW_LOG="build-logs/assembleRelease.raw.log"
+          heartbeat() {
+            while true; do
+              sleep 30
+              echo "⏱️ Gradle assembleRelease still running — last log line follows"
+              [ -s "$RAW_LOG" ] && tail -n 1 "$RAW_LOG" || true
+            done
+          }
+          heartbeat & HEARTBEAT_PID=$!
+          # Stream live via tee (see debug step above for rationale).
+          # Build APK + AAB in ONE Gradle invocation so task graph, R8,
+          # resource shrinking, and dexing run once. Play Store requires
+          # the AAB; direct-install still uses the APK.
+          ./gradlew :app:assembleRelease :app:bundleRelease \
+            -x lint -x lintVitalRelease -x test -x check \
+            --no-daemon --no-configuration-cache --no-watch-fs \
+            --parallel --max-workers=4 --build-cache \
+            --stacktrace 2>&1 \
+            | tee "$RAW_LOG" \
+            | grep --line-buffered -vE '^Note: (Some input files|Recompile with|/home/runner/.*(uses unchecked|uses or overrides))'
+          STATUS=${PIPESTATUS[0]}
+          kill "$HEARTBEAT_PID" 2>/dev/null || true
+          wait "$HEARTBEAT_PID" 2>/dev/null || true
+          cd ..
+          if [ "$STATUS" -ne 0 ]; then
+            echo "::group::❌ Gradle failed (status $STATUS) — last 200 lines of raw log"
+            tail -n 200 "android/$RAW_LOG"
+            echo "::endgroup::"
+            exit "$STATUS"
+          fi
+          echo "✅ assembleRelease completed (exit 0)"
+
+      - name: 🔏 Print release SHA-256 fingerprint (paste into assetlinks.json)
+        if: env.HAS_KEYSTORE == 'true'
+        run: |
+          KEYPASS="${{ secrets.KEY_PASSWORD }}"
+          if [ "${KEYPASS_MODE:-provided}" = "store" ]; then
+            KEYPASS="${{ secrets.KEYSTORE_PASSWORD }}"
+          fi
+          echo "::group::Release keystore SHA-256 — copy into public/.well-known/assetlinks.json"
+          keytool -list -v \
+            -keystore android/app/release.keystore \
+            -alias "${{ secrets.KEY_ALIAS }}" \
+            -storepass "${{ secrets.KEYSTORE_PASSWORD }}" \
+            -keypass "$KEYPASS" 2>/dev/null \
+            | grep -E "SHA256:" | head -1 | awk '{print $2}' \
+            | tee android/build-logs/release-sha256.txt
+          echo "::endgroup::"
+
+        env:
+          RELEASE_STORE_FILE: release.keystore
+          RELEASE_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+      - name: 🗺️ Sentry release + ProGuard mapping (symbolicated + grouped crashes)
+        # P0 (audit): (1) create+finalize a Sentry Release so crashes are
+        # grouped by app version, and (2) VERIFY the mapping artifact landed
+        # via the Sentry API — silent upload failures used to mean we only
+        # discovered obfuscated stacks after a user complained.
+        #
+        # Token-absent path stays a soft no-op (continue-on-error) so forks /
+        # early-release builds without Sentry secrets still ship. Once tokens
+        # ARE present, missing upload / missing artifact = hard fail inside
+        # the step (bash `exit 1`), even though continue-on-error swallows it
+        # at the job level — the ❌ log line is the signal for release QA.
+        if: env.HAS_KEYSTORE == 'true'
+        # Soft-fail on non-tag builds (forks / manual dispatch without Sentry
+        # secrets should still ship). On release tags (v*), a silent Sentry
+        # upload failure hides symbolication for real users — hard-fail so
+        # release QA sees the red X instead of a swallowed ❌ log line.
+        continue-on-error: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+          SENTRY_RELEASE: com.jsrcoaching.app@${{ env.APP_VERSION_NAME }}+${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SENTRY_AUTH_TOKEN" ] || [ -z "$SENTRY_ORG" ] || [ -z "$SENTRY_PROJECT" ]; then
+            echo "ℹ️  Skipping Sentry release + mapping upload — SENTRY_AUTH_TOKEN / SENTRY_ORG / SENTRY_PROJECT not set."
+            exit 0
+          fi
+          MAPPING="android/app/build/outputs/mapping/release/mapping.txt"
+          if [ ! -f "$MAPPING" ]; then
+            echo "::warning::No mapping.txt produced by R8 — skipping (release still shipped)."
+            exit 0
+          fi
+          # Install sentry-cli only when we actually need it (~15s cold).
+          curl -sL https://sentry.io/get-cli/ | bash
+
+          echo "→ Creating Sentry release $SENTRY_RELEASE"
+          sentry-cli releases new "$SENTRY_RELEASE"
+          sentry-cli releases set-commits "$SENTRY_RELEASE" --auto --ignore-missing || \
+            echo "::notice::set-commits skipped (shallow clone or no matching repo in Sentry)."
+
+          echo "→ Uploading ProGuard mapping.txt"
+          # Capture the mapping UUID so we can verify the exact artifact.
+          # Newer sentry-cli versions print the UUID only in --log-level=info
+          # output, so we force it here and fall back to reading the
+          # `# pg_map_id:` header R8 writes into mapping.txt (its short form
+          # 8-hex is used to derive the Sentry UUID), and finally to
+          # `debug-files list` which queries the correct difs endpoint.
+          # sentry-cli 3.x removed --android-manifest / --version-code /
+          # --version-name from upload-proguard; the mapping UUID is derived
+          # from mapping.txt itself and app/version association is carried by
+          # the release object created above.
+          sentry-cli --log-level=info upload-proguard \
+            "$MAPPING" 2>&1 | tee /tmp/sentry-upload.log
+
+          # Prefer the deterministic UUID that sentry-cli itself derives from
+          # mapping.txt content — this is the SAME UUID Sentry stores under
+          # difs, so it always matches without racing eventual-consistency.
+          # `difutil check` prints "Debug ID: <uuid>" on stdout. Fall back to
+          # scraping upload logs, then `debug-files list`, so older sentry-cli
+          # builds still work.
+          MAPPING_UUID="$(sentry-cli difutil check "$MAPPING" 2>/dev/null \
+            | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' \
+            | head -n1 || true)"
+          if [ -z "$MAPPING_UUID" ]; then
+            MAPPING_UUID="$(grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' /tmp/sentry-upload.log | head -n1 || true)"
+          fi
+          if [ -z "$MAPPING_UUID" ]; then
+            MAPPING_UUID="$(sentry-cli debug-files list --org "$SENTRY_ORG" --project "$SENTRY_PROJECT" --type proguard 2>/dev/null \
+              | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' \
+              | head -n1 || true)"
+          fi
+          if [ -n "$MAPPING_UUID" ]; then
+            echo "→ Mapping UUID: $MAPPING_UUID"
+            echo "- **Sentry mapping UUID:** \`$MAPPING_UUID\`" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "→ Finalizing release"
+          sentry-cli releases finalize "$SENTRY_RELEASE"
+
+          # NOTE: Do NOT re-add a `debug-files list | grep UUID` poll here.
+          # Sentry's difs indexing is eventually consistent (30s–5min) and
+          # `upload-proguard` already exits non-zero on real failure — its exit
+          # code is the authoritative signal. A post-upload listing poll only
+          # produces flaky "UUID not yet visible" warnings. See
+          # mem://constraints/sentry-upload.
+          if [ -n "$MAPPING_UUID" ]; then
+            echo "✅ Sentry release $SENTRY_RELEASE finalized; mapping $MAPPING_UUID uploaded."
+          else
+            echo "✅ Sentry release $SENTRY_RELEASE finalized; mapping uploaded (UUID not captured locally)."
+          fi
+
+      - name: 📋 Select optimized APK
+        run: |
+          if [ -f "android/app/build/outputs/apk/release/app-release.apk" ]; then
+            APK_PATH="android/app/build/outputs/apk/release/app-release.apk"
+            APK_KIND="signed release (R8 + resource shrinking)"
+          else
+            APK_PATH="android/app/build/outputs/apk/debug/app-debug.apk"
+            APK_KIND="debug fallback (R8 disabled for plugin safety)"
+          fi
+          if [ ! -f "$APK_PATH" ]; then
+            echo "❌ APK not found at expected path: $APK_PATH"
+            find android -name "*.apk" 2>/dev/null || echo "No APKs found anywhere"
+            exit 1
+          fi
+          SIZE=$(du -sh "$APK_PATH" | cut -f1)
+          echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
+          echo "APK_KIND=$APK_KIND" >> $GITHUB_ENV
+          echo "✅ APK built successfully: $APK_PATH ($SIZE)"
+          {
+            echo "## 📦 Build Summary"
+            echo ""
+            echo "- **Version:** \`${{ env.VERSION }}\`"
+            echo "- **APK size:** ${SIZE}"
+            echo "- **APK type:** ${APK_KIND}"
+            echo "- **Signed release:** ${HAS_KEYSTORE:-false}"
+            echo "- **Commit:** \`${{ github.sha }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 📏 Bundle-size gate (fail if APK grows past ceiling)
+        # HIGH/PERF gate — silent bundle bloat is the #1 way a mobile app
+        # regresses install-conversion + first-render time on cheap devices.
+        # Threshold: 60 MB by default; override via APK_SIZE_LIMIT_MB secret
+        # if a legitimate asset (video splash, extra locale) crosses the bar.
+        # Debug fallback APKs are exempt because R8/resource shrinking is off.
+        run: |
+          set -eo pipefail
+          LIMIT_MB="${APK_SIZE_LIMIT_MB:-60}"
+          BYTES=$(stat -c%s "$APK_PATH")
+          SIZE_MB=$(( BYTES / 1024 / 1024 ))
+          echo "APK size: ${SIZE_MB} MB (limit ${LIMIT_MB} MB, kind: ${APK_KIND})"
+          echo "- **APK size gate:** ${SIZE_MB} MB / ${LIMIT_MB} MB" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${APK_KIND#debug}" = "$APK_KIND" ] && [ "$SIZE_MB" -gt "$LIMIT_MB" ]; then
+            echo "::error::APK size ${SIZE_MB} MB exceeds ceiling ${LIMIT_MB} MB. Investigate assets/deps or raise APK_SIZE_LIMIT_MB deliberately."
+            exit 1
+          fi
+        env:
+          APK_SIZE_LIMIT_MB: ${{ secrets.APK_SIZE_LIMIT_MB }}
+
+      - name: 📈 Bundle-size history (append JSON, upload as trend artifact)
+        # LOW/OBS — dumps dist/ + APK sizes as JSON so regressions can be
+        # graphed over time. Retained 90 days; grabs prior history from the
+        # last run and appends this build's row for continuity.
+        continue-on-error: true
+        run: |
+          set -eo pipefail
+          mkdir -p size-history
+          NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          APK_BYTES=$(stat -c%s "$APK_PATH" 2>/dev/null || echo 0)
+          DIST_BYTES=$(du -sb dist 2>/dev/null | cut -f1 || echo 0)
+          JS_BYTES=$(find dist/assets -name '*.js' -type f 2>/dev/null | xargs -r stat -c%s | awk '{s+=$1} END {print s+0}')
+          CSS_BYTES=$(find dist/assets -name '*.css' -type f 2>/dev/null | xargs -r stat -c%s | awk '{s+=$1} END {print s+0}')
+          cat > size-history/latest.json <<EOF
+          {
+            "timestamp": "$NOW",
+            "version": "${VERSION}",
+            "commit": "${{ github.sha }}",
+            "run_number": ${GITHUB_RUN_NUMBER:-0},
+            "apk_bytes": $APK_BYTES,
+            "apk_kind": "$APK_KIND",
+            "dist_bytes": $DIST_BYTES,
+            "js_bytes": $JS_BYTES,
+            "css_bytes": $CSS_BYTES
+          }
+          EOF
+          echo "### 📈 Bundle-size sample" >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat size-history/latest.json >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 📤 Upload bundle-size trend artifact
+        continue-on-error: true
+        uses: actions/upload-artifact@v6
+        with:
+          name: size-history-${{ env.SAFE_VERSION }}
+          path: size-history/
+          retention-days: 1
+          if-no-files-found: ignore
+
+
+      - name: 🔬 APK smoke check (plugin classes + entry point present)
+        # Fails fast if R8/ProGuard accidentally stripped our app package or a
+        # required Capacitor plugin. Cheaper than a real instrumented test and
+        # catches the most common "app installs but won't open" regression.
+        #
+        # PERF/RELY: dump dex strings ONCE to a file and grep the file. The
+        # previous version piped a multi-MB `echo "$STRINGS_OUT"` into grep,
+        # which triggered "echo: write error: Broken pipe" under `set -e` as
+        # soon as grep matched and closed the pipe early — failing the build
+        # even though every required marker was present.
+        run: |
+          set -eo pipefail
+          APK="$APK_PATH"
+          if ! unzip -p "$APK" assets/public/nb-build.json | grep -q "${{ github.sha }}"; then
+            echo "❌ APK smoke check FAILED — packaged web bundle is stale or missing nb-build.json."
+            exit 1
+          fi
+          echo "✅ APK contains current web bundle stamp (${{ github.sha }})."
+          mkdir -p /tmp/apkscan
+          unzip -oq "$APK" -d /tmp/apkscan
+          # Skill step 7: capacitor.plugins.json must be packaged, otherwise a
+          # plugin silently didn't get synced and the JS bridge call throws
+          # "not implemented on android" at runtime instead of at build time.
+          PLUGINS_JSON="/tmp/apkscan/assets/capacitor.plugins.json"
+          if [ ! -f "$PLUGINS_JSON" ]; then
+            echo "❌ APK smoke check FAILED — assets/capacitor.plugins.json missing. Re-run \`cap sync android\`."
+            exit 1
+          fi
+          PLUGIN_COUNT=$(grep -c '"pkg"' "$PLUGINS_JSON" || true)
+          if [ "${PLUGIN_COUNT:-0}" -lt 1 ]; then
+            echo "❌ APK smoke check FAILED — capacitor.plugins.json packaged but lists 0 plugins."
+            exit 1
+          fi
+          echo "✅ capacitor.plugins.json packaged with ${PLUGIN_COUNT} plugins."
+          echo "- **Capacitor plugins packaged:** ${PLUGIN_COUNT}" >> "$GITHUB_STEP_SUMMARY"
+
+          # One pass over every dex, write to disk, then grep the file. No pipes.
+          : > /tmp/apkscan/dex-strings.txt
+          for dex in /tmp/apkscan/*.dex; do
+            [ -f "$dex" ] || continue
+            strings "$dex" >> /tmp/apkscan/dex-strings.txt
+          done
+          # Required: app entry point + Capacitor bridge.
+          for marker in \
+              "com/jsrcoaching/app/MainActivity" \
+              "com/getcapacitor/BridgeActivity"; do
+            if ! grep -qF "$marker" /tmp/apkscan/dex-strings.txt; then
+              echo "❌ APK smoke check FAILED — missing class: $marker"
+              echo "   (R8/ProGuard may have stripped a core Capacitor class.)"
+              exit 1
+            fi
+          done
+          # App plugin: accept either the modern Capacitor 5+ path
+          # (com.capacitorjs.plugins.app.AppPlugin) or the legacy
+          # Capacitor 4 path (com.getcapacitor.plugin.App).
+          if grep -qE "com/capacitorjs/plugins/app/AppPlugin|com/getcapacitor/plugin/App" /tmp/apkscan/dex-strings.txt; then
+            echo "✅ @capacitor/app plugin present."
+          else
+            echo "❌ APK smoke check FAILED — @capacitor/app plugin missing."
+            echo "   (R8/ProGuard may have stripped it — check proguard-rules.pro.)"
+            exit 1
+          fi
+          echo "✅ APK smoke check passed — MainActivity + Capacitor bridge present."
+          rm -rf /tmp/apkscan
+
+
+
+      - name: 🏷️ Rename APK with version tag
+        run: |
+          cp "$APK_PATH" "JSRCoaching-${{ env.SAFE_VERSION }}.apk"
+          echo "APK_FILE=JSRCoaching-${{ env.SAFE_VERSION }}.apk" >> $GITHUB_ENV
+
+      - name: 🏷️ Create fixed-name APK copy (for static URL)
+        run: |
+          # Canonical fixed-name asset consumed by the /install page:
+          # .../releases/latest/download/JSRCoaching.apk
+          cp "JSRCoaching-${{ env.SAFE_VERSION }}.apk" "JSRCoaching.apk"
+          echo "APK_FIXED=JSRCoaching.apk" >> $GITHUB_ENV
+          # Legacy fixed name kept so older shared links keep resolving.
+          cp "JSRCoaching-${{ env.SAFE_VERSION }}.apk" "Sadguruclasses.apk"
+          echo "APK_FIXED_LEGACY=Sadguruclasses.apk" >> $GITHUB_ENV
+
+
+      - name: 📦 Locate + rename signed AAB (Play Store artifact)
+        if: env.HAS_KEYSTORE == 'true'
+        run: |
+          # bundleRelease produces app-release.aab. Skip silently on debug-only
+          # builds (no keystore) because Play uploads require a signed bundle.
+          AAB_SRC="android/app/build/outputs/bundle/release/app-release.aab"
+          if [ ! -f "$AAB_SRC" ]; then
+            echo "::warning::AAB not produced at $AAB_SRC — Play Store upload will be skipped for this run."
+            echo "HAS_AAB=false" >> $GITHUB_ENV
+            exit 0
+          fi
+          AAB_FILE="JSRCoaching-${{ env.SAFE_VERSION }}.aab"
+          cp "$AAB_SRC" "$AAB_FILE"
+          SIZE=$(du -sh "$AAB_FILE" | cut -f1)
+          echo "AAB_FILE=$AAB_FILE" >> $GITHUB_ENV
+          echo "HAS_AAB=true" >> $GITHUB_ENV
+          echo "✅ AAB built: $AAB_FILE ($SIZE)"
+          echo "- **AAB size:** ${SIZE}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 📤 Upload APK artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: jsr-apk-${{ env.SAFE_VERSION }}
+          path: ${{ env.APK_FILE }}
+          # Retention slashed 30d→1d. The APK is also attached to the GitHub
+          # Release below (permanent, does NOT count against Actions storage
+          # quota), so the artifact is only needed as a short-lived download
+          # for the current run. Cuts steady-state artifact storage ~97% and
+          # prevents the "Artifact storage quota has been hit" upload failure
+          # seen in screenshots Screenshot_20260616-091856 / 100531 (line 30).
+          retention-days: 1
+          compression-level: 0  # APK is already compressed; skip re-zip CPU.
+
+      - name: 📤 Upload AAB artifact (Play Store upload)
+        if: env.HAS_AAB == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: jsr-aab-${{ env.SAFE_VERSION }}
+          path: ${{ env.AAB_FILE }}
+          retention-days: 1
+          compression-level: 0
+
+      - name: 🎯 Detect Play Console credentials
+        id: play-creds
+        if: env.HAS_AAB == 'true' && startsWith(github.ref, 'refs/tags/v')
+        run: |
+          if [ -n "$PLAY_JSON" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "ℹ️  PLAY_SERVICE_ACCOUNT_JSON not set — skipping Play Console upload. Add the secret to enable auto-publish to the Internal testing track."
+            echo "- ⏭️ **Play Console upload skipped** — \`PLAY_SERVICE_ACCOUNT_JSON\` not set." >> "$GITHUB_STEP_SUMMARY"
+          fi
+        env:
+          PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+
+      - name: 🏪 Upload AAB to Play Console (Internal track)
+        # HIGH/RELY — closes the "AAB built, no one uploaded it" gap. Soft-skips
+        # cleanly when PLAY_SERVICE_ACCOUNT_JSON is missing so forks / first
+        # signed builds still ship the GitHub Release attachment. Uses the
+        # Internal testing track — promote to Production manually from Play
+        # Console after QA has verified the build on real devices.
+        if: steps.play-creds.outputs.ready == 'true'
+        uses: r0adkll/upload-google-play@v1
+        continue-on-error: true
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.jsrcoaching.app
+          releaseFiles: ${{ env.AAB_FILE }}
+          track: internal
+          status: completed
+          mappingFile: android/app/build/outputs/mapping/release/mapping.txt
+          whatsNewDirectory: ./distribution/whatsnew
+
+      - name: 🪵 Upload Android build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: android-build-logs-${{ env.SAFE_VERSION }}
+          # Gradle raw log + release-sha256.txt (few hundred KB total). Large
+          # build/reports paths are intentionally NOT included — they used to
+          # be 100+ MB per failed run and burned the artifact quota.
+          path: android/build-logs/
+          retention-days: 1
+          if-no-files-found: ignore
+
+      - name: 📦 Upload APK for post-mortem on failure
+        # MEDIUM/OBS — when the smoke check (dex-strings) or size gate fails,
+        # the APK is the primary evidence. Without this artifact the only
+        # way to inspect the failing build is to re-run the whole workflow.
+        if: failure() && env.APK_PATH != ''
+        uses: actions/upload-artifact@v6
+        with:
+          name: jsr-apk-failed-${{ env.SAFE_VERSION }}
+          path: ${{ env.APK_PATH }}
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: ignore
+
+
+
+
+      - name: 🚀 Create GitHub Release
+        # No `if:` — VERSION is always set (tag ref OR generated in the
+        # Set version step), so the release step should always run. The old
+        # `IS_MANUAL == 'false' || IS_MANUAL == 'true'` gate was a tautology.
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ env.VERSION }}
+          name: JSR COACHING ${{ env.VERSION }}
+          # AAB is attached only when built (HAS_AAB=true). action-gh-release
+          # tolerates missing paths but we gate via env var expansion — an
+          # empty AAB_FILE becomes a blank line, which is ignored.
+          files: |
+            ${{ env.APK_FILE }}
+            ${{ env.APK_FIXED }}
+            ${{ env.APK_FIXED_LEGACY }}
+            ${{ env.AAB_FILE }}
+            web-bundle.zip
+
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">JSR COACHING</string>
+    <string name="title_activity_main">JSR COACHING</string>
+    <string name="package_name">com.jsrcoaching.app</string>
+    <string name="custom_url_scheme">com.jsrcoaching.app</string>
+</resources>

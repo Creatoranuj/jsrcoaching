@@ -1,0 +1,46 @@
+name: Enrollment Bypass Regression
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/test/enrollment-bypass.integration.test.ts'
+      - 'src/hooks/useEnrollments.ts'
+      - 'supabase/migrations/**'
+  pull_request:
+    paths:
+      - 'src/test/enrollment-bypass.integration.test.ts'
+      - 'src/hooks/useEnrollments.ts'
+      - 'supabase/migrations/**'
+  schedule:
+    # Daily 03:15 UTC red-team probe
+    - cron: '15 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  bypass-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
+      - name: Run enrollment-bypass integration test
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+          TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+          TEST_PAID_COURSE_ID: ${{ secrets.TEST_PAID_COURSE_ID }}
+        run: |
+          if [ -z "$TEST_USER_EMAIL" ] || [ -z "$TEST_USER_PASSWORD" ] || [ -z "$TEST_PAID_COURSE_ID" ]; then
+            echo "::error::Missing required GitHub secrets: TEST_USER_EMAIL, TEST_USER_PASSWORD, TEST_PAID_COURSE_ID"
+            exit 1
+          fi
+          bunx vitest run src/test/enrollment-bypass.integration.test.ts --reporter=verbose

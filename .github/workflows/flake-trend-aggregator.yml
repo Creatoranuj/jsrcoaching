@@ -1,0 +1,151 @@
+name: 📊 Flake Trend Aggregator
+
+# Nightly rollup of advisory-history/*.json emitted by signed-apk-smoke.
+# Downloads the last 14 days of `advisory-history-*` artifacts, aggregates per
+# API level (attempts_used, smoke_exit, crash_lines, flake_attempt), and posts
+# a Markdown table to the workflow summary + uploads a merged trend.json.
+#
+# Why: individual per-run JSON is queryable via `gh run download`, but flake
+# TREND (API 35 attempt-2 pass rate over time) needs an aggregate view.
+# Runs nightly so the trend is fresh without gating the tag pipeline.
+
+on:
+  schedule:
+    - cron: '17 3 * * *'   # 03:17 UTC nightly (off-peak, avoids top-of-hour contention)
+  workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: 'Days of history to aggregate'
+        required: false
+        default: '14'
+
+permissions:
+  actions: read       # list + download artifacts from signed-apk-smoke runs
+  contents: read
+
+concurrency:
+  group: flake-trend-aggregator
+  cancel-in-progress: false
+
+jobs:
+  aggregate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: 🧭 Checkout (for scripts only)
+        uses: actions/checkout@v5
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 📥 Download recent advisory-history artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LOOKBACK_DAYS: ${{ inputs.lookback_days || '14' }}
+        run: |
+          set -e
+          mkdir -p _history
+          SINCE=$(date -u -d "${LOOKBACK_DAYS} days ago" +%Y-%m-%dT%H:%M:%SZ)
+          echo "Aggregating advisory-history since ${SINCE}"
+          # List artifacts across the repo (all runs), filter by name + created_at.
+          gh api --paginate \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/actions/artifacts?per_page=100" \
+            --jq ".artifacts[] | select(.name | startswith(\"advisory-history-\")) | select(.created_at > \"${SINCE}\") | select(.expired == false) | {id, name, created_at, workflow_run: .workflow_run.id}" \
+            > _history/index.jsonl || true
+          COUNT=$(wc -l < _history/index.jsonl || echo 0)
+          echo "Found ${COUNT} candidate artifacts"
+          # Download each (cap to 200 to stay under rate/time budget).
+          head -200 _history/index.jsonl | while read -r line; do
+            ID=$(echo "$line" | python3 -c "import sys,json; print(json.loads(sys.stdin.read())['id'])")
+            NAME=$(echo "$line" | python3 -c "import sys,json; print(json.loads(sys.stdin.read())['name'])")
+            mkdir -p "_history/${NAME}"
+            gh api "/repos/${{ github.repository }}/actions/artifacts/${ID}/zip" > "_history/${NAME}.zip" 2>/dev/null || continue
+            unzip -o -q "_history/${NAME}.zip" -d "_history/${NAME}/" || true
+            rm -f "_history/${NAME}.zip"
+          done
+          find _history -name '*.json' | wc -l
+
+      - name: 📊 Aggregate + emit trend
+        run: |
+          python3 <<'PY'
+          import json, os, glob, statistics
+          from collections import defaultdict
+
+          rows = []
+          for path in glob.glob('_history/**/*.json', recursive=True):
+              try:
+                  with open(path) as f:
+                      rows.append(json.load(f))
+              except Exception as e:
+                  print(f"skip {path}: {e}")
+
+          print(f"Loaded {len(rows)} run records")
+
+          # Group by api_level.
+          by_api = defaultdict(list)
+          for r in rows:
+              api = r.get('api_level') or r.get('apiLevel') or 'unknown'
+              by_api[str(api)].append(r)
+
+          summary = []
+          for api in sorted(by_api.keys()):
+              recs = by_api[api]
+              n = len(recs)
+              exits = [int(r.get('smoke_exit', -1)) for r in recs]
+              passes = sum(1 for e in exits if e == 0)
+              attempts = [int(r.get('attempts_used', 1)) for r in recs]
+              retry_hidden = sum(1 for a in attempts if a >= 2)
+              crash_lines = [int(r.get('crash_lines', 0)) for r in recs]
+              pass_rate = (passes / n * 100) if n else 0
+              flake_rate = (retry_hidden / n * 100) if n else 0
+              summary.append({
+                  'api_level': api,
+                  'runs': n,
+                  'pass_rate_pct': round(pass_rate, 1),
+                  'flake_rate_pct': round(flake_rate, 1),
+                  'avg_attempts': round(statistics.mean(attempts), 2) if attempts else 0,
+                  'total_crash_lines': sum(crash_lines),
+              })
+
+          os.makedirs('trend', exist_ok=True)
+          with open('trend/trend.json', 'w') as f:
+              json.dump({'window_runs': len(rows), 'by_api': summary}, f, indent=2)
+
+          # Markdown table to step summary.
+          md = ["# Flake Trend (last window)", "",
+                f"Total runs: **{len(rows)}**", "",
+                "| API | Runs | Pass % | Flake % (retry-hidden) | Avg attempts | Crash lines |",
+                "|-----|------|--------|-------------------------|--------------|-------------|"]
+          for s in summary:
+              md.append(f"| {s['api_level']} | {s['runs']} | {s['pass_rate_pct']} | {s['flake_rate_pct']} | {s['avg_attempts']} | {s['total_crash_lines']} |")
+          md.append("")
+          md.append("_Source: `advisory-history-*` artifacts from `signed-apk-smoke.yml` (90-day retain)._")
+
+          out = "\n".join(md)
+          print(out)
+          step_summary = os.environ.get('GITHUB_STEP_SUMMARY')
+          if step_summary:
+              with open(step_summary, 'a') as f:
+                  f.write(out + "\n")
+          PY
+
+      - name: 📤 Upload merged trend.json
+        uses: actions/upload-artifact@v6
+        with:
+          name: flake-trend-${{ github.run_id }}
+          path: trend/trend.json
+          retention-days: 90
+
+      - name: ⚠️ Warn if flake rate spikes
+        run: |
+          python3 <<'PY'
+          import json
+          with open('trend/trend.json') as f:
+              data = json.load(f)
+          for s in data['by_api']:
+              if s['runs'] >= 5 and s['flake_rate_pct'] >= 25:
+                  print(f"::warning::API {s['api_level']} flake_rate={s['flake_rate_pct']}% over {s['runs']} runs — investigate root cause")
+          PY

@@ -1,0 +1,17 @@
+# Verifies the overlay-sentinel back-button contract for PDFs.
+appId: com.sadguru.classes
+---
+- launchApp
+- tapOn: "My Courses"
+- tapOn:
+    index: 0
+- tapOn:
+    text: ".*\\.pdf"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: "pdf-viewer"
+    timeout: 10000
+- pressKey: Back            # Should close PDF, NOT exit course
+- assertNotVisible:
+    id: "pdf-viewer"

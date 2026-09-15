@@ -1,0 +1,63 @@
+name: PDF + Notion Edge Keepalive
+
+# Warms the pdf-proxy and notion-page edge functions every 10 minutes so
+# first-tap Notes/DPP opens do not pay Deno cold-start.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Repo secrets are OPTIONAL here. Both values below are the project's
+  # publishable Supabase URL + anon key — the exact pair already shipped in
+  # the browser bundle (`src/integrations/supabase/client.ts`), protected by
+  # RLS. Hard-coding them keeps the scheduled warm-up green on forks and on
+  # a fresh repo where secrets have not been added yet.
+  FALLBACK_SUPABASE_URL: https://xvlvrbpqxqqqaeihofod.supabase.co
+  FALLBACK_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh2bHZyYnBxeHFxcWFlaWhvZm9kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEwNzk3MDQsImV4cCI6MjA4NjY1NTcwNH0.m2qb8kWLvl3Fw49R73ammXHbA2WqtAuQ9wiDF2f3gbk
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    env:
+      BASE: ${{ secrets.SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
+      ANON: ${{ secrets.SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY }}
+    steps:
+      - name: Resolve endpoint
+        run: |
+          BASE="${BASE:-$FALLBACK_SUPABASE_URL}"
+          ANON="${ANON:-$FALLBACK_SUPABASE_ANON_KEY}"
+          echo "BASE=$BASE" >> "$GITHUB_ENV"
+          echo "::add-mask::$ANON"
+          echo "ANON=$ANON" >> "$GITHUB_ENV"
+
+      - name: HEAD pdf-proxy
+        run: |
+          # Tiny known-good PDF on jsDelivr (allow-listed in pdf-proxy)
+          TARGET="https://cdn.jsdelivr.net/gh/mozilla/pdf.js@master/test/pdfs/basicapi.pdf"
+          URL="${BASE%/}/functions/v1/pdf-proxy?kind=url&url=$(printf '%s' "$TARGET" | jq -sRr @uri)"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -I \
+            -H "apikey: $ANON" -H "Authorization: Bearer $ANON" \
+            --max-time 20 "$URL" || echo "000")
+          echo "pdf-proxy HEAD → $STATUS"
+          # 2xx/3xx = warm; 4xx still means the function booted (good enough).
+          # A scheduled warm-up must never fail the run — worst case we warn.
+          if [ "$STATUS" = "000" ]; then
+            echo "::warning::pdf-proxy unreachable"
+          fi
+
+      - name: GET notion-page
+        run: |
+          URL="${BASE%/}/functions/v1/notion-page?id=warmup"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "apikey: $ANON" -H "Authorization: Bearer $ANON" \
+            --max-time 20 "$URL" || echo "000")
+          echo "notion-page GET → $STATUS"
+          # Any HTTP response means the function booted; invalid id returns 400.
+          if [ "$STATUS" = "000" ]; then
+            echo "::warning::notion-page unreachable"
+          fi

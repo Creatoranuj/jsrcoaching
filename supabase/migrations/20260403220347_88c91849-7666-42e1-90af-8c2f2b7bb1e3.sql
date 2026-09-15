@@ -1,0 +1,1 @@
+ALTER TABLE public.chapters ADD COLUMN IF NOT EXISTS thumbnail_url text NULL;

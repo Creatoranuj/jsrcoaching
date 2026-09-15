@@ -1,0 +1,55 @@
+name: Migration Drift Check
+
+on:
+  push:
+    branches: [main]
+    paths: ['supabase/migrations/**', '.github/workflows/migration-drift.yml']
+  pull_request:
+    paths: ['supabase/migrations/**']
+  schedule:
+    - cron: '0 3 * * 1' # weekly Monday 03:00 UTC
+
+jobs:
+  migrations-apply:
+    name: Verify migrations apply to a scratch database
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Informational for now: flags drift without blocking merges.
+    # Flip to blocking once the baseline is verified clean.
+    continue-on-error: true
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply migrations in order
+        env:
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: postgres
+        run: |
+          set -u
+          failed=0
+          applied=0
+          for f in $(ls supabase/migrations/*.sql | sort); do
+            if psql -v ON_ERROR_STOP=1 -q -f "$f" >/tmp/mig.log 2>&1; then
+              applied=$((applied+1))
+            else
+              echo "::error file=$f::Migration failed to apply on a scratch database"
+              tail -n 20 /tmp/mig.log
+              failed=$((failed+1))
+              break
+            fi
+          done
+          echo "Applied $applied migrations cleanly."
+          [ "$failed" -eq 0 ]

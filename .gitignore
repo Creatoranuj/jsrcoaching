@@ -1,0 +1,41 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+.env
+.env.*
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Keep self-hosted PDF.js core build (matches viewer 4.6.82).
+# The global gitignore ignores all build/ dirs; these files are required
+# for the in-app PDF viewer to render external PDFs.
+!public/pdfjs/build/
+!public/pdfjs/build/**
+
+# Scratch dumps / one-off scrapers — do not commit again (see PR: repo cleanup)
+/*.txt
+!requirements.txt
+/channel.html
+/about.html
+/videos.html
+/*_parser.py
+/parser.py

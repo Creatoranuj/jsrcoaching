@@ -1,0 +1,25 @@
+# API 35 split smoke — focus email without Maestro inputText.
+# Credentials are injected by the signed-smoke workflow through a CI-only
+# native WebView eval path, because Android 15 can deadlock Maestro inputText.
+appId: ${APP_ID}
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Angreji bolne|safar shuru|Free lesson dekhein|Courses|Resources|Welcome Back|Login|Sign In|Log In|Get Started"
+    timeout: 300000
+- tapOn:
+    text: "Login|Sign In|Log In|Get Started"
+    optional: true
+- extendedWaitUntil:
+    visible: "Welcome Back|Email Address|Email"
+    timeout: 60000
+# Prefer data-testid (`login-email`), which Android WebView exposes as
+# resource-id on the accessibility node. Drop `optional: true` on the primary
+# selector so a silent focus miss fails the flow loudly instead of pasting
+# into the void. Text label remains as an optional fallback.
+- tapOn:
+    id: "login-email"
+- tapOn:
+    text: "Email Address"
+    optional: true

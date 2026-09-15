@@ -1,0 +1,3 @@
+ALTER TABLE public.razorpay_payments ADD CONSTRAINT razorpay_payments_course_id_fkey FOREIGN KEY (course_id) REFERENCES public.courses(id);
+ALTER TABLE public.razorpay_payments ADD CONSTRAINT razorpay_payments_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id);
+ALTER TABLE public.payment_requests ADD CONSTRAINT payment_requests_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id);

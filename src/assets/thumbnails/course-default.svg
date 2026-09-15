@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 338" width="600" height="338" role="img" aria-label="Course cover">
+  <defs>
+    <linearGradient id="cg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1e3a8a"/>
+      <stop offset="55%" stop-color="#1d4ed8"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="338" fill="url(#cg)"/>
+  <rect width="600" height="338" fill="url(#sheen)"/>
+  <circle cx="512" cy="52" r="120" fill="#ffffff" opacity="0.05"/>
+  <circle cx="78" cy="300" r="96" fill="#ffffff" opacity="0.04"/>
+  <g transform="translate(300 169)" fill="none" stroke="#ffffff" stroke-opacity="0.85" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M-46 -30 h34 a12 12 0 0 1 12 12 v48 a12 12 0 0 0 -12 -12 h-34 z"/>
+    <path d="M46 -30 h-34 a12 12 0 0 0 -12 12 v48 a12 12 0 0 1 12 -12 h34 z"/>
+  </g>
+</svg>

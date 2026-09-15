@@ -1,0 +1,28 @@
+# Maestro flow — cold-start hardware back regression test.
+# Locks in the CRITICAL fix from useAndroidBackButton (static dynamic import).
+# Run locally: maestro test maestro/back-button-cold-start.yaml
+appId: com.sadguru.classes
+---
+# Fresh cold start — clearState forces a brand new process so the
+# back-button setup race (Capacitor App plugin import on first paint)
+# is actually exercised. This is the regression we shipped a fix for.
+- launchApp:
+    clearState: true
+    stopApp: true
+
+# Splash should hide → app shell visible within 8s on any device.
+- extendedWaitUntil:
+    visible: "Sadguru Coaching Classes"
+    timeout: 8000
+
+# First back press from the root route must NOT exit the app.
+# Instead, show the "press back again" hint toast.
+- pressKey: Back
+- extendedWaitUntil:
+    visible: "Press back again to exit"
+    timeout: 3000
+
+# Second back press within the debounce window → app exits cleanly.
+# (If the back handler crashed silently, the first press would have
+#  already exited and this step would fail to find the running app.)
+- pressKey: Back

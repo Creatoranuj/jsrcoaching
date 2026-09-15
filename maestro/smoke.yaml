@@ -1,0 +1,167 @@
+# Maestro smoke flow — runs on Android emulator in CI.
+# Install Maestro: curl -fsSL https://get.maestro.mobile.dev | bash
+# Run locally:    maestro test maestro/smoke.yaml --env MAESTRO_EMAIL=... --env MAESTRO_PASSWORD=...
+# In CI:          set MAESTRO_EMAIL / MAESTRO_PASSWORD as repo secrets and pass with --env.
+# NEVER hardcode credentials here — this file is committed to the repo.
+appId: com.sadguru.classes
+# Re-enabled 2026-07-16 for the API 33 hard-gate. Root cause of v1.0.29 red:
+# app rendered fine (cold_boot=4324ms, no crashes) but its landing content
+# lives in the Capacitor WebView DOM — Android accessibility tree only
+# exposes an empty `viewIdResName: root` node, so Maestro's text matcher
+# ("Angreji bolne|Welcome Back|…") fell through to the screenshot fallback,
+# which on API 33 google_apis returns null (SurfaceFlinger "FB is protected:
+# PERMISSION_DENIED") → NPE at Service.screenshot → gRPC channel dies →
+# `android-driver-unreachable` on both attempts. CAP_DEBUG=1 is already set
+# in the signed release build (signed-apk-smoke.yml), so the Chromium
+# DevTools port is live — Maestro can traverse the DOM directly and never
+# needs a screenshot. API 28/35 previously hung on this mode; they are now
+# advisory (workflow_dispatch only) and continue-on-error, so the old hang
+# risk is scoped away from the release gate.
+androidWebViewHierarchy: devtools
+---
+# 1) Cold start → wait for ANY app content to paint, then navigate to Login.
+# Previous versions used `openLink com.sadguru.classes://login` right after
+# `launchApp`. That fires the VIEW intent before WebView + React Router have
+# hydrated, so Capacitor's App.addListener("appUrlOpen") is not yet registered
+# and the deeplink is dropped (root cause of v1.0.20-smoke API 28/35 failures —
+# logcat proved the app stayed on the marketing landing page). Landing→tap is
+# what humans do and works on every API level.
+# NOTE: Do NOT use Maestro `takeScreenshot` or `waitForAnimationToEnd` here.
+# On Android emulator/WebView (seen on API 33), Maestro can fail the flow with
+# `Screenshot returned null — window may not be ready` even after visible text
+# assertions pass. Workflow-level `adb screencap` captures failure evidence
+# safely outside Maestro instead.
+- launchApp:
+    clearState: true
+# Wait for ANY known first-paint token — landing marketing copy OR (if the
+# app was already signed-in / deeplink somehow landed) the Login header.
+# API 28's older Chromium can take 60-80s to first paint on x86_64.
+# Token list uses ACTUAL visible text from Index.tsx / Hero.tsx / Login.tsx —
+# not aria-labels. Section-level aria-labels ("Free video lessons", "Our
+# method", "Join our community", "Final CTA") map to content-desc on
+# non-focusable <section> nodes and are unreliable in Maestro's a11y snapshot
+# on API 28 (Chromium 66). Real visible tokens = deterministic on every API.
+# Timeout bumped 180s → 300s: API 28 x86_64 shared-runner cold paint can
+# exceed 180s during cold WebView parse on contended GitHub runners.
+- extendedWaitUntil:
+    visible: "Angreji bolne|safar shuru|Free lesson dekhein|Courses|Resources|Welcome Back|Login|Sign In|Log In|Get Started"
+    timeout: 300000
+# Regression guard for `device_integrity_suspicious` Sentry noise: the toast
+# must NOT appear on cold launch on the CI emulator. `isVirtual` alone should
+# be a silent breadcrumb, not a user-facing warning. See
+# src/lib/native/security.ts + docs/observer/2026-07-16-sentry-triage-device-integrity.md.
+- assertNotVisible:
+    text: "Device integrity check"
+# If we're on the landing page, tap the Login/Sign-In CTA. `optional: true`
+# means it's a no-op when we're already on the Login screen.
+- tapOn:
+    text: "Login|Sign In|Log In|Get Started"
+    optional: true
+# Now confirm we're on Login before proceeding to the credential inputs.
+- extendedWaitUntil:
+    visible: "Welcome Back|Email Address|Email"
+    timeout: 60000
+
+# 3) Auth flow — real Supabase login on signed release build.
+# NOTE: `waitForAnimationToEnd` was removed here — on Android WebView it
+# sometimes returns a null screenshot before the surface is ready, which
+# aborted the whole flow on API 33 with `Screenshot returned null`. The
+# `extendedWaitUntil` above already gates on real content, so animation
+# settling is implicit. Screenshot still captured for failure triage.
+- tapOn:
+    id: "email"
+    optional: true
+- tapOn:
+    text: "Email Address"
+    optional: true
+- inputText: ${MAESTRO_EMAIL}
+# API 35 IME bug: hide keyboard between inputs so Maestro's next tap doesn't
+# race the soft-keyboard animation and deadlock the gRPC channel.
+- hideKeyboard
+- tapOn:
+    id: "password"
+    optional: true
+- tapOn:
+    text: "Password"
+    optional: true
+- inputText: ${MAESTRO_PASSWORD}
+- hideKeyboard
+
+- scrollUntilVisible:
+    element:
+      id: "login-submit"
+    direction: DOWN
+    timeout: 10000
+    optional: true
+- tapOn:
+    id: "login-submit"
+    optional: true
+- tapOn:
+    text: "Sign In"
+    optional: true
+- extendedWaitUntil:
+    visible: "Signing in|Quick Actions|All Classes|No active courses|Continue where you left|Dashboard|Home|My Courses|Downloads|Profile|Practice|Explore|Learn|Search|Notifications"
+    timeout: 15000
+    optional: true
+# Post-login dashboard render. Tokens verified against src/pages/Dashboard.tsx.
+# Regex WIDENED for API 35: also accepts bottom-nav labels + generic post-auth
+# tokens so we don't false-fail if the header copy shifted.
+- extendedWaitUntil:
+    visible: "Quick Actions|All Classes|No active courses|Continue where you left|Dashboard|Home|My Courses|Downloads|Profile|Practice|Explore|Learn|Search|Notifications"
+    timeout: 120000
+
+
+# 4) My Courses tab — bottom nav renders, route mounts
+- tapOn:
+    id: "bottom-nav-my-courses"
+    optional: true
+- tapOn:
+    text: "My Courses"
+    optional: true
+- extendedWaitUntil:
+    visible: "My Courses|No active courses|Enrolled"
+    timeout: 15000
+
+
+# 5) Downloads tab — empty state OR list renders (proves route + IndexedDB init)
+- tapOn:
+    id: "bottom-nav-downloads"
+    optional: true
+- tapOn:
+    text: "Downloads"
+    optional: true
+- extendedWaitUntil:
+    visible: "Downloads|No downloads|Saved"
+    timeout: 15000
+
+
+# 6) Profile tab — session persists across nav (email visible = session alive)
+- tapOn:
+    id: "bottom-nav-profile"
+    optional: true
+- tapOn:
+    text: "Profile"
+    optional: true
+- extendedWaitUntil:
+    visible: "Profile|Personal Information|Email|Sign Out"
+    timeout: 15000
+
+# 7) Settings → Delete Account visible (Play Store policy guardrail)
+- tapOn:
+    id: "profile-settings"
+    optional: true
+- tapOn:
+    text: "Settings"
+    optional: true
+- extendedWaitUntil:
+    visible: "Settings|Delete Account|Delete my account|Account"
+    timeout: 15000
+
+# 8) Hardware back → exit hint (regression fix from useAndroidBackButton)
+- pressKey: Back
+- pressKey: Back
+- extendedWaitUntil:
+    visible: "Press back again to exit"
+    timeout: 4000
+    optional: true
+- pressKey: Back

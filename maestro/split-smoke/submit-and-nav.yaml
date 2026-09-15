@@ -1,0 +1,56 @@
+# API 35 split smoke — submit after workflow-level native JS credential fill.
+appId: ${APP_ID}
+---
+- scrollUntilVisible:
+    element:
+      id: "login-submit"
+    direction: DOWN
+    timeout: 10000
+    optional: true
+# Primary submit tap is non-optional: if `login-submit` is not tappable, we
+# want the flow to fail here rather than silently proceed and time out on the
+# dashboard wait 2+ minutes later. Text fallback stays optional.
+- tapOn:
+    id: "login-submit"
+- tapOn:
+    text: "Sign In"
+    optional: true
+- extendedWaitUntil:
+    visible: "Signing in|Quick Actions|All Classes|No active courses|Continue where you left|Dashboard|Home|My Courses|Downloads|Profile|Practice|Explore|Learn|Search|Notifications"
+    timeout: 15000
+    optional: true
+- extendedWaitUntil:
+    visible: "Quick Actions|All Classes|No active courses|Continue where you left|Dashboard|Home|My Courses|Downloads|Profile|Practice|Explore|Learn|Search|Notifications"
+    timeout: 120000
+- tapOn:
+    text: "My Courses"
+    optional: true
+- extendedWaitUntil:
+    visible: "My Courses|No active courses|Enrolled"
+    timeout: 15000
+- tapOn:
+    text: "Downloads"
+    optional: true
+- extendedWaitUntil:
+    visible: "Downloads|No downloads|Saved"
+    timeout: 15000
+- tapOn:
+    text: "Profile"
+    optional: true
+- extendedWaitUntil:
+    visible: ${MAESTRO_EMAIL}
+    timeout: 10000
+- tapOn:
+    text: "Settings"
+    optional: true
+- extendedWaitUntil:
+    visible: "Delete Account|Delete my account"
+    timeout: 8000
+    optional: true
+- pressKey: Back
+- pressKey: Back
+- extendedWaitUntil:
+    visible: "Press back again to exit"
+    timeout: 4000
+    optional: true
+- pressKey: Back

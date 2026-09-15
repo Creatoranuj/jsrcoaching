@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS idx_lessons_course_position ON public.lessons (course_id, position);

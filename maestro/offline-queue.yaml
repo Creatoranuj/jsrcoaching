@@ -1,0 +1,36 @@
+# Verifies the offline mutation queue: write while offline, reconnect,
+# queue drains. Closes the HIGH "no native-path tests" audit gap.
+#
+# Requires the device to support `adb shell svc data` (real device or
+# emulator). Login state is reused from smoke.yaml — run that first.
+appId: com.sadguru.classes
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Dashboard"
+    timeout: 8000
+- tapOn: "My Courses"
+- tapOn:
+    index: 0
+- tapOn:
+    text: "Smart Note"
+    optional: true
+# Drop the network from inside the test — Maestro >= 1.36
+- runScript: |
+    output.network = maestro.shell("svc wifi disable && svc data disable")
+- tapOn:
+    id: "smart-note-editor"
+    optional: true
+- inputText: "offline-queued-edit"
+- tapOn:
+    text: "Save"
+    optional: true
+- assertVisible:
+    text: ".*queued.*|.*offline.*"
+# Restore connectivity and let the queue drain.
+- runScript: |
+    output.network = maestro.shell("svc wifi enable && svc data enable")
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Dashboard"
+    timeout: 15000

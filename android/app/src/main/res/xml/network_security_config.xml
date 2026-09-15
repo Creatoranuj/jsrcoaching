@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Enforce HTTPS + TLS 1.2+ for all traffic.
+  Cleartext (HTTP) is denied app-wide.
+
+  Certificate pinning is intentionally NOT enabled. Supabase + Bunny CDN
+  rotate certs frequently (managed PKI / Let's Encrypt) and hard-pinning
+  causes app-wide outages when a cert rotates faster than we can ship a
+  new APK. System trust anchors + TLS 1.2+ + HSTS is the practical ceiling.
+  If you add a <pin-set>, include a BACKUP pin and document the rotation
+  schedule in docs/SECURITY_CHECKLIST.md.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">safarenglishka.vercel.app</domain>
+        <domain includeSubdomains="true">supabase.co</domain>
+        <domain includeSubdomains="true">supabase.in</domain>
+        <domain includeSubdomains="true">b-cdn.net</domain>
+        <domain includeSubdomains="true">bunnycdn.com</domain>
+    </domain-config>
+</network-security-config>

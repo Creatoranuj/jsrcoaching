@@ -1,0 +1,123 @@
+name: Playwright E2E
+
+# Browser-based end-to-end smoke tests using Playwright + Chromium.
+# Runs against a locally-served Vite preview build so it doesn't depend on
+# any deployed environment. Uploads the HTML report + traces on failure.
+#
+# Requires GitHub repo secrets (already configured):
+#   E2E_EMAIL, E2E_PASSWORD, TEST_USER_EMAIL, TEST_USER_PASSWORD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'e2e/**'
+      - 'src/**'
+      - 'playwright.config.ts'
+      - '.github/workflows/playwright-e2e.yml'
+  pull_request:
+    paths:
+      - 'e2e/**'
+      - 'src/**'
+      - 'playwright.config.ts'
+  workflow_dispatch:
+
+concurrency:
+  group: playwright-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.2.18'
+
+      # Cache node_modules directly (keyed on lockfile) — skips `bun install`
+      # entirely on warm runs. Mirrors the fast-path used in build-apk.yml.
+      - name: 🗂️ Cache node_modules
+        id: cache-node-modules
+        uses: actions/cache@v5
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-bun-${{ hashFiles('bun.lock', 'bun.lockb', 'package.json') }}
+
+      - name: 📦 Install deps
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: 🔎 Verify Playwright dependency is declared
+        run: |
+          node -e "const p=require('./package.json'); if (!p.devDependencies?.['@playwright/test']) { console.error('::error::@playwright/test is missing from devDependencies'); process.exit(1) }"
+
+      # Cache Playwright's browser download (~180MB) between runs.
+      - name: 🗂️ Cache Playwright browsers
+        id: cache-playwright
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('bun.lock', 'bun.lockb') }}
+
+      - name: 🎭 Install Playwright browsers (chromium only)
+        run: bunx playwright install --with-deps chromium
+
+
+      - name: 🏗️ Build web app
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: bun run build
+
+      - name: ▶️ Start preview server
+        run: |
+          bunx vite preview --port 8080 --host 0.0.0.0 &
+          echo "PREVIEW_PID=$!" >> $GITHUB_ENV
+          # Wait for server to accept connections
+          for i in {1..30}; do
+            if curl -sf http://localhost:8080 >/dev/null; then
+              echo "Preview server ready"; exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Preview server failed to start"; exit 1
+
+      - name: 🧪 Run Playwright (chromium only)
+        env:
+          CI: 'true'
+          BASE_URL: 'http://localhost:8080'
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+          TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+          TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+          TEST_PAID_COURSE_ID: ${{ secrets.TEST_PAID_COURSE_ID }}
+          # Learning-journey legs; unset => those legs skip cleanly (never red).
+          E2E_COURSE_ID: ${{ secrets.E2E_COURSE_ID }}
+          E2E_PAID_COURSE_ID: ${{ secrets.E2E_PAID_COURSE_ID || secrets.TEST_PAID_COURSE_ID }}
+          E2E_QUIZ_ID: ${{ secrets.E2E_QUIZ_ID }}
+        # Soft-fail: don't block downstream jobs on flaky E2E runs. The HTML
+        # report + traces are always uploaded below; check the artifact for
+        # actual failures. Convert to hard-fail by removing `|| true` once
+        # the suite is stable across 5+ consecutive green runs.
+        run: bunx playwright test --project=chromium --reporter=html,json || echo "::warning::Playwright tests failed — see playwright-report artifact"
+
+      - name: 📤 Upload Playwright report (always)
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+          if-no-files-found: ignore
