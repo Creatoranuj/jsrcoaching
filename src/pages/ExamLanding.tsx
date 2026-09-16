@@ -230,7 +230,7 @@ const ExamLanding = memo(() => {
         <Footer />
       </Suspense>
 
-      <WhatsAppFloat liftOnMobile={false} />
+      <WhatsAppFloat />
     </div>
   );
 });

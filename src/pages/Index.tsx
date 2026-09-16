@@ -38,6 +38,7 @@ import { useHero } from "@/hooks/useHero";
 import { useLandingCourses } from "@/hooks/useLandingCourses";
 import { supabase } from "@/integrations/supabase/client";
 import WhatsAppFab from "@/components/common/WhatsAppFab";
+import { WHATSAPP_NUMBER } from "@/components/common/WhatsAppButton";
 
 export interface HomepageCourse {
   id: string;
@@ -66,8 +67,7 @@ const defaultCourses: HomepageCourse[] = [
   price_effective: null,
 }));
 
-const WHATSAPP_PHONE = "916386474017";
-const WHATSAPP_URL = `https://wa.me/${WHATSAPP_PHONE}`;
+const WHATSAPP_URL = `https://wa.me/${WHATSAPP_NUMBER}`;
 const YOUTUBE_URL = "https://www.youtube.com/channel/UCP4lJcfTj9AnAS3vutTuMHA";
 const MAPS_URL = "https://maps.app.goo.gl/94xmibXHD3K2KsQV8?g_st=ac";
 const ADDRESS = "Ugapur Road, Uttar Pradesh 221301";
@@ -578,9 +578,8 @@ export default function Index() {
       </footer>
 
       <WhatsAppFab
-        phone={WHATSAPP_PHONE}
+        phone={WHATSAPP_NUMBER}
         message="Namaste JSR COACHING, mujhe admission aur batch details chahiye."
-        className="sm:hidden"
       />
 
       <FloatingAuthButton />

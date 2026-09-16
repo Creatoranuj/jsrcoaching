@@ -3,6 +3,7 @@ import WhatsAppIcon from "./WhatsAppIcon";
 import { openExternal } from "../../lib/native/browser";
 import { tapHaptic } from "../../lib/native/haptics";
 import { cn } from "../../lib/utils";
+import { FAB_Z, fabBottom, fabBottomDesktop, type FabSlot } from "../../config/fabStack";
 
 export interface WhatsAppFabProps {
   /** Number in wa.me form (digits only, country code first). */
@@ -10,9 +11,12 @@ export interface WhatsAppFabProps {
   /** Prefilled chat text. */
   message?: string;
   /**
-   * Vertical offset in rem, BEFORE the safe-area inset is added.
-   * Default clears the mobile bottom action bar (Login/Signup pill).
+   * Slot in the shared FAB stack. `base` is the lowest slot (used by the JSR
+   * Agent chat bubble); WhatsApp sits one slot above it so the two 56px
+   * buttons can never overlap. See `src/config/fabStack.ts`.
    */
+  slot?: FabSlot;
+  /** Escape hatch: explicit rem offset that overrides the slot. */
   bottomRem?: number;
   /** Pulse once on mount to draw the eye (respects reduced motion). */
   pulseOnMount?: boolean;
@@ -35,7 +39,8 @@ export interface WhatsAppFabProps {
 export default function WhatsAppFab({
   phone,
   message,
-  bottomRem = 6.5,
+  slot = "raised",
+  bottomRem,
   pulseOnMount = true,
   className,
   label = "WhatsApp par baat karein",
@@ -76,11 +81,17 @@ export default function WhatsAppFab({
       target="_blank"
       rel="noopener noreferrer"
       aria-label={label}
+      data-fab-slot={slot}
       title={label}
       onClick={onClick}
-      style={{ bottom: `calc(${bottomRem}rem + env(safe-area-inset-bottom, 0px))` }}
+      style={{
+        bottom: fabBottom(bottomRem ?? slot),
+        zIndex: FAB_Z,
+        ["--fab-md-bottom" as string]: fabBottomDesktop(slot),
+      } as React.CSSProperties}
       className={cn(
-        "fixed right-4 z-40 grid size-14 place-items-center rounded-full",
+        "fixed right-4 grid size-14 place-items-center rounded-full",
+        "md:right-6 md:!bottom-[var(--fab-md-bottom)]",
         "bg-whatsapp text-whatsapp-foreground shadow-lg shadow-whatsapp/30",
         "transition-transform duration-200 active:scale-95",
         "[@media(hover:hover)]:hover:scale-105",

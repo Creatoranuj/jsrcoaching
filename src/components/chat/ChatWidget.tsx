@@ -93,6 +93,7 @@ const MarkdownMessage = ({ content }: { content: string }) => (
 // Re-exported here for backwards compatibility with any other consumers.
 export { isPathAllowed } from "./chatWidgetRoutes";
 import { isPathAllowed } from "./chatWidgetRoutes";
+import { FAB_Z, fabBottom } from "../../config/fabStack";
 
 const ChatWidget = forwardRef<HTMLDivElement>(() => {
   const { user } = useAuth();
@@ -469,8 +470,8 @@ const ChatWidget = forwardRef<HTMLDivElement>(() => {
     return (
       <div
         data-chat-widget="true"
-        style={{ bottom: "calc(5rem + env(safe-area-inset-bottom, 0px))" }}
-        className="fixed right-4 z-[55] md:!bottom-6 md:right-6 flex flex-col items-end gap-2"
+        style={{ bottom: fabBottom("base"), zIndex: FAB_Z }}
+        className="fixed right-4 md:!bottom-6 md:right-6 flex flex-col items-end gap-2"
       >
         {/* Login tooltip */}
         {showLoginTip && (
@@ -541,9 +542,9 @@ const ChatWidget = forwardRef<HTMLDivElement>(() => {
       {/* Floating trigger button */}
       <button
         onClick={() => setIsOpen(prev => !prev)}
-        style={{ bottom: "calc(5rem + env(safe-area-inset-bottom, 0px))" }}
+        style={{ bottom: fabBottom("base"), zIndex: FAB_Z }}
         className={cn(
-          "fixed right-4 z-[55] md:!bottom-6 md:right-6",
+          "fixed right-4 md:!bottom-6 md:right-6",
           "w-14 h-14 flex items-center justify-center bg-transparent transition-transform duration-200 active:scale-95",
           isOpen && "scale-0 opacity-0 pointer-events-none"
         )}
