@@ -17,7 +17,7 @@ import {
   ArrowLeft, Play, Lock, Clock,
   FileText, MessageCircle, CheckCircle, Send, Library, ImageIcon, X,
   HelpCircle, ChevronRight, ChevronDown, ChevronUp, Edit2, Save, Sparkles, ListVideo, Loader2, Target, Paperclip, MessageSquare, Star, ThumbsUp, Download, Bookmark as BookmarkIcon, Users, Phone, Mail, Bot, ExternalLink, Share2,
-  Upload as UploadIcon, Link as LinkIcon, Trash2, BookOpen, Maximize2
+  Upload as UploadIcon, Link as LinkIcon, Trash2, BookOpen, Eye
 } from "lucide-react";
 import { Markdown } from "../components/Markdown";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
@@ -570,7 +570,7 @@ const LessonView = () => {
   }, [closeSelectedPdf, selectedPdf]);
 
   const pdfToolbarActions = selectedPdf ? [
-    { label: "Full page", icon: Maximize2, action: openSelectedPdfFullPage },
+    { label: "Full page", icon: Eye, action: openSelectedPdfFullPage },
     { label: "Export", icon: Share2, action: exportSelectedPdf },
     { label: "Download", icon: Download, action: saveSelectedPdf },
     { label: "Open In Web", icon: ExternalLink, action: () => openExternal(selectedPdf.file_url, { preferWebView: false }) },
@@ -587,6 +587,12 @@ const LessonView = () => {
   // Notes panel always renders edge-to-edge (no card/box) — even the empty
   // state should sit full-width below the player, never inside a rounded card.
   const isNotesPanel = activeChip === "notes";
+  // Class-PDF lessons render the inline PDF in the player slot. The floating
+  // eye (full-page) button there auto-hides like the reader chrome, and any
+  // tap/pointer move on the PDF surface reveals it again.
+  const isClassPdfLesson = ['PDF', 'DPP', 'DPP_ATTEMPT', 'NOTES'].includes(
+    currentLesson?.lecture_type?.toUpperCase() ?? ''
+  );
 
   // Landscape-scroll rule: allow vertical scrolling in fake-fullscreen ONLY while
   // the user has an inline PDF *open* (so they can scroll the PDF below the
@@ -675,7 +681,7 @@ const LessonView = () => {
 
   // When a PDF opens, show chrome briefly then auto-hide for distraction-free reading.
   useEffect(() => {
-    if (isReader) {
+    if (isReader || isClassPdfLesson) {
       setChromeVisible(true);
       scheduleHideChrome();
     } else {
@@ -685,7 +691,7 @@ const LessonView = () => {
     return () => {
       if (chromeHideTimer.current) window.clearTimeout(chromeHideTimer.current);
     };
-  }, [isReader, scheduleHideChrome]);
+  }, [isReader, isClassPdfLesson, scheduleHideChrome]);
 
   // Android / browser back-button integration for the inline PDF viewer only.
   // Cleanup must NEVER call history.back(); doing so created a back-loop where
@@ -1643,7 +1649,12 @@ const LessonView = () => {
                           2. Edge-swipe-right gesture (useSwipeBack)
                           3. Player's own exit arrow in fullscreen (MahimaGhostPlayer) */}
                     {currentLesson && (['PDF', 'DPP', 'DPP_ATTEMPT', 'NOTES'].includes(currentLesson.lecture_type?.toUpperCase() ?? '')) ? (
-                      <div className="relative w-full bg-background">
+                      <div
+                        className="relative w-full bg-background"
+                        onClick={revealChrome}
+                        onTouchStart={revealChrome}
+                        onMouseMove={revealChrome}
+                      >
                         {/* Open the class PDF in the full-page immersive reader
                             (user request 2026-09-08). The inline viewer reserves
                             room for the lesson chrome below, which left a dead
@@ -1662,9 +1673,9 @@ const LessonView = () => {
                               badge: (currentLesson.lecture_type?.toUpperCase() === 'DPP' ? 'DPP' : 'PDF'),
                             });
                           }}
-                          className="absolute right-2 top-2 z-[60] inline-flex min-h-11 items-center gap-1.5 rounded-full bg-background/85 px-3 py-1.5 text-xs font-medium text-foreground shadow-lg ring-1 ring-border backdrop-blur transition active:scale-95"
+                          className={`absolute right-2 top-2 z-[60] inline-flex h-11 w-11 items-center justify-center rounded-full bg-background/85 text-foreground shadow-lg ring-1 ring-border backdrop-blur transition-opacity duration-300 active:scale-95 ${chromeVisible ? "opacity-100" : "pointer-events-none opacity-0"}`}
                         >
-                          <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" /> Full page
+                          <Eye className="h-4 w-4" aria-hidden="true" />
                         </button>
                         <PdfViewer
                           url={currentLesson.video_url || currentLesson.class_pdf_url || ''}
@@ -1945,9 +1956,9 @@ const LessonView = () => {
                                 type="button"
                                 aria-label="Open PDF full page"
                                 onClick={(e) => { e.stopPropagation(); openSelectedPdfFullPage(); }}
-                                className="absolute right-2 top-2 z-[60] flex items-center gap-1.5 rounded-full bg-background/85 px-3 py-1.5 text-xs font-medium text-foreground shadow-lg ring-1 ring-border backdrop-blur transition active:scale-95"
+                                className={`absolute right-2 top-2 z-[60] flex h-11 w-11 items-center justify-center rounded-full bg-background/85 text-foreground shadow-lg ring-1 ring-border backdrop-blur transition-opacity duration-300 active:scale-95 ${chromeVisible ? "opacity-100" : "pointer-events-none opacity-0"}`}
                               >
-                                <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" /> Full page
+                                <Eye className="h-4 w-4" aria-hidden="true" />
                               </button>
                               <PdfViewer
                                 url={selectedPdf.file_url}
