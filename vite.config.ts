@@ -16,7 +16,7 @@ export default defineConfig(({ mode }) => ({
     "import.meta.env.VITE_SENTRY_RELEASE": JSON.stringify(
       process.env.VITE_SENTRY_RELEASE ??
         (process.env.APP_VERSION_NAME && process.env.GITHUB_SHA
-          ? `com.sadguru.classes@${process.env.APP_VERSION_NAME}+${(process.env.GITHUB_SHA || "").slice(0, 7)}`
+          ? `com.jsrcoaching.app@${process.env.APP_VERSION_NAME}+${(process.env.GITHUB_SHA || "").slice(0, 7)}`
           : "")
     ),
   },
