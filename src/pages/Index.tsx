@@ -25,8 +25,8 @@ import {
   Youtube,
 } from "lucide-react";
 
-import classroomImage from "@/assets/jsr-classroom.jpg";
-import mockTestImage from "@/assets/jsr-mock-test.jpg";
+import classroomImage from "@/assets/jsr-classroom.webp";
+import mockTestImage from "@/assets/jsr-mock-test.webp";
 import { JSRMark } from "@/components/brand/JSRMark";
 import { WhatsAppIcon } from "@/components/brand/WhatsAppIcon";
 import { Button } from "@/components/ui/button";
