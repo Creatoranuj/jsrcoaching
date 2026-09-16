@@ -67,6 +67,47 @@ export function documentSourceCandidates(rawUrl: string): string[] {
 
 const isHtml = (blob: Blob) => /text\/html/i.test(blob.type || "");
 
+/**
+ * Per-attempt budget. Without it a black-holing host — an overloaded
+ * archive.org scan node is the usual one — holds the whole ladder hostage and
+ * the student watches a spinner instead of the next source being tried.
+ */
+const ATTEMPT_TIMEOUT_MS = 20_000;
+/** Only transient failures are retried; a 404 means "try the next source". */
+const RETRY_BACKOFF_MS = [300, 900];
+
+function isTransient(err: unknown): boolean {
+  const msg = (err as Error)?.message || "";
+  if (/HTTP (408|425|429|5\d\d)\b/.test(msg)) return true;
+  return /timed out|network|failed to fetch/i.test(msg);
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Runs one attempt under its own deadline, chained to the caller's signal. */
+async function withTimeout<T>(
+  run: (signal: AbortSignal) => Promise<T>,
+  signal: AbortSignal | undefined,
+): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ATTEMPT_TIMEOUT_MS);
+  const onAbort = () => controller.abort();
+  signal?.addEventListener("abort", onAbort);
+  try {
+    return await run(controller.signal);
+  } catch (err) {
+    // Caller cancelled → propagate. Our own deadline → a retryable message.
+    if (signal?.aborted) throw err;
+    if ((err as { name?: string })?.name === "AbortError") {
+      throw new Error("This source timed out");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
+  }
+}
+
 async function fetchOne(url: string, signal?: AbortSignal): Promise<Blob> {
   // Native HTTP first on the APK — returns null on web and on transient
   // failures so we always fall through to the browser fetch.
@@ -86,6 +127,8 @@ async function fetchOne(url: string, signal?: AbortSignal): Promise<Blob> {
 
 /**
  * Fetch the bytes of a document, trying every source the reader would try.
+ * Each candidate gets its own deadline plus two backoff retries for genuinely
+ * transient failures; anything else moves straight to the next candidate.
  * Throws a user-readable Error when every candidate fails.
  */
 export async function fetchDocumentBlob(rawUrl: string, signal?: AbortSignal): Promise<Blob> {
@@ -94,11 +137,19 @@ export async function fetchDocumentBlob(rawUrl: string, signal?: AbortSignal): P
 
   let lastError: unknown = null;
   for (const candidate of documentSourceCandidates(url)) {
-    try {
-      return await fetchOne(candidate, signal);
-    } catch (err) {
-      if ((err as { name?: string })?.name === "AbortError") throw err;
-      lastError = err;
+    for (let attempt = 0; attempt <= RETRY_BACKOFF_MS.length; attempt++) {
+      try {
+        return await withTimeout((s) => fetchOne(candidate, s), signal);
+      } catch (err) {
+        if (signal?.aborted) throw err;
+        if ((err as { name?: string })?.name === "AbortError") throw err;
+        lastError = err;
+        if (attempt < RETRY_BACKOFF_MS.length && isTransient(err)) {
+          await sleep(RETRY_BACKOFF_MS[attempt]);
+          continue;
+        }
+        break;
+      }
     }
   }
 

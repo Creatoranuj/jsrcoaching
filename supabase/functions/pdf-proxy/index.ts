@@ -651,6 +651,10 @@ const ALLOWED_HOSTS = [
   /(^|\.)b-cdn\.net$/i,
   /(^|\.)githubusercontent\.com$/i,
   /(^|\.)dropboxusercontent\.com$/i,
+  // Public Google Cloud Storage buckets, and the host Drive redirects to for
+  // large downloads (each redirect hop is re-validated against this list).
+  /(^|\.)storage\.googleapis\.com$/i,
+  /(^|\.)drive\.usercontent\.google\.com$/i,
   /(^|\.)supabase\.co$/i,
 ];
 

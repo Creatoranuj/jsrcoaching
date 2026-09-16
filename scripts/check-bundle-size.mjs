@@ -99,9 +99,27 @@ if (entryTotalGz > MAX_ENTRY_KB * 1024) {
   );
 }
 
+// Documented, deliberately-lazy chunks. These never load at app start: each
+// is dynamic-imported behind one user action. Every entry needs a reason and
+// its own cap so the chunk still cannot grow unnoticed — and the exception
+// does not apply if the chunk ever enters the entry graph.
+const LAZY_CHUNK_EXCEPTIONS = [
+  {
+    prefix: "html2pdf-",
+    maxKb: 300,
+    reason: "dynamic import in NotionPageRenderer (Save-as-PDF only); not in the entry graph",
+  },
+];
+
 for (const r of rows) {
-  if (r.gz > MAX_CHUNK_KB * 1024) {
-    failures.push(`Chunk ${r.name} ${fmt(r.gz)} > budget ${MAX_CHUNK_KB}KB gzipped`);
+  const exception = LAZY_CHUNK_EXCEPTIONS.find((e) => r.name.startsWith(e.prefix));
+  const cap = exception && !r.isEntry ? exception.maxKb : MAX_CHUNK_KB;
+  if (r.gz > cap * 1024) {
+    failures.push(`Chunk ${r.name} ${fmt(r.gz)} > budget ${cap}KB gzipped`);
+  } else if (exception && r.gz > MAX_CHUNK_KB * 1024) {
+    console.log(
+      `[bundle-size] allowed lazy chunk ${r.name} ${fmt(r.gz)} (cap ${exception.maxKb}KB) — ${exception.reason}`,
+    );
   }
 }
 

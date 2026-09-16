@@ -14,9 +14,11 @@ import {
   isArchiveOrg,
   isGoogleDocs,
   isGoogleDrive,
+  isGoogleSheets,
   isNotion,
   sanitizeRemoteUrl,
 } from "./pdfViewerUrl";
+import { isRelayableUrl } from "./trustedPdfHosts";
 import { safeGetJSON, safeSetJSON } from "./storage";
 
 export type LinkSource = "drive" | "docs" | "notion" | "archive" | "cdn" | "web";
@@ -52,7 +54,10 @@ const CDN_HOST_RE =
 export function classifyLink(raw: string): LinkSource {
   const url = raw.trim();
   if (isNotion(url)) return "notion";
-  if (isGoogleDocs(url)) return "docs";
+  // Sheets and Slides export to PDF exactly like Docs do — classifying them
+  // as "web" left them with kind LINK: no reader, no offline save.
+  if (isGoogleDocs(url) || isGoogleSheets(url) || /docs\.google\.com\/presentation/.test(url))
+    return "docs";
   if (isGoogleDrive(url)) return "drive";
   if (isArchiveOrg(url)) return "archive";
   if (CDN_HOST_RE.test(url) || PDF_RE.test(url) || OFFICE_RE.test(url)) return "cdn";
@@ -174,28 +179,12 @@ export function markLinkOffline(id: string, itemId: string | null) {
  * Android app (native HTTP) but fails in a browser when the host sends no
  * CORS headers. We surface that honestly instead of promising "any link".
  */
-const RELAYABLE_HOSTS = [
-  /(^|\.)cdn\.jsdelivr\.net$/i,
-  /(^|\.)raw\.githubusercontent\.com$/i,
-  /(^|\.)blob\.core\.windows\.net$/i,
-  /(^|\.)github-storages-cdn\.vercel\.app$/i,
-  /(^|\.)storage-safarenglishka-recording\.vercel\.app$/i,
-  /(^|\.)storage-naveenbharat-recording\.vercel\.app$/i,
-  /(^|\.)googleusercontent\.com$/i,
-  /(^|\.)archive\.org$/i,
-  /^prod-recordings\.vedantu\.com$/i,
-  // Google Drive / Docs and Notion have dedicated proxy routes.
-  /(^|\.)drive\.google\.com$/i,
-  /(^|\.)docs\.google\.com$/i,
-  /(^|\.)notion\.(so|site)$/i,
-];
-
+/**
+ * Relayable hosts live in `trustedPdfHosts.ts` so the client and the
+ * `pdf-proxy` edge function can never disagree about what is readable.
+ */
 export function isProxyRelayable(url: string): boolean {
-  try {
-    return RELAYABLE_HOSTS.some((re) => re.test(new URL(url).hostname));
-  } catch {
-    return false;
-  }
+  return isRelayableUrl(url);
 }
 
 /** True when a browser is likely to block the direct fetch for this host. */
