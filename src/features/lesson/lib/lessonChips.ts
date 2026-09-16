@@ -141,7 +141,7 @@ export function lessonProgressPercent(completedCount: number, totalLessons: numb
   return Math.max(0, Math.min(100, pct));
 }
 
-const DOCUMENT_TYPES = ["PDF", "DPP", "DPP_ATTEMPT", "NOTES"];
+const DOCUMENT_TYPES = ["PDF", "DPP", "DPP_ATTEMPT", "NOTES", "NCERT"];
 
 /** True when a lesson should open in the full-page document reader. */
 export function isDocumentLessonType(lectureType?: string | null): boolean {

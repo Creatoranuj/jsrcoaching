@@ -30,7 +30,7 @@ function refineType(type: string, url?: string): string {
 
 export default function FileTypeIcon({ type, url, className }: Props) {
   const t = refineType((type || "").toUpperCase(), url);
-  if (t === "PDF" || t === "NOTES" || t === "DPP") return <PdfIcon className={className} />;
+  if (t === "PDF" || t === "NOTES" || t === "DPP" || t === "NCERT") return <PdfIcon className={className} />;
 
   const map: Record<string, { Icon: typeof FileText; bg: string; fg: string }> = {
     DOC:  { Icon: FileText,        bg: "bg-blue-500/10",   fg: "text-blue-600 dark:text-blue-400" },

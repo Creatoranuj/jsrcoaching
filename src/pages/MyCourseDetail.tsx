@@ -64,7 +64,7 @@ interface Chapter {
   thumbnailUrl: string | null;
 }
 
-type ContentType = "all" | "lectures" | "pdfs" | "dpp" | "notes";
+type ContentType = "all" | "lectures" | "pdfs" | "dpp" | "notes" | "ncert";
 
 // ── Static constants outside component — never recreated ──────────────────────
 const typeMapping: Record<ContentType, string[]> = {
@@ -73,6 +73,7 @@ const typeMapping: Record<ContentType, string[]> = {
   pdfs: ["PDF"],
   dpp: ["DPP"],
   notes: ["NOTES"],
+  ncert: ["NCERT"],
 };
 
 const tabs: { id: ContentType; label: string }[] = [
@@ -81,7 +82,13 @@ const tabs: { id: ContentType; label: string }[] = [
   { id: "pdfs", label: "PDFs" },
   { id: "dpp", label: "DPPs" },
   { id: "notes", label: "Notes" },
+  { id: "ncert", label: "NCERT" },
 ];
+
+// The NCERT chip is a VIP Offline Batch feature: it is only rendered for that
+// course, or for any course that actually holds NCERT items (so a future
+// upload never ends up hidden behind a chip that is not drawn).
+const NCERT_COURSE_RE = /vip\s*offline/i;
 
 // ── Derives exact chapter completion counts from the source-of-truth sets ──────
 // Prevents double-counting on re-entry, hot-reload, or concurrent updates.
@@ -433,7 +440,19 @@ const MyCourseDetail = () => {
     ).length,
     dpp: chapterLessons.filter(l => l.lectureType === "DPP").length,
     notes: chapterLessons.filter(l => l.lectureType === "NOTES").length,
+    ncert: chapterLessons.filter(l => l.lectureType === "NCERT").length,
   }), [chapterLessons, attachmentCounts]);
+
+  const visibleTabs = useMemo(
+    () =>
+      tabs.filter(
+        (t) =>
+          t.id !== "ncert" ||
+          NCERT_COURSE_RE.test(course?.title || "") ||
+          tabCounts.ncert > 0,
+      ),
+    [course?.title, tabCounts.ncert],
+  );
 
   const filteredSidebarChapters = useMemo(() => {
     if (!sidebarSearch.trim()) return chapters;
@@ -1155,7 +1174,7 @@ const MyCourseDetail = () => {
                         aria-label="Filter lessons by type"
                         className="flex gap-2 overflow-x-auto scrollbar-none flex-1 min-w-0 -mx-1 px-1"
                       >
-                        {tabs.map((tab) => {
+                        {visibleTabs.map((tab) => {
                           const count = tabCounts[tab.id];
                           const isActive = activeTab === tab.id;
                           return (

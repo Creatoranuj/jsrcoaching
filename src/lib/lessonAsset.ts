@@ -27,7 +27,7 @@ function clean(value: string | null | undefined): string | null {
 
 export function lessonAssetUrl(lesson: LessonAssetRow, fallbackPdfUrl?: string | null): string | null {
   const legacyVideoAsDoc =
-    ["PDF", "DPP", "NOTES"].includes((lesson.lecture_type ?? "").toUpperCase()) ||
+    ["PDF", "DPP", "NOTES", "NCERT"].includes((lesson.lecture_type ?? "").toUpperCase()) ||
     DOC_URL_RE.test(lesson.video_url ?? "")
       ? clean(lesson.video_url)
       : null;

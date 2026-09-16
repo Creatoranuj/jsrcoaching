@@ -18,7 +18,7 @@ interface Release {
   assets: ReleaseAsset[];
 }
 
-const REPO = "MrAnujBabu/Sadguruclasses";
+const REPO = "Creatoranuj/safarenglishka";
 
 export default function ApkDownloadsCard() {
   const [loading, setLoading] = useState(true);

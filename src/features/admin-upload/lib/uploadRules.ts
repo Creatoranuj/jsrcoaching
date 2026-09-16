@@ -92,10 +92,10 @@ export function nextPosition(explicit: number | undefined | null, currentCount: 
 // ── Upload type presentation rules ───────────────────────────────────────────
 // Moved out of AdminUpload.tsx so the label/colour/icon mapping is testable.
 
-export type UploadTypeId = "VIDEO" | "LIVE" | "PDF" | "DPP" | "DPP_ATTEMPT" | "NOTES" | "TEST";
+export type UploadTypeId = "VIDEO" | "LIVE" | "PDF" | "DPP" | "DPP_ATTEMPT" | "NOTES" | "NCERT" | "TEST";
 
 export const UPLOAD_TYPES: UploadTypeId[] = [
-  "VIDEO", "LIVE", "PDF", "DPP", "DPP_ATTEMPT", "NOTES", "TEST",
+  "VIDEO", "LIVE", "PDF", "DPP", "DPP_ATTEMPT", "NOTES", "NCERT", "TEST",
 ];
 
 const UPLOAD_TYPE_LABELS: Record<UploadTypeId, string> = {
@@ -105,6 +105,7 @@ const UPLOAD_TYPE_LABELS: Record<UploadTypeId, string> = {
   DPP: "DPP",
   DPP_ATTEMPT: "DPP Attempt",
   NOTES: "Notes",
+  NCERT: "NCERT",
   TEST: "Test",
 };
 
@@ -127,6 +128,7 @@ export function uploadTypeColor(type: string): string {
     case "DPP": return "bg-green-100 text-green-600";
     case "DPP_ATTEMPT": return "bg-emerald-100 text-emerald-700";
     case "NOTES": return "bg-purple-100 text-purple-600";
+    case "NCERT": return "bg-amber-100 text-amber-700";
     case "TEST": return "bg-red-100 text-red-600";
     default: return "bg-muted text-muted-foreground";
   }

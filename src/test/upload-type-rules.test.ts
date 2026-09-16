@@ -9,7 +9,7 @@ import {
 
 describe("upload type presentation", () => {
   it("labels every type", () => {
-    expect(UPLOAD_TYPES).toHaveLength(7);
+    expect(UPLOAD_TYPES).toHaveLength(8);
     expect(uploadTypeLabel("VIDEO")).toBe("Lecture");
     expect(uploadTypeLabel("LIVE")).toBe("Live Class");
     expect(uploadTypeLabel("DPP_ATTEMPT")).toBe("DPP Attempt");

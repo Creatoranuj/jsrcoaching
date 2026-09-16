@@ -53,7 +53,7 @@ import { VideoUploadBlock } from "../features/admin-upload/components/VideoUploa
 import { ContentSourceBlock } from "../features/admin-upload/components/ContentSourceBlock";
 import { getErrorMessage } from "@/lib/errorMessage";
 
-type UploadType = "VIDEO" | "PDF" | "DPP" | "DPP_ATTEMPT" | "NOTES" | "TEST" | "LIVE";
+type UploadType = "VIDEO" | "PDF" | "DPP" | "DPP_ATTEMPT" | "NOTES" | "NCERT" | "TEST" | "LIVE";
 
 // ─── Sortable Item wrapper ──────────────────────────────────────────
 const SortableItem = ({ id, children }: { id: string; children: (handle: React.ReactNode) => React.ReactNode }) => {

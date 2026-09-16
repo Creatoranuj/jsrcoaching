@@ -27,7 +27,7 @@ export function normalizeFormat(raw: string | null | undefined): string {
   if (t === "DOCX") return "DOC";
   if (t === "PPTX") return "PPT";
   if (t === "XLSX") return "XLS";
-  if (t === "NOTES" || t === "DPP") return "PDF";
+  if (t === "NOTES" || t === "DPP" || t === "NCERT") return "PDF";
   return t;
 }
 

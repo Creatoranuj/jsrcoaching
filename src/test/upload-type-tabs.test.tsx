@@ -7,7 +7,7 @@ describe("UploadTypeTabs", () => {
   it("renders every type and reports the picked one", () => {
     const onChange = vi.fn();
     render(<UploadTypeTabs value="VIDEO" onChange={onChange} />);
-    expect(screen.getAllByRole("button")).toHaveLength(7);
+    expect(screen.getAllByRole("button")).toHaveLength(8);
     fireEvent.click(screen.getByRole("button", { name: "DPP Attempt" }));
     expect(onChange).toHaveBeenCalledWith("DPP_ATTEMPT");
   });

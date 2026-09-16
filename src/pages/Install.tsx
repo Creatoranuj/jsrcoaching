@@ -30,20 +30,19 @@ const PRESS = "active:scale-[0.97] transition-transform duration-150 ease-out";
 
 // ─── LATEST GITHUB APK LINK ──────────────────────────────────────────────────
 // Canonical asset is JSRCoaching.apk, published by .github/workflows/build-apk.yml
-// to github.com/MrAnujBabu/Sadguruclasses/releases.
+// to github.com/Creatoranuj/safarenglishka/releases.
 // Fallback used when the GitHub Releases API is unreachable (rate limit /
 // offline). The page still ALWAYS tries to resolve the newest release first.
-const APK_REPO = "MrAnujBabu/Sadguruclasses";
+const APK_REPO = "Creatoranuj/safarenglishka";
 const APK_ASSET_NAME = "JSRCoaching.apk";
-// Offline/rate-limited fallback keeps the legacy fixed name: releases published
-// before the JSR rename only carry Sadguruclasses.apk, and the workflow still
-// publishes that copy alongside JSRCoaching.apk.
-const APK_LEGACY_ASSET_NAME = "Sadguruclasses.apk";
-const APK_FALLBACK_URL = `https://github.com/${APK_REPO}/releases/latest/download/${APK_LEGACY_ASSET_NAME}`;
+// Offline/rate-limited fallback points at the canonical JSR asset name, which
+// every current release publishes. (Older releases also carry a legacy-named
+// copy, but it is never surfaced to users.)
+const APK_FALLBACK_URL = `https://github.com/${APK_REPO}/releases/latest/download/${APK_ASSET_NAME}`;
 const GITHUB_LATEST_API = `https://api.github.com/repos/${APK_REPO}/releases/latest`;
-// Bumped v2 → v3 with the repo move: v2 entries hold the dead
-// mahiyadav-26/2 URL and would keep serving it for up to 6h.
-const APK_CACHE_KEY = "nb:latest_apk:v3";
+// Bumped v3 → v4 with the repo move to Creatoranuj/safarenglishka: older
+// entries hold a dead release URL and would keep serving it for up to 6h.
+const APK_CACHE_KEY = "nb:latest_apk:v4";
 const APK_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6h
 // Only ever hand a github.com / githubusercontent.com URL to the downloader —
 // the API response is remote data, so treat it as untrusted.
@@ -87,7 +86,7 @@ async function fetchLatestApk(signal: AbortSignal): Promise<ApkInfo | null> {
     const isApk = (a) =>
       typeof a?.browser_download_url === "string" && /\.apk$/i.test(a?.name || "");
     // Prefer the fixed-name canonical asset; fall back to any versioned
-    // JSRCoaching*/Sadguruclasses*.apk, and only then to whatever .apk the release carries.
+    // JSRCoaching*/legacy-named .apk, and only then to whatever .apk the release carries.
     const asset =
       assets.find((a) => isApk(a) && a.name === APK_ASSET_NAME) ??
       assets.find((a) => isApk(a) && /^(jsrcoaching|sadguru)/i.test(a.name)) ??
@@ -253,7 +252,7 @@ const Install = () => {
     void tapHaptic("light");
     void openResource({
       url: `https://wa.me/?text=${encodeURIComponent(
-        `📚 Install JSR COACHING app!\n\n📦 Download APK (Android): ${apkUrl}\n\n🌐 Or install via browser: ${appUrl}/install`
+        `📚 Install JSR Institute app!\n\n📦 Download APK (Android): ${apkUrl}\n\n🌐 Or install via browser: ${appUrl}/install`
       )}`,
       kind: "link",
     });
@@ -349,7 +348,7 @@ const Install = () => {
             <ArrowLeft className="h-4 w-4" />
           </Button>
 
-          <img src={appLogo} alt="JSR COACHING" className="h-9 w-9 rounded-xl object-cover" />
+          <img src={appLogo} alt="JSR Institute" className="h-9 w-9 rounded-xl object-cover" />
           <span className="font-semibold text-foreground">Install App</span>
         </div>
       </div>
@@ -360,13 +359,13 @@ const Install = () => {
         <div className="relative overflow-hidden rounded-2xl mt-5 mb-6 bg-gradient-to-br from-primary/20 via-primary/10 to-background border border-primary/20 px-6 pt-8 pb-6 text-center">
           <img
             src={appLogo}
-            alt="JSR COACHING"
+            alt="JSR Institute"
             className="mx-auto h-32 w-32 object-contain drop-shadow-2xl mb-3 rounded-3xl"
             onError={(e) => {
               (e.target as HTMLImageElement).style.display = "none";
             }}
           />
-          <h1 className="text-2xl font-bold text-foreground">Install JSR COACHING App</h1>
+          <h1 className="text-2xl font-bold text-foreground">Install JSR Institute App</h1>
           <p className="text-muted-foreground text-sm mt-1">
             Get the full learning experience on your device — works offline too!
           </p>
@@ -390,7 +389,7 @@ const Install = () => {
             <CheckCircle2 className="h-6 w-6 text-primary flex-shrink-0" />
             <div>
               <p className="font-semibold text-primary text-sm">
-                You're already using the JSR COACHING app! 🎉
+                You're already using the JSR Institute app! 🎉
               </p>
               <p className="text-xs text-muted-foreground">
                 This app is installed and running in standalone mode.
@@ -621,7 +620,7 @@ const Install = () => {
                 number={4}
                 icon={CheckCircle2}
                 title='Tap "Add" to confirm'
-                description="The JSR COACHING app icon will appear on your home screen!"
+                description="The JSR Institute app icon will appear on your home screen!"
               />
               <p className="text-xs text-muted-foreground text-center pt-1">
                 Works offline · Feels like a native app · No App Store needed

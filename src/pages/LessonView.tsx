@@ -824,7 +824,7 @@ const LessonView = () => {
     // viewer blank. Skip auto-open for these lecture types — the user already
     // sees the PDF rendered up top.
     const lt = (currentLesson.lecture_type || "").toUpperCase();
-    if (lt === "PDF" || lt === "NOTES" || lt === "DPP" || lt === "DPP_ATTEMPT") {
+    if (lt === "PDF" || lt === "NOTES" || lt === "DPP" || lt === "DPP_ATTEMPT" || lt === "NCERT") {
       autoOpenedPdfRef.current = currentLesson.id;
       return;
     }
