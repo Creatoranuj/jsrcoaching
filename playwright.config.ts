@@ -1,14 +1,19 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * Playwright Configuration for Sadhguru Coaching Centre E2E Tests
+ * Playwright configuration for JSR Coaching E2E tests
  * Run: npx playwright test
  */
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  retries: process.env.CI ? 1 : 0,
+  // Keep the suite inside the job budget: a broken login must fail fast
+  // instead of hanging until GitHub cancels the job at 25 minutes.
+  timeout: 45_000,
+  expect: { timeout: 10_000 },
+  globalTimeout: 18 * 60 * 1000,
   workers: process.env.CI ? 1 : undefined,
   reporter: [
     ["html", { open: "never" }],
