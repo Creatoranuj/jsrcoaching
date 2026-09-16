@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
+    "start": "node server/index.js",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --run --coverage",
