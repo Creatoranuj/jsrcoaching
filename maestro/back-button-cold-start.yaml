@@ -12,7 +12,7 @@ appId: com.jsrcoaching.app
 
 # Splash should hide → app shell visible within 8s on any device.
 - extendedWaitUntil:
-    visible: "Sadguru Coaching Classes"
+    visible: "JSR COACHING"
     timeout: 8000
 
 # First back press from the root route must NOT exit the app.
