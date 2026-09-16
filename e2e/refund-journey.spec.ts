@@ -17,8 +17,8 @@ const ALLOW_REFUND = process.env.E2E_ALLOW_REFUND === "1";
 
 async function loginAsAdmin(page: Page) {
   await page.goto("/login");
-  await page.getByLabel(/email/i).fill(EMAIL!);
-  await page.getByLabel(/password/i).fill(PASSWORD!);
+  await page.getByTestId("login-email").fill(EMAIL!);
+  await page.getByTestId("login-password").fill(PASSWORD!);
   await page.getByRole("button", { name: /log\s*in|sign\s*in/i }).click();
   await page.waitForURL(/\/(admin|dashboard)/, { timeout: 20_000 });
   await page.goto("/admin");
@@ -80,8 +80,8 @@ test.describe("admin refund journey", () => {
     test.skip(!studentEmail || !studentPassword, "E2E_EMAIL / E2E_PASSWORD not set");
 
     await page.goto("/login");
-    await page.getByLabel(/email/i).fill(studentEmail!);
-    await page.getByLabel(/password/i).fill(studentPassword!);
+    await page.getByTestId("login-email").fill(studentEmail!);
+    await page.getByTestId("login-password").fill(studentPassword!);
     await page.getByRole("button", { name: /log\s*in|sign\s*in/i }).click();
     await page.waitForTimeout(3_000);
 
