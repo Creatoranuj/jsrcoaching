@@ -99,7 +99,13 @@ jobs:
         # Hard gate: a green run must mean green tests. The old `|| warning`
         # swallowed real failures and reported success. Report + traces are
         # still uploaded by the always() step below.
-        run: bunx playwright test --project=chromium --reporter=html,json
+        run: bunx playwright test --project=chromium --reporter=list,html,json
+
+      # Failed test names + first error lines as plain text (job log annotations
+      # + step summary), so diagnosing a red run never needs the artifact zip.
+      - name: 🧾 Failed test summary (plain text)
+        if: always()
+        run: node .github/scripts/e2e-failure-summary.mjs test-results/results.json
 
       - name: 📤 Upload Playwright report (always)
         if: always()
