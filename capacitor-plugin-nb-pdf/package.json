@@ -12,7 +12,7 @@
     "ios/Plugin/",
     "CapacitorPluginNbPdf.podspec"
   ],
-  "author": "Sadguru Coaching Classes",
+  "author": "JSR COACHING",
   "license": "MIT",
   "scripts": {
     "build": "tsc && rollup -c rollup.config.mjs"
