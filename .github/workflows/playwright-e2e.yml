@@ -99,7 +99,11 @@ jobs:
         # Hard gate: a green run must mean green tests. The old `|| warning`
         # swallowed real failures and reported success. Report + traces are
         # still uploaded by the always() step below.
-        run: bunx playwright test --project=chromium --reporter=list,html,json
+        # No --reporter flag: a CLI reporter list overrides the config and the
+        # json reporter then writes to stdout instead of
+        # test-results/results.json, which left the failure-summary step with
+        # nothing to read. Reporters live in playwright.config.ts.
+        run: bunx playwright test --project=chromium
 
       # Failed test names + first error lines as plain text (job log annotations
       # + step summary), so diagnosing a red run never needs the artifact zip.
