@@ -73,7 +73,7 @@ def start_session(headers: dict, name: str, folder_id: str, size: int) -> str:
     return with_retries(call, "session start")
 
 
-def put_chunk(session_url: str, payload: bytes, start: int, total: int, last: bool) -> None:
+def put_chunk(session_url: str, payload: bytes, start: int, total: int, last: bool) -> dict:
     end = start + len(payload) - 1
     span = "*" if last else "%d-%d/%d" % (start, end, total)
     h = {
@@ -93,7 +93,29 @@ def put_chunk(session_url: str, payload: bytes, start: int, total: int, last: bo
                 return {}
             raise
 
-    with_retries(call, "chunk %d-%d" % (start, end))
+    return with_retries(call, "chunk %d-%d" % (start, end)) or {}
+
+
+def multipart_upload(headers: dict, name: str, folder_id: str, payload: bytes) -> dict:
+    """One-shot fallback for when the gateway does not hand back a session URL."""
+    boundary = "===============jsrcoaching=="
+    meta = json.dumps({"name": name, "parents": [folder_id]}).encode()
+    body = b"".join([
+        b"--", boundary.encode(), b"\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n",
+        meta, b"\r\n--", boundary.encode(),
+        b"\r\nContent-Type: application/octet-stream\r\n\r\n",
+        payload, b"\r\n--", boundary.encode(), b"--\r\n",
+    ])
+    h = dict(headers)
+    h["Content-Type"] = 'multipart/related; boundary="%s"' % boundary
+    url = GATEWAY + "/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true"
+
+    def call():
+        req = urllib.request.Request(url, data=body, headers=h, method="POST")
+        with http(req) as res:
+            return json.loads(res.read() or b"{}")
+
+    return with_retries(call, "multipart upload") or {}
 
 
 def main() -> int:
@@ -123,12 +145,19 @@ def main() -> int:
         with open(path, "rb") as handle:
             payload = handle.read()
         try:
-            session_url = start_session(headers, name, folder_id, len(payload))
             info = {}
-            for start in range(0, len(payload), CHUNK_SIZE):
-                last = start + CHUNK_SIZE >= len(payload)
-                info = put_chunk(session_url, payload[start : start + CHUNK_SIZE], start, len(payload), last)
-            print("Uploaded %s -> %s" % (path, info.get("id", "ok")))
+            try:
+                session_url = start_session(headers, name, folder_id, len(payload))
+            except Exception as exc:  # noqa: BLE001
+                print("::notice::Resumable session unavailable (%s) — using multipart upload." % exc)
+                session_url = None
+            if session_url:
+                for start in range(0, len(payload), CHUNK_SIZE):
+                    last = start + CHUNK_SIZE >= len(payload)
+                    info = put_chunk(session_url, payload[start : start + CHUNK_SIZE], start, len(payload), last)
+            else:
+                info = multipart_upload(headers, name, folder_id, payload)
+            print("Uploaded %s -> %s" % (path, (info or {}).get("id", "ok")))
         except Exception as exc:  # noqa: BLE001
             print("::warning::Drive upload failed for %s: %s" % (path, exc))
     return 0
