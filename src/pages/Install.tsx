@@ -29,20 +29,21 @@ import { isNativePlatform } from "../lib/native/core";
 const PRESS = "active:scale-[0.97] transition-transform duration-150 ease-out";
 
 // ─── LATEST GITHUB APK LINK ──────────────────────────────────────────────────
-// Canonical asset is JSRCoaching.apk, published by .github/workflows/build-apk.yml
-// to github.com/Creatoranuj/jsrcoaching/releases.
-// Fallback used when the GitHub Releases API is unreachable (rate limit /
-// offline). The page still ALWAYS tries to resolve the newest release first.
-const APK_REPO = "Creatoranuj/jsrcoaching";
+// Public install mirror repo students download from. The build workflow still
+// publishes JSRCoaching.apk; the mirror release carries the downloadable copy.
+// The page ALWAYS tries to resolve the mirror's newest release first; fallback
+// below is only for when the GitHub Releases API is unreachable (rate limit /
+// offline).
+const APK_REPO = "MrAnujBabu/JRS-COACHING-INSTALL";
 const APK_ASSET_NAME = "JSRCoaching.apk";
-// Offline/rate-limited fallback points at the canonical JSR asset name, which
-// every current release publishes. (Older releases also carry a legacy-named
-// copy, but it is never surfaced to users.)
-const APK_FALLBACK_URL = `https://github.com/${APK_REPO}/releases/latest/download/${APK_ASSET_NAME}`;
+// Offline/rate-limited fallback points at the asset name the current mirror
+// release ships. The matcher below accepts any .apk, so future renames keep
+// working without another code change.
+const APK_FALLBACK_URL = `https://github.com/${APK_REPO}/releases/latest/download/SafarEnglish.apk`;
 const GITHUB_LATEST_API = `https://api.github.com/repos/${APK_REPO}/releases/latest`;
-// Bumped v3 → v4 with the repo rename to Creatoranuj/jsrcoaching: older
-// entries hold a dead release URL and would keep serving it for up to 6h.
-const APK_CACHE_KEY = "nb:latest_apk:v5";
+// Bumped v5 → v6 with the switch to the JRS-COACHING-INSTALL mirror repo:
+// older entries hold a dead release URL and would keep serving it for up to 6h.
+const APK_CACHE_KEY = "nb:latest_apk:v6";
 const APK_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6h
 // Only ever hand a github.com / githubusercontent.com URL to the downloader —
 // the API response is remote data, so treat it as untrusted.
@@ -89,7 +90,9 @@ async function fetchLatestApk(signal: AbortSignal): Promise<ApkInfo | null> {
     // JSRCoaching*/legacy-named .apk, and only then to whatever .apk the release carries.
     const asset =
       assets.find((a) => isApk(a) && a.name === APK_ASSET_NAME) ??
-      assets.find((a) => isApk(a) && /^(jsrcoaching|sadguru)/i.test(a.name)) ??
+      // Prefer JSR-named assets, then any .apk the release carries — the
+      // mirror repo may ship legacy-named copies (e.g. SafarEnglish.apk).
+      assets.find((a) => isApk(a) && /jsrcoaching/i.test(a.name)) ??
       assets.find(isApk);
     const url: string | undefined = asset?.browser_download_url;
     if (!url || !APK_HOST_RE.test(url)) return null;
