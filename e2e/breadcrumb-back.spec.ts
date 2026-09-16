@@ -28,25 +28,34 @@ test.describe("Breadcrumb back-navigation", () => {
     await page.goto("/debug/back-button");
     await expect(page).toHaveURL(/debug\/back-button/);
 
-    // Ensure the page is tall enough to scroll in headless viewports, then
-    // scroll to a known offset. Short routes previously reported scrollY=0.
-    await page.evaluate(() => {
+    // Ensure something is scrollable, then scroll to a known offset. The app
+    // shell can own the scroll (an inner overflow container) instead of the
+    // window, so we scroll whichever element actually scrolls — appending a
+    // spacer to <body> alone left window.scrollY at 0 and failed this test.
+    const scrollBefore = await page.evaluate(() => {
       const spacer = document.createElement("div");
       spacer.setAttribute("data-e2e-spacer", "true");
       spacer.style.height = "2000px";
-      document.body.appendChild(spacer);
+      const scroller =
+        [document.scrollingElement, ...Array.from(document.querySelectorAll<HTMLElement>("main, #root > *, [data-scroll-container]"))]
+          .filter(Boolean)
+          .find((el) => {
+            const s = el as HTMLElement;
+            const style = getComputedStyle(s);
+            return /(auto|scroll)/.test(style.overflowY) || s === document.scrollingElement;
+          }) || document.scrollingElement;
+      (scroller as HTMLElement).appendChild(spacer);
+      (scroller as HTMLElement).scrollTop = 240;
       window.scrollTo(0, 240);
-      document.documentElement.scrollTop = 240;
-      document.body.scrollTop = 240;
-    });
-    const scrollBefore = await page.evaluate(() =>
-      Math.max(
+      return Math.max(
         window.scrollY,
+        (scroller as HTMLElement).scrollTop || 0,
         document.documentElement.scrollTop,
         document.body.scrollTop,
-      ),
-    );
+      );
+    });
     expect(scrollBefore).toBeGreaterThan(0);
+
 
     // Navigate forward to a sibling route, then back.
     await page.goto("/");
