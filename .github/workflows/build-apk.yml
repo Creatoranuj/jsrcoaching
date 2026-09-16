@@ -4,6 +4,19 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      - main
+    # Path filters apply to the branch trigger only (they are inert on tags).
+    # Docs/CI-only commits must not burn a 15-minute Android build.
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'maestro/**'
+      - '.github/workflows/playwright-e2e.yml'
+      - '.github/workflows/maestro-android.yml'
+      - '.github/workflows/unit-tests.yml'
+      - '.github/workflows/lighthouse-ci.yml'
+      - '.github/workflows/razorpay-smoke.yml'
     # NOTE: no `paths-ignore` here on purpose — path filters are INERT on tag
     # events (GitHub always runs a tag-triggered workflow regardless of which
     # files the tagged commit touches). If branch triggers are ever re-added,
@@ -1035,9 +1048,6 @@ jobs:
           # .../releases/latest/download/JSRCoaching.apk
           cp "JSRCoaching-${{ env.SAFE_VERSION }}.apk" "JSRCoaching.apk"
           echo "APK_FIXED=JSRCoaching.apk" >> $GITHUB_ENV
-          # Legacy fixed name kept so older shared links keep resolving.
-          cp "JSRCoaching-${{ env.SAFE_VERSION }}.apk" "Sadguruclasses.apk"
-          echo "APK_FIXED_LEGACY=Sadguruclasses.apk" >> $GITHUB_ENV
 
 
       - name: 📦 Locate + rename signed AAB (Play Store artifact)
@@ -1142,6 +1152,27 @@ jobs:
 
 
 
+      - name: Upload APK + AAB to Google Drive
+        # Every successful build lands in Drive, so no manual build/upload is
+        # needed. Soft-skips (never fails the build) when Drive secrets absent.
+        env:
+          GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+          APK_FILE: ${{ env.APK_FILE }}
+          AAB_FILE: ${{ env.AAB_FILE }}
+        run: |
+          set -e
+          if [ -z "$GDRIVE_SERVICE_ACCOUNT_JSON" ] || [ -z "$GDRIVE_FOLDER_ID" ]; then
+            echo "::warning::Drive upload skipped - add GDRIVE_SERVICE_ACCOUNT_JSON and GDRIVE_FOLDER_ID secrets to enable it."
+            echo "- Drive upload skipped (secrets not set)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          printf '%s' "$GDRIVE_SERVICE_ACCOUNT_JSON" > /tmp/gdrive-sa.json
+          python3 -m pip install --quiet google-auth requests
+          python3 .github/scripts/gdrive_upload.py "$GDRIVE_FOLDER_ID" "$APK_FILE" "$AAB_FILE"
+          rm -f /tmp/gdrive-sa.json
+          echo "- Drive upload done for APK/AAB." >> "$GITHUB_STEP_SUMMARY"
+
       - name: 🚀 Create GitHub Release
         # No `if:` — VERSION is always set (tag ref OR generated in the
         # Set version step), so the release step should always run. The old
@@ -1156,7 +1187,6 @@ jobs:
           files: |
             ${{ env.APK_FILE }}
             ${{ env.APK_FIXED }}
-            ${{ env.APK_FIXED_LEGACY }}
             ${{ env.AAB_FILE }}
             web-bundle.zip
 
