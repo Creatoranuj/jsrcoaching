@@ -1096,13 +1096,38 @@ jobs:
         id: play-creds
         if: env.HAS_AAB == 'true' && startsWith(github.ref, 'refs/tags/v')
         run: |
-          if [ -n "$PLAY_JSON" ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
+          # Validate BEFORE handing the value to the upload action — a bad
+          # paste used to surface as a cryptic "Unexpected token" inside the
+          # action instead of an actionable message here.
+          if [ -z "$PLAY_JSON" ]; then
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "ℹ️  PLAY_SERVICE_ACCOUNT_JSON not set — skipping Play Console upload. Add the secret to enable auto-publish to the Internal testing track."
+            echo "ℹ️  PLAY_SERVICE_ACCOUNT_JSON not set — skipping Play Console upload."
             echo "- ⏭️ **Play Console upload skipped** — \`PLAY_SERVICE_ACCOUNT_JSON\` not set." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
+          if ! printf '%s' "$PLAY_JSON" | node -e '
+            let raw = "";
+            process.stdin.on("data", d => raw += d);
+            process.stdin.on("end", () => {
+              try {
+                const j = JSON.parse(raw);
+                if (j.type !== "service_account" || !j.client_email || !j.private_key) {
+                  console.error("INVALID_SHAPE");
+                  process.exit(1);
+                }
+              } catch {
+                console.error("NOT_JSON");
+                process.exit(1);
+              }
+              process.exit(0);
+            });'; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "❌ PLAY_SERVICE_ACCOUNT_JSON is saved but is NOT a valid Google service-account JSON (missing type/client_email/private_key, or not JSON at all). Re-enter the full JSON from Play Console → Setup → API access."
+            echo "- ❌ **Play Console upload skipped** — \`PLAY_SERVICE_ACCOUNT_JSON\` is not a valid service-account JSON. Re-enter it (Play Console → Setup → API access → service account JSON)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+          echo "✅ PLAY_SERVICE_ACCOUNT_JSON is valid service-account JSON."
         env:
           PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
 
@@ -1119,7 +1144,7 @@ jobs:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: com.jsrcoaching.app
           releaseFiles: ${{ env.AAB_FILE }}
-          track: internal
+          tracks: internal
           status: completed
           mappingFile: android/app/build/outputs/mapping/release/mapping.txt
           whatsNewDirectory: ./distribution/whatsnew
