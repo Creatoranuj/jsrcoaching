@@ -30,19 +30,19 @@ const PRESS = "active:scale-[0.97] transition-transform duration-150 ease-out";
 
 // ─── LATEST GITHUB APK LINK ──────────────────────────────────────────────────
 // Canonical asset is JSRCoaching.apk, published by .github/workflows/build-apk.yml
-// to github.com/Creatoranuj/safarenglishka/releases.
+// to github.com/Creatoranuj/jsrcoaching/releases.
 // Fallback used when the GitHub Releases API is unreachable (rate limit /
 // offline). The page still ALWAYS tries to resolve the newest release first.
-const APK_REPO = "Creatoranuj/safarenglishka";
+const APK_REPO = "Creatoranuj/jsrcoaching";
 const APK_ASSET_NAME = "JSRCoaching.apk";
 // Offline/rate-limited fallback points at the canonical JSR asset name, which
 // every current release publishes. (Older releases also carry a legacy-named
 // copy, but it is never surfaced to users.)
 const APK_FALLBACK_URL = `https://github.com/${APK_REPO}/releases/latest/download/${APK_ASSET_NAME}`;
 const GITHUB_LATEST_API = `https://api.github.com/repos/${APK_REPO}/releases/latest`;
-// Bumped v3 → v4 with the repo move to Creatoranuj/safarenglishka: older
+// Bumped v3 → v4 with the repo rename to Creatoranuj/jsrcoaching: older
 // entries hold a dead release URL and would keep serving it for up to 6h.
-const APK_CACHE_KEY = "nb:latest_apk:v4";
+const APK_CACHE_KEY = "nb:latest_apk:v5";
 const APK_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6h
 // Only ever hand a github.com / githubusercontent.com URL to the downloader —
 // the API response is remote data, so treat it as untrusted.
