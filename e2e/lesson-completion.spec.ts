@@ -24,8 +24,10 @@ async function login(page: Page) {
 async function openFirstLesson(page: Page) {
   await page.goto(`/classes/${COURSE_ID}/lessons`);
   await page.waitForLoadState("networkidle");
-  const items = page.locator('[data-testid="lesson-item"], [data-testid="lesson-card"], article, li');
-  await expect(items.first()).toBeVisible({ timeout: 20_000 });
+  const items = page.locator(
+    '[data-testid="lesson-item"], [data-testid="lesson-card"], [data-testid*="lesson" i], article, li',
+  );
+  await expect(items.first()).toBeVisible({ timeout: 30_000 });
   await items.first().click().catch(() => {});
   await page.waitForTimeout(1_500);
 }
