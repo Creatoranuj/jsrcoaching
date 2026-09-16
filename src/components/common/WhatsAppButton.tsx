@@ -2,7 +2,7 @@ import WhatsAppIcon from "./WhatsAppIcon";
 import { cn } from "../../lib/utils";
 
 /** Site-wide WhatsApp contact number (no leading + or spaces) */
-export const WHATSAPP_NUMBER = "917388459249";
+export const WHATSAPP_NUMBER = "916386474017";
 
 interface WhatsAppButtonProps {
   /** Optional pre-filled chat message */
