@@ -110,8 +110,15 @@ jobs:
           curl -fsSL "https://github.com/mobile-dev-inc/Maestro/releases/download/cli-${MAESTRO_VERSION}/maestro.zip" -o /tmp/maestro.zip
           curl -fsSL "https://github.com/mobile-dev-inc/Maestro/releases/download/cli-${MAESTRO_VERSION}/checksums_sha256.txt" -o /tmp/maestro-checksums.txt
           (cd /tmp && sha256sum --check maestro-checksums.txt)
-          rm -rf "$HOME/.maestro"
-          unzip -q /tmp/maestro.zip -d "$HOME/.maestro"
+          rm -rf "$HOME/.maestro" /tmp/maestro-dl
+          # Maestro 2.x zips a top-level `maestro/` folder, so extracting
+          # straight into ~/.maestro produced ~/.maestro/maestro/bin/maestro
+          # and the job died with exit 127 (No such file or directory).
+          unzip -q /tmp/maestro.zip -d /tmp/maestro-dl
+          MAESTRO_BIN=$(find /tmp/maestro-dl -type f -path '*/bin/maestro' | head -1)
+          test -n "$MAESTRO_BIN" || { echo "::error::maestro binary not found in release zip"; exit 1; }
+          mv "$(dirname "$(dirname "$MAESTRO_BIN")")" "$HOME/.maestro"
+          chmod +x "$HOME/.maestro/bin/maestro"
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
           "$HOME/.maestro/bin/maestro" --version
 
