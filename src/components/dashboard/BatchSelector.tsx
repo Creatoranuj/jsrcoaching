@@ -1,4 +1,5 @@
 import { useBatch } from "../../contexts/BatchContext";
+import { useAuth } from "../../contexts/AuthContext";
 import {
   Select,
   SelectContent,
@@ -9,7 +10,13 @@ import { formatGrade } from "../../lib/formatGrade";
 
 const BatchSelector = () => {
   const { batches, selectedBatch, setSelectedBatch, loading } = useBatch();
+  const { role, roleLoaded } = useAuth();
 
+  // Batch switching is a staff tool: students should only ever see their own
+  // batch content, so the selector renders for admin/teacher accounts only.
+  const isStaff = role === "admin" || role === "teacher";
+
+  if (!roleLoaded || !isStaff) return null;
   if (loading || batches.length === 0) return null;
 
   const selectedGrade = formatGrade(selectedBatch?.grade);
