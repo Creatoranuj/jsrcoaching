@@ -13,6 +13,7 @@
  */
 
 import { test, expect, Page } from "@playwright/test";
+import { signIn } from "./helpers/auth";
 
 const STUDENT = {
   email: process.env.TEST_USER_EMAIL || process.env.E2E_EMAIL || "",
@@ -31,10 +32,7 @@ const HAS_STUDENT = !!(STUDENT.email && STUDENT.password);
 const HAS_ADMIN = !!(ADMIN.email && ADMIN.password);
 
 async function login(page: Page, email: string, password: string) {
-  await page.goto("/login");
-  await page.getByTestId("login-email").fill(email);
-  await page.getByTestId("login-password").fill(password);
-  await page.getByTestId("login-submit").click();
+  await signIn(page, email, password);
   await expect(page).toHaveURL(/\/(dashboard|my-courses|admin)/, { timeout: 20_000 });
 }
 
