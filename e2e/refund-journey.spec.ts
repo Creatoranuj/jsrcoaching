@@ -10,16 +10,14 @@
  * Required env: E2E_ADMIN_EMAIL, E2E_ADMIN_PASSWORD
  */
 import { test, expect, type Page } from "@playwright/test";
+import { signIn } from "./helpers/auth";
 
 const EMAIL = process.env.E2E_ADMIN_EMAIL;
 const PASSWORD = process.env.E2E_ADMIN_PASSWORD;
 const ALLOW_REFUND = process.env.E2E_ALLOW_REFUND === "1";
 
 async function loginAsAdmin(page: Page) {
-  await page.goto("/login");
-  await page.getByTestId("login-email").fill(EMAIL!);
-  await page.getByTestId("login-password").fill(PASSWORD!);
-  await page.getByRole("button", { name: /log\s*in|sign\s*in/i }).click();
+  await signIn(page, EMAIL!, PASSWORD!);
   await page.waitForURL(/\/(admin|dashboard)/, { timeout: 20_000 });
   await page.goto("/admin");
   await page.waitForLoadState("networkidle");
@@ -79,10 +77,7 @@ test.describe("admin refund journey", () => {
     const studentPassword = process.env.E2E_PASSWORD;
     test.skip(!studentEmail || !studentPassword, "E2E_EMAIL / E2E_PASSWORD not set");
 
-    await page.goto("/login");
-    await page.getByTestId("login-email").fill(studentEmail!);
-    await page.getByTestId("login-password").fill(studentPassword!);
-    await page.getByRole("button", { name: /log\s*in|sign\s*in/i }).click();
+    await signIn(page, studentEmail!, studentPassword!);
     await page.waitForTimeout(3_000);
 
     await page.goto("/admin");
