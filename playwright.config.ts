@@ -16,6 +16,8 @@ export default defineConfig({
   globalTimeout: 18 * 60 * 1000,
   workers: process.env.CI ? 1 : undefined,
   reporter: [
+    // `list` keeps failing test names readable straight in the job log.
+    ["list"],
     ["html", { open: "never" }],
     ["json", { outputFile: "test-results/results.json" }],
   ],
