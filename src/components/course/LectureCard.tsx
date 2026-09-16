@@ -11,7 +11,7 @@ import pdfIconSvg from "../../assets/pdf-icon-grayscale.svg";
 export interface LectureCardProps {
   id: string;
   title: string;
-  lectureType: "VIDEO" | "PDF" | "DPP" | "NOTES" | "TEST";
+  lectureType: "VIDEO" | "PDF" | "DPP" | "NOTES" | "TEST" | "NCERT";
   position?: number;
   isLocked?: boolean;
   isCompleted?: boolean;
@@ -51,6 +51,7 @@ const isTestType = (type: string) => type === "TEST";
 const typeBadgeClass: Record<string, string> = {
   VIDEO: "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-400",
   PDF: "bg-purple-100 text-purple-700 dark:bg-purple-950/50 dark:text-purple-400",
+  NCERT: "bg-purple-100 text-purple-700 dark:bg-purple-950/50 dark:text-purple-400",
   DPP: "bg-orange-100 text-orange-700 dark:bg-orange-950/50 dark:text-orange-400",
   NOTES: "bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-400",
   TEST: "bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-400",
@@ -58,6 +59,8 @@ const typeBadgeClass: Record<string, string> = {
 
 const typeIcon: Record<string, React.ReactNode> = {
   VIDEO: <Play className="h-3 w-3" />,
+  // NCERT cards are documents, not videos — file icon like PDF.
+  NCERT: <FileText className="h-3 w-3" />,
   PDF: <FileText className="h-3 w-3" />,
   DPP: <ClipboardList className="h-3 w-3" />,
   NOTES: <BookOpen className="h-3 w-3" />,
@@ -65,7 +68,7 @@ const typeIcon: Record<string, React.ReactNode> = {
 };
 
 const typeLabel: Record<string, string> = {
-  VIDEO: "Lecture", PDF: "PDF", DPP: "DPP", NOTES: "Notes", TEST: "Test",
+  VIDEO: "Lecture", PDF: "PDF", DPP: "DPP", NOTES: "Notes", TEST: "Test", NCERT: "NCERT",
 };
 
 const LectureCardImpl = ({
@@ -116,7 +119,10 @@ const LectureCardImpl = ({
   // Product decision: lecture cards ALWAYS show "Watch" and open the video
   // player. The PDF/Notes attachment chip on the same card handles the
   // drawer separately, so users never lose the direct "Watch" affordance.
-  const watchLabel = isVideo ? "Watch" : isTest ? "Take Test" : isPdf ? "View PDF" : isNotes ? "View" : "View DPP";
+  // NCERT opens a book chapter (a document), never a DPP — drop the old
+  // "View DPP" label that leaked onto every NCERT card (user request 2026-09-16).
+  const isNcertType = lectureType === "NCERT";
+  const watchLabel = isVideo ? "Watch" : isTest ? "Take Test" : isPdf ? "View PDF" : (isNotes || isNcertType) ? "View" : "View DPP";
   const watchIcon = isPdf ? <FileText className="h-4 w-4" /> : <Play className="h-4 w-4 fill-current" />;
   const handlePrimary = (e: React.MouseEvent) => {
     e.stopPropagation();
