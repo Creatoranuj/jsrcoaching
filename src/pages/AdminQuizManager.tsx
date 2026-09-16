@@ -509,7 +509,7 @@ const AdminQuizManager = () => {
                   </div>
                   {/* Action buttons - stack on mobile */}
                   <div className="flex flex-col sm:flex-row items-center gap-1 shrink-0">
-                    <Button variant="ghost" size="icon" className="h-10 w-10" onClick={() => openAttempts(quiz)} title={`View Attempts (${attemptCounts[quiz.id] ?? 0})`}
+                    <Button variant="ghost" size="icon" className="h-10 w-10" onClick={() => openAttempts(quiz)} title={`View Attempts (${attemptCounts[quiz.id] ?? 0})`}>
                       <Users className="h-4 w-4" />
                     </Button>
                     <Button variant="ghost" size="icon" className="h-10 w-10" onClick={() => loadQuizForEdit(quiz)} title="Edit questions">
