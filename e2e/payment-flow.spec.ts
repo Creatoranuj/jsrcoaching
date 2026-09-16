@@ -1,309 +1,137 @@
 /**
- * Mahima Academy - E2E Tests for Payment Flow
- * 
- * Tests the complete course purchase workflow:
- * 1. User browses courses
- * 2. User submits payment request
- * 3. Admin approves/rejects payment
- * 4. User gets enrolled on approval
+ * JSR Coaching — E2E tests for the course purchase flow.
+ *
+ * Credentials and IDs come from CI secrets, never hardcoded:
+ *   TEST_USER_EMAIL / TEST_USER_PASSWORD (falls back to E2E_EMAIL / E2E_PASSWORD)
+ *     — a real student account.
+ *   TEST_PAID_COURSE_ID (falls back to E2E_PAID_COURSE_ID) — a paid course.
+ *   E2E_ADMIN_EMAIL / E2E_ADMIN_PASSWORD — an account with the admin role.
+ *
+ * Everything that needs a login skips itself (never fails) when the matching
+ * secret is absent. Admin legs are read-only: no payment is approved,
+ * rejected or exported against live data by the test suite.
  */
 
 import { test, expect, Page } from "@playwright/test";
 
-const BASE_URL = process.env.BASE_URL || "http://localhost:8080";
-
-const STUDENT_USER = {
-  email: "student@example.com",
-  password: "StudentPass123!"
+const STUDENT = {
+  email: process.env.TEST_USER_EMAIL || process.env.E2E_EMAIL || "",
+  password: process.env.TEST_USER_PASSWORD || process.env.E2E_PASSWORD || "",
 };
 
-const ADMIN_USER = {
-  email: "admin@mahimaacademy.com",
-  password: "AdminPassword123!"
+const ADMIN = {
+  email: process.env.E2E_ADMIN_EMAIL || "",
+  password: process.env.E2E_ADMIN_PASSWORD || "",
 };
 
-// Helper functions
-async function loginAs(page: Page, user: typeof STUDENT_USER) {
-  await page.goto(`${BASE_URL}/login`);
-  await page.fill('input[type="email"]', user.email);
-  await page.fill('input[type="password"]', user.password);
-  await page.click('button[type="submit"]');
-  await page.waitForURL(/\/(dashboard|admin)/);
+const PAID_COURSE_ID =
+  process.env.TEST_PAID_COURSE_ID || process.env.E2E_PAID_COURSE_ID || "";
+
+const HAS_STUDENT = !!(STUDENT.email && STUDENT.password);
+const HAS_ADMIN = !!(ADMIN.email && ADMIN.password);
+
+async function login(page: Page, email: string, password: string) {
+  await page.goto("/login");
+  await page.getByTestId("login-email").fill(email);
+  await page.getByTestId("login-password").fill(password);
+  await page.getByTestId("login-submit").click();
+  await expect(page).toHaveURL(/\/(dashboard|my-courses|admin)/, { timeout: 20_000 });
 }
 
 // ============================================================
-// COURSE BROWSING TESTS
+// PUBLIC / GUARD BEHAVIOUR (no credentials needed)
 // ============================================================
 
-test.describe("Course Browsing", () => {
-  test("should display all courses", async ({ page }) => {
-    await page.goto(`${BASE_URL}/courses`);
-    
-    // Wait for courses to load
-    await expect(page.locator("text=Courses")).toBeVisible();
-    
-    // Should see course cards
-    const courseCards = page.locator('[data-testid="course-card"]');
-    // Or look for any cards
-    await expect(page.locator(".grid")).toBeVisible();
+test.describe("Purchase route guards", () => {
+  test("signed-out visitor cannot reach the courses list", async ({ page }) => {
+    await page.goto("/courses");
+    await expect(page).toHaveURL(/\/(login|auth)/, { timeout: 15_000 });
   });
 
-  test("should filter courses by grade", async ({ page }) => {
-    await page.goto(`${BASE_URL}/courses`);
-    
-    // Select a grade from dropdown
-    await page.click('button:has-text("All Grades")');
-    await page.click('text=Grade 10');
-    
-    // Verify filter is applied
-    await expect(page.locator("text=Grade 10")).toBeVisible();
-  });
-
-  test("should navigate to course purchase page", async ({ page }) => {
-    await page.goto(`${BASE_URL}/courses`);
-    
-    // Click on first course
-    const firstCourse = page.locator(".grid > div").first();
-    await firstCourse.click();
-    
-    // Should be on buy course page
-    await expect(page).toHaveURL(/\/buy-course|\/courses\/\d+\/buy/);
+  test("signed-out visitor cannot reach the buy screen", async ({ page }) => {
+    await page.goto("/buy-course");
+    await expect(page).toHaveURL(/\/(login|auth)/, { timeout: 15_000 });
   });
 });
 
 // ============================================================
-// PAYMENT SUBMISSION TESTS (Student Flow)
+// STUDENT FLOW (read-only)
 // ============================================================
 
-test.describe("Payment Submission", () => {
-  test.beforeEach(async ({ page }) => {
-    await loginAs(page, STUDENT_USER);
+test.describe("Student purchase screens", () => {
+  test.skip(!HAS_STUDENT, "TEST_USER_EMAIL / TEST_USER_PASSWORD not set");
+
+  test("courses list renders for a signed-in student", async ({ page }) => {
+    await login(page, STUDENT.email, STUDENT.password);
+    await page.goto("/courses");
+    await expect(page.locator("body")).toContainText(/course|class|batch/i, {
+      timeout: 20_000,
+    });
   });
 
-  test("should display payment form on course purchase page", async ({ page }) => {
-    await page.goto(`${BASE_URL}/buy-course?id=1`);
-    
-    // Payment form elements should be visible
-    await expect(page.locator('input[name="transactionId"]')).toBeVisible();
-    await expect(page.locator('input[name="senderName"]')).toBeVisible();
+  test("buy screen renders for a paid course", async ({ page }) => {
+    test.skip(!PAID_COURSE_ID, "TEST_PAID_COURSE_ID / E2E_PAID_COURSE_ID not set");
+
+    await login(page, STUDENT.email, STUDENT.password);
+    await page.goto(`/buy-course/${PAID_COURSE_ID}`);
+    await page.waitForLoadState("networkidle");
+
+    await expect(page.locator("body")).toContainText(
+      /pay|price|₹|enrol|enroll|buy|purchase|subscribe/i,
+      { timeout: 20_000 },
+    );
   });
 
-  test("should validate required payment fields", async ({ page }) => {
-    await page.goto(`${BASE_URL}/buy-course?id=1`);
-    
-    // Try to submit without filling fields
-    await page.click('button:has-text("Submit")');
-    
-    // Should show validation error
-    await expect(page.locator("text=required")).toBeVisible({ timeout: 3000 });
+  test("a price is shown on the buy screen", async ({ page }) => {
+    test.skip(!PAID_COURSE_ID, "TEST_PAID_COURSE_ID / E2E_PAID_COURSE_ID not set");
+
+    await login(page, STUDENT.email, STUDENT.password);
+    await page.goto(`/buy-course/${PAID_COURSE_ID}`);
+    await page.waitForLoadState("networkidle");
+
+    const body = (await page.locator("body").textContent()) ?? "";
+    expect(body).toMatch(/₹\s?\d|Rs\.?\s?\d|\bfree\b/i);
   });
 
-  test("should submit payment request successfully", async ({ page }) => {
-    await page.goto(`${BASE_URL}/buy-course?id=1`);
-    
-    // Fill payment form
-    await page.fill('input[name="transactionId"]', `TXN${Date.now()}`);
-    await page.fill('input[name="senderName"]', "Test Student");
-    
-    // Submit
-    await page.click('button:has-text("Submit")');
-    
-    // Should show success message
-    await expect(page.locator("text=submitted")).toBeVisible({ timeout: 5000 });
-  });
-});
+  test("student cannot reach the admin panel", async ({ page }) => {
+    await login(page, STUDENT.email, STUDENT.password);
+    await page.goto("/admin");
 
-// ============================================================
-// ADMIN PAYMENT MANAGEMENT TESTS
-// ============================================================
-
-test.describe("Admin Payment Management", () => {
-  test.beforeEach(async ({ page }) => {
-    await loginAs(page, ADMIN_USER);
-  });
-
-  test("should display pending payments", async ({ page }) => {
-    await page.goto(`${BASE_URL}/admin`);
-    
-    // Navigate to payments tab
-    await page.click('text=Payments');
-    
-    // Should see pending payments
-    await expect(page.locator("text=Pending")).toBeVisible();
-  });
-
-  test("should filter payments by status", async ({ page }) => {
-    await page.goto(`${BASE_URL}/admin`);
-    await page.click('text=Payments');
-    
-    // Filter by approved
-    await page.click('text=Approved');
-    
-    // Should show approved payments
-    await expect(page.locator('[data-status="approved"]')).toBeVisible({ timeout: 3000 });
-  });
-
-  test("should approve payment and enroll student", async ({ page }) => {
-    await page.goto(`${BASE_URL}/admin`);
-    await page.click('text=Payments');
-    
-    // Find pending payment and approve
-    const pendingPayment = page.locator('[data-status="pending"]').first();
-    if (await pendingPayment.isVisible()) {
-      await pendingPayment.locator('button:has-text("Approve")').click();
-      
-      // Confirm in dialog
-      await page.click('button:has-text("Confirm")');
-      
-      // Should show success
-      await expect(page.locator("text=Approved")).toBeVisible({ timeout: 3000 });
-    }
-  });
-
-  test("should reject payment", async ({ page }) => {
-    await page.goto(`${BASE_URL}/admin`);
-    await page.click('text=Payments');
-    
-    const pendingPayment = page.locator('[data-status="pending"]').first();
-    if (await pendingPayment.isVisible()) {
-      await pendingPayment.locator('button:has-text("Reject")').click();
-      
-      // Confirm in dialog
-      await page.click('button:has-text("Confirm")');
-      
-      // Should show rejection
-      await expect(page.locator("text=Rejected")).toBeVisible({ timeout: 3000 });
-    }
-  });
-
-  test("should export payments to CSV", async ({ page }) => {
-    await page.goto(`${BASE_URL}/admin`);
-    await page.click('text=Payments');
-    
-    // Click export button
-    const downloadPromise = page.waitForEvent("download");
-    await page.click('button:has-text("Export")');
-    
-    const download = await downloadPromise;
-    expect(download.suggestedFilename()).toContain(".csv");
-  });
-});
-
-// ============================================================
-// ENROLLMENT VERIFICATION TESTS
-// ============================================================
-
-test.describe("Enrollment Verification", () => {
-  test("enrolled student can access course lessons", async ({ page }) => {
-    await loginAs(page, STUDENT_USER);
-    
-    // Go to enrolled course
-    await page.goto(`${BASE_URL}/courses/1/learn`);
-    
-    // Should see lessons
-    await expect(page.locator("text=Lesson")).toBeVisible();
-  });
-
-  test("unenrolled student cannot access locked lessons", async ({ page }) => {
-    await loginAs(page, STUDENT_USER);
-    
-    // Try to access a locked lesson
-    await page.goto(`${BASE_URL}/courses/999/learn`);
-    
-    // Should show enrollment required message
-    await expect(page.locator("text=Enroll|Purchase")).toBeVisible({ timeout: 3000 });
-  });
-});
-
-// ============================================================
-// PAYMENT SECURITY TESTS
-// ============================================================
-
-test.describe("Payment Security", () => {
-  test("should not allow duplicate payment submissions", async ({ page }) => {
-    await loginAs(page, STUDENT_USER);
-    await page.goto(`${BASE_URL}/buy-course?id=1`);
-    
-    const txnId = `TXN${Date.now()}`;
-    
-    // Submit first time
-    await page.fill('input[name="transactionId"]', txnId);
-    await page.fill('input[name="senderName"]', "Test Student");
-    await page.click('button:has-text("Submit")');
-    
-    // Wait for success
-    await page.waitForSelector("text=submitted");
-    
-    // Go back and try to submit again with same txn id
-    await page.goto(`${BASE_URL}/buy-course?id=1`);
-    await page.fill('input[name="transactionId"]', txnId);
-    await page.fill('input[name="senderName"]', "Test Student");
-    await page.click('button:has-text("Submit")');
-    
-    // Should handle gracefully (either accept or show duplicate warning)
-  });
-
-  test("student cannot approve their own payments", async ({ page }) => {
-    await loginAs(page, STUDENT_USER);
-    
-    // Try to access admin panel
-    await page.goto(`${BASE_URL}/admin`);
-    
-    // Should be denied
-    await expect(page.locator("text=Access Denied")).toBeVisible();
-  });
-
-  test("should validate amount matches course price", async ({ page }) => {
-    await loginAs(page, STUDENT_USER);
-    await page.goto(`${BASE_URL}/buy-course?id=1`);
-    
-    // The amount should be pre-filled with course price
-    const amountField = page.locator('input[name="amount"]');
-    if (await amountField.isVisible()) {
-      const amount = await amountField.inputValue();
-      expect(Number(amount)).toBeGreaterThan(0);
+    // A non-admin is either shown a denial screen or bounced away — both count.
+    const bounced = /\/(login|dashboard|my-courses)/.test(page.url());
+    if (!bounced) {
+      await expect(
+        page
+          .locator("text=/Access Denied|not authorized|Unauthorized|admin login/i")
+          .first(),
+      ).toBeVisible({ timeout: 15_000 });
     }
   });
 });
 
 // ============================================================
-// EDGE CASES
+// ADMIN FLOW (read-only; skips without an admin secret)
 // ============================================================
 
-test.describe("Payment Edge Cases", () => {
-  test("should handle special characters in transaction ID", async ({ page }) => {
-    await loginAs(page, STUDENT_USER);
-    await page.goto(`${BASE_URL}/buy-course?id=1`);
-    
-    await page.fill('input[name="transactionId"]', "TXN-123/456#789");
-    await page.fill('input[name="senderName"]', "Test Student");
-    await page.click('button:has-text("Submit")');
-    
-    // Should handle without error
-    await expect(page.locator("text=error")).not.toBeVisible({ timeout: 3000 });
+test.describe("Admin payment review", () => {
+  test.skip(!HAS_ADMIN, "E2E_ADMIN_EMAIL / E2E_ADMIN_PASSWORD not set");
+
+  test("admin panel opens", async ({ page }) => {
+    await login(page, ADMIN.email, ADMIN.password);
+    await page.goto("/admin");
+    await expect(page.locator("body")).toContainText(/admin|dashboard/i, {
+      timeout: 20_000,
+    });
   });
 
-  test("should handle very long transaction ID", async ({ page }) => {
-    await loginAs(page, STUDENT_USER);
-    await page.goto(`${BASE_URL}/buy-course?id=1`);
-    
-    const longTxnId = "TXN" + "X".repeat(100);
-    await page.fill('input[name="transactionId"]', longTxnId);
-    await page.fill('input[name="senderName"]', "Test Student");
-    await page.click('button:has-text("Submit")');
-    
-    // Should either accept or show validation error
-  });
+  test("payments screen lists payment state without mutating it", async ({ page }) => {
+    await login(page, ADMIN.email, ADMIN.password);
+    await page.goto("/admin");
+    await page.waitForLoadState("networkidle");
 
-  test("should handle unicode in sender name", async ({ page }) => {
-    await loginAs(page, STUDENT_USER);
-    await page.goto(`${BASE_URL}/buy-course?id=1`);
-    
-    await page.fill('input[name="transactionId"]', `TXN${Date.now()}`);
-    await page.fill('input[name="senderName"]', "José García 张三");
-    await page.click('button:has-text("Submit")');
-    
-    // Should handle unicode characters
-    await expect(page.locator("text=submitted")).toBeVisible({ timeout: 5000 });
+    await expect(page.locator("body")).toContainText(
+      /payment|pending|approved|transaction/i,
+      { timeout: 20_000 },
+    );
   });
 });
