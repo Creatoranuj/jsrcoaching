@@ -60,7 +60,7 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
-    protected void onResume() {
+    public void onResume() {
         super.onResume();
         // Some OEM skins (MIUI / ColorOS / Funtouch) leave the WebView's JS
         // timers paused after a long background stint, which freezes rAF and
