@@ -56,6 +56,13 @@ android {
                 storePassword releaseStorePassword
                 keyAlias releaseKeyAlias
                 keyPassword releaseKeyPassword
+                // Sign with every scheme the target range understands. v2 alone
+                // is accepted by modern Android, but some OEM installers (and
+                // sideload flows) still fall back to the JAR (v1) signature and
+                // report "package appears to be invalid" without it.
+                enableV1Signing true
+                enableV2Signing true
+                enableV3Signing true
             }
         }
     }
