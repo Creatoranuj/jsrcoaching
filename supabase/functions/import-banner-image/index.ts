@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
   try {
     remote = await fetch(target.toString(), {
       redirect: "follow",
-      headers: { "User-Agent": "Sadguru-BannerImporter/1.0" },
+      headers: { "User-Agent": "JSRCoaching-BannerImporter/1.0" },
     });
   } catch (e) {
     return json({ error: `Fetch failed: ${(e as Error).message}` }, 502);
