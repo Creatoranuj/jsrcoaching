@@ -1153,25 +1153,18 @@ jobs:
 
 
       - name: Upload APK + AAB to Google Drive
-        # Every successful build lands in Drive, so no manual build/upload is
-        # needed. Soft-skips (never fails the build) when Drive secrets absent.
+        # Every successful build lands in Drive automatically, using the
+        # Lovable connector gateway (no service-account JSON needed).
         env:
-          GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
-          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+          LOVABLE_API_KEY: ${{ secrets.LOVABLE_API_KEY }}
+          GOOGLE_DRIVE_API_KEY: ${{ secrets.GOOGLE_DRIVE_API_KEY }}
+          GDRIVE_FOLDER_ID: ${{ vars.GDRIVE_FOLDER_ID || '1iFNwR0PwmoSxbARsoAZJtoy7x0ySm_P5' }}
           APK_FILE: ${{ env.APK_FILE }}
           AAB_FILE: ${{ env.AAB_FILE }}
         run: |
           set -e
-          if [ -z "$GDRIVE_SERVICE_ACCOUNT_JSON" ] || [ -z "$GDRIVE_FOLDER_ID" ]; then
-            echo "::warning::Drive upload skipped - add GDRIVE_SERVICE_ACCOUNT_JSON and GDRIVE_FOLDER_ID secrets to enable it."
-            echo "- Drive upload skipped (secrets not set)." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          printf '%s' "$GDRIVE_SERVICE_ACCOUNT_JSON" > /tmp/gdrive-sa.json
-          python3 -m pip install --quiet google-auth requests
           python3 .github/scripts/gdrive_upload.py "$GDRIVE_FOLDER_ID" "$APK_FILE" "$AAB_FILE"
-          rm -f /tmp/gdrive-sa.json
-          echo "- Drive upload done for APK/AAB." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Drive upload attempted for APK/AAB (JSR Coaching Builds folder)." >> "$GITHUB_STEP_SUMMARY"
 
       - name: 🚀 Create GitHub Release
         # No `if:` — VERSION is always set (tag ref OR generated in the
