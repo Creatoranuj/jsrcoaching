@@ -90,7 +90,7 @@ Deno.serve(async (req) => {
 - Student ko batao ki better results ke liye lesson ka description available hona chahiye.`;
 
     let prompt = "";
-    let systemPrompt = `You are Sadguru AI Sahayak, the AI learning companion for Sadguru Coaching Classes coaching platform. You help Indian students preparing for NEET/JEE/Board exams.
+    let systemPrompt = `You are JSR AI Sahayak, the AI learning companion for JSR Coaching coaching platform. You help Indian students preparing for NEET/JEE/Board exams.
 
 IMPORTANT RULES:
 - Tum is SPECIFIC lecture ke baare mein baat karo, general knowledge mat do.
@@ -100,12 +100,12 @@ IMPORTANT RULES:
 - YouTube video URL se topic identify karo aur us topic ke key concepts, important points, aur exam-relevant information extract karo.
 - Irrelevant ya generic content BILKUL mat do.
 - Har point lecture ke actual topic se related hona chahiye.
-- Sadguru Coaching Classes ke YouTube channel ke videos ko priority se summarize karo with proper structure.
+- JSR Coaching ke YouTube channel ke videos ko priority se summarize karo with proper structure.
 
 ${groundingInstruction}`;
 
     if (mode === "research") {
-      systemPrompt = `You are Sadguru AI Sahayak, an expert educational researcher for Sadguru Coaching Classes platform. You do deep conceptual analysis for NEET/JEE/Board exam students.
+      systemPrompt = `You are JSR AI Sahayak, an expert educational researcher for JSR Coaching platform. You do deep conceptual analysis for NEET/JEE/Board exam students.
 
 IMPORTANT RULES:
 - SIRF is specific lecture topic ke concepts pe focus karo.
