@@ -40,8 +40,15 @@ const AUTO_ALLOW_PATTERNS: RegExp[] = [
   // AUDIT 2026-08-03 [M1]: the previous `*.vercel.app` wildcard trusted every
   // Vercel-hosted site on the internet as an origin for payment endpoints.
   // Scoped down to this project's deployment names.
-  /^https:\/\/sadguruclasses\.vercel\.app$/i,
-  /^https:\/\/sadguruclasses-[a-z0-9-]+\.vercel\.app$/i,
+  // AUDIT 2026-09-16: `sadguruclasses` is the pre-rebrand project name and no
+  // longer resolves, so the live site's own origin was not auto-allowed and
+  // fell back to ALLOWED[0] — the browser then rejected every function
+  // response from the website. Both live names are listed through the
+  // jsrcoaching rename window.
+  /^https:\/\/jsrcoaching\.vercel\.app$/i,
+  /^https:\/\/jsrcoaching-[a-z0-9-]+\.vercel\.app$/i,
+  /^https:\/\/safarenglishka\.vercel\.app$/i,
+  /^https:\/\/safarenglishka-[a-z0-9-]+\.vercel\.app$/i,
   // Capacitor Android WebView with androidScheme: 'https' loads the app from
   // https://localhost, so its Origin header is exactly that. Without this
   // pattern, every supabase.functions.invoke() from the APK was falling back

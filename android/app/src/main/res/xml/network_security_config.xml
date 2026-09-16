@@ -18,6 +18,10 @@
     </base-config>
 
     <domain-config cleartextTrafficPermitted="false">
+        <!-- Web hosts this app loads. Both the current Vercel project name
+             and the incoming jsrcoaching one are listed so the rename can
+             happen in Vercel without shipping a new APK first. -->
+        <domain includeSubdomains="true">jsrcoaching.vercel.app</domain>
         <domain includeSubdomains="true">safarenglishka.vercel.app</domain>
         <domain includeSubdomains="true">supabase.co</domain>
         <domain includeSubdomains="true">supabase.in</domain>

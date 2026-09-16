@@ -312,9 +312,14 @@ const Admin = () => {
     if (!csvContent) { toast.error("No data to export"); return; }
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
+    const href = URL.createObjectURL(blob);
+    link.href = href;
     link.download = csvFileName(filename);
     link.click();
+    // Blob URLs pin their Blob in memory until revoked. Every export used to
+    // leak one for the lifetime of the session; on a long admin session with
+    // repeated exports that is real heap the WebView never gets back.
+    setTimeout(() => URL.revokeObjectURL(href), 0);
     toast.success(`Exported ${data.length} records`);
   };
 

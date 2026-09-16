@@ -95,7 +95,8 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" />
-                <data android:host="sadguruclasses.vercel.app" />
+                <data android:host="jsrcoaching.vercel.app" />
+                <data android:host="safarenglishka.vercel.app" />
                 <data android:pathPrefix="/course" />
                 <data android:pathPrefix="/my-courses" />
                 <data android:pathPrefix="/classes" />

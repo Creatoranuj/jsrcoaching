@@ -46,8 +46,8 @@ CREATE TABLE public.app_config (
   id smallint DEFAULT 1 NOT NULL,
   min_android_version text DEFAULT '1.0.0'::text NOT NULL,
   min_ios_version text DEFAULT '1.0.0'::text NOT NULL,
-  android_store_url text DEFAULT 'https://safarenglishka.vercel.app/install'::text,
-  ios_store_url text DEFAULT 'https://safarenglishka.vercel.app/install'::text,
+  android_store_url text DEFAULT 'https://jsrcoaching.vercel.app/install'::text,
+  ios_store_url text DEFAULT 'https://jsrcoaching.vercel.app/install'::text,
   update_message text DEFAULT 'A critical update is available. Please update to continue learning.'::text NOT NULL,
   updated_at timestamp with time zone DEFAULT now() NOT NULL,
   sentry_traces_sample_rate numeric DEFAULT 0.1 NOT NULL
