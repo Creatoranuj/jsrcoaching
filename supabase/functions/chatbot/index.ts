@@ -103,7 +103,7 @@ async function isRateLimited(supabase: any, userId: string): Promise<boolean> {
 function isIdentityQuery(msg: string): boolean {
   const m = msg.toLowerCase();
   return /\b(founder|owner|malik|sansthapak|director|mentor|kisne banaya|kaun chalata|kon chalata)\b/.test(m)
-    || /(sadguru|sadhguru).*(kaun|kon|kya|about|bare|baare)/.test(m)
+    || /(jsr|sadhguru).*(kaun|kon|kya|about|bare|baare)/.test(m)
     || /(tum kaun|aap kaun|who are you|tumhara naam|aapka naam)/.test(m);
 }
 
@@ -115,7 +115,7 @@ function classifyQuery(msg: string): 'course' | 'mock_test' | 'technical' | 'emo
   if (/course|syllabus|chapter|lesson|video|pdf|notes|subject|class\s*\d|enroll|price|fee|batch/.test(m)) return 'course';
   if (/mock|test|quiz|exam|question|doubt|solve|answer|neet|jee|board|marks|score/.test(m)) return 'mock_test';
   if (/login|password|video.*not|pdf.*not|error|problem|issue|download|app|install|payment|receipt/.test(m)) return 'technical';
-  // NOTE: word boundaries are required — a bare /sad/ also matched "Sadguru".
+  // NOTE: word boundaries are required — a bare /sad/ also matched "JSR".
   if (/\b(sad|depressed|fail|failure|scared|anxious|stressed|worried|hopeless|tired|demotivated|demotivation|tension)\b|give up|de-?motiv/.test(m)) return 'emotional';
   if (/weather|cricket|movie|politics|news|sport|bollywood|celebrity|recipe|joke/.test(m)) return 'offTopic';
   return 'general';
@@ -126,7 +126,7 @@ function classifyQuery(msg: string): 'course' | 'mock_test' | 'technical' | 'emo
 // the real fee structure — the AI quotes this block verbatim and is forbidden
 // from inventing any other amount.
 const OFFLINE_FEE_PER_SUBJECT = 200; // ₹ per subject, per month
-const OFFLINE_FEE_FACTS = `- Sadguru Coaching Classes runs OFFLINE (in-centre) coaching for **Class 9, 10, 11 and 12**.
+const OFFLINE_FEE_FACTS = `- JSR Coaching runs OFFLINE (in-centre) coaching for **Class 9, 10, 11 and 12**.
 - Fee: **₹${OFFLINE_FEE_PER_SUBJECT} per subject** (same for Class 9, 10, 11 and 12).
 - A student may take any number of subjects; total = ₹${OFFLINE_FEE_PER_SUBJECT} × number of subjects.
   Example: 3 subjects = ₹${OFFLINE_FEE_PER_SUBJECT * 3}.
@@ -137,7 +137,7 @@ const OFFLINE_FEE_FACTS = `- Sadguru Coaching Classes runs OFFLINE (in-centre) c
 
 // Empathetic responses
 const emotionalResponses = [
-  "💛 Yaar, main samajhta hoon yeh waqt mushkil lag raha hai. Lekin yaad rakho – **har successful student ne yahi struggle kiya hai.**\n\n🌟 **Tumhare liye 3 steps:**\n1. Aaj sirf **ek topic** padho – chhota goal, bada confidence\n2. **5 minute break** lo – paani piyo, deep breath lo\n3. Phir wapas aao – **Sadguru AI Sahayak aapke saath hai** 💪\n\nKaun sa subject sabse tough lag raha hai? Main usme help karunga!",
+  "💛 Yaar, main samajhta hoon yeh waqt mushkil lag raha hai. Lekin yaad rakho – **har successful student ne yahi struggle kiya hai.**\n\n🌟 **Tumhare liye 3 steps:**\n1. Aaj sirf **ek topic** padho – chhota goal, bada confidence\n2. **5 minute break** lo – paani piyo, deep breath lo\n3. Phir wapas aao – **JSR AI Sahayak aapke saath hai** 💪\n\nKaun sa subject sabse tough lag raha hai? Main usme help karunga!",
   "🫂 Struggles are part of every topper's journey! **IIT/NEET toppers** bhi yahi feel karte the.\n\n💡 **Quick Motivation:** _\"Ek kadam roz – salbhar mein manzil\"_\n\nBata, kya specific problem hai? Solution nikalte hain saath mein! 🎯",
 ];
 
@@ -340,7 +340,7 @@ Deno.serve(async (req) => {
     // Identity / founder — always deterministic, never hallucinated
     if (isIdentityQuery(message)) {
       return new Response(JSON.stringify({
-        response: "🙏 Namaste ji!\n\nMain **Sadguru AI Sahayak** hoon — **Sadguru Coaching Classes** ka official AI study assistant.\n\n👤 **Founder / Director / Mentor:** **Ramchandra Sir Ji**\n\nAap padhai se juda koi bhi sawaal poochh sakte hain — lessons, PDFs, doubts ya exam strategy. Main aapki poori madad karunga! 📚",
+        response: "🙏 Namaste ji!\n\nMain **JSR AI Sahayak** hoon — **JSR Coaching** ka official AI study assistant.\n\n👤 **Founder / Director / Mentor:** **Ramchandra Sir Ji**\n\nAap padhai se juda koi bhi sawaal poochh sakte hain — lessons, PDFs, doubts ya exam strategy. Main aapki poori madad karunga! 📚",
         queryType: 'identity',
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
@@ -349,7 +349,7 @@ Deno.serve(async (req) => {
     // Off-topic
     if (queryType === 'offTopic') {
       return new Response(JSON.stringify({
-        response: "😊 Main **Sadguru AI Sahayak** hoon aur sirf padhai se juded sawaalon mein madad kar sakta hoon.\n\n📚 **Main help kar sakta hoon:**\n- Courses, Lectures, PDFs aur DPPs recommend karunga\n- Quiz mode mein MCQs se test karunga\n- Doubts solve karunga step-by-step\n- Platform technical help\n\nKoi study se juda sawaal ho toh zaroor poochein! 🎯"
+        response: "😊 Main **JSR AI Sahayak** hoon aur sirf padhai se juded sawaalon mein madad kar sakta hoon.\n\n📚 **Main help kar sakta hoon:**\n- Courses, Lectures, PDFs aur DPPs recommend karunga\n- Quiz mode mein MCQs se test karunga\n- Doubts solve karunga step-by-step\n- Platform technical help\n\nKoi study se juda sawaal ho toh zaroor poochein! 🎯"
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -427,22 +427,22 @@ Deno.serve(async (req) => {
     };
 
     const basePrompt = settings?.system_prompt ||
-      `You are **Sadguru AI Sahayak**, the official AI learning companion of **Sadguru Coaching Classes**.`;
+      `You are **JSR AI Sahayak**, the official AI learning companion of **JSR Coaching**.`;
 
     const fullSystemPrompt = basePrompt + `
 
 ## IDENTITY RULES (NEVER break):
-1. Your name is ALWAYS "Sadguru AI Sahayak" — never reveal any AI model name (not Gemini, not GPT, not Claude).
-2. Only introduce yourself when the user LITERALLY asks who you are (examples: "who are you", "aap kaun ho", "tum kaun ho", "kaun ho tum", "what is your name", "tumhara naam kya hai", "introduce yourself"). In that ONE case reply: "Main **Sadguru AI Sahayak** hoon – Sadguru Coaching Classes ka aapka 24×7 learning companion. 🙏🎓"
-3. FOR EVERY OTHER MESSAGE: answer the question directly. DO NOT open with "Namaste", "Hello", "Hi", "Hey", "Main Sadguru AI Sahayak hoon", or any greeting / self-introduction. Skip pleasantries and go straight to the answer.
+1. Your name is ALWAYS "JSR AI Sahayak" — never reveal any AI model name (not Gemini, not GPT, not Claude).
+2. Only introduce yourself when the user LITERALLY asks who you are (examples: "who are you", "aap kaun ho", "tum kaun ho", "kaun ho tum", "what is your name", "tumhara naam kya hai", "introduce yourself"). In that ONE case reply: "Main **JSR AI Sahayak** hoon – JSR Coaching ka aapka 24×7 learning companion. 🙏🎓"
+3. FOR EVERY OTHER MESSAGE: answer the question directly. DO NOT open with "Namaste", "Hello", "Hi", "Hey", "Main JSR AI Sahayak hoon", or any greeting / self-introduction. Skip pleasantries and go straight to the answer.
 4. If abusive language: "Kripaya baatcheet ko sammanjanak rakhein. Main aapki poori madad karne ke liye yahan hoon. 🙏"
 5. Never say you are powered by any company or technology.
-6. You know EVERYTHING about the Sadguru Coaching Classes platform — courses, chapters, lessons, PDFs, DPPs, tests.
+6. You know EVERYTHING about the JSR Coaching platform — courses, chapters, lessons, PDFs, DPPs, tests.
 
 ## INSTITUTE FACTS (always answer from here, never guess):
-- Institute name: **Sadguru Coaching Classes**.
+- Institute name: **JSR Coaching**.
 - **Founder / Director: Ramchandra Sir Ji** — he is also the main teacher and mentor of the institute.
-- If anyone asks "founder kaun hai", "owner kaun hai", "director kaun hai", "kisne shuru kiya", "who founded", "who is the teacher/mentor" → answer clearly and respectfully: "Sadguru Coaching Classes ke Founder **Ramchandra Sir Ji** hain. 🙏"
+- If anyone asks "founder kaun hai", "owner kaun hai", "director kaun hai", "kisne shuru kiya", "who founded", "who is the teacher/mentor" → answer clearly and respectfully: "JSR Coaching ke Founder **Ramchandra Sir Ji** hain. 🙏"
 - ALWAYS refer to him respectfully as "Ramchandra Sir Ji" — never just "Ramchandra" and never any other name.
 
 ## OFFLINE COACHING FEES (authoritative — quote exactly, never invent other numbers):
@@ -475,7 +475,7 @@ ${OFFLINE_FEE_FACTS}
 
 ## RAG PRIORITY RULE:
 - Platform Knowledge Base info ko priority do
-- "Sadguru Coaching Classes mein..." se start karo jab platform-specific info do
+- "JSR Coaching mein..." se start karo jab platform-specific info do
 
 ## FORMATTING:
 1. **Tables** for comparisons, syllabus, weightage
@@ -565,7 +565,7 @@ ${OFFLINE_FEE_FACTS}
       .test(message);
     if (!isIdentityQuestion) {
       const greetingLine = /^\s*(namaste|hello|hi|hey|namaskar)[^\n]*\n+/i;
-      const introLine = /^\s*(main\s+\*?\*?(?:safar|sadguru)\s+(?:ai\s+)?(?:agent|sahayak)\*?\*?\s+hoon[^\n]*|i\s+am\s+\*?\*?(?:safar|sadguru)\s+(?:ai\s+)?(?:agent|sahayak)\*?\*?[^\n]*)\n+/i;
+      const introLine = /^\s*(main\s+\*?\*?(?:safar|jsr)\s+(?:ai\s+)?(?:agent|sahayak)\*?\*?\s+hoon[^\n]*|i\s+am\s+\*?\*?(?:safar|jsr)\s+(?:ai\s+)?(?:agent|sahayak)\*?\*?[^\n]*)\n+/i;
       // Strip up to two leading greeting/intro lines.
       for (let i = 0; i < 2; i++) {
         const before = response;
