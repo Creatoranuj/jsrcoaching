@@ -10,16 +10,14 @@
  * Required env: E2E_EMAIL, E2E_PASSWORD, E2E_COURSE_ID
  */
 import { test, expect, type Page } from "@playwright/test";
+import { signIn } from "./helpers/auth";
 
 const EMAIL = process.env.E2E_EMAIL;
 const PASSWORD = process.env.E2E_PASSWORD;
 const COURSE_ID = process.env.E2E_COURSE_ID;
 
 async function login(page: Page) {
-  await page.goto("/login");
-  await page.getByTestId("login-email").fill(EMAIL!);
-  await page.getByTestId("login-password").fill(PASSWORD!);
-  await page.getByRole("button", { name: /log\s*in|sign\s*in/i }).click();
+  await signIn(page, EMAIL!, PASSWORD!);
   await expect(page).toHaveURL(/\/(dashboard|my-courses)/, { timeout: 20_000 });
 }
 
