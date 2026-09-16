@@ -1,25 +1,32 @@
 /**
  * Shared sign-in helper for every E2E spec.
  *
- * Two failure modes this fixes for good:
+ * Failure modes this fixes for good:
  *
  * 1. Value loss. The login screen is a controlled React form and the app
  *    re-renders it once AuthContext finishes booting. A `fill()` that lands
- *    before that settles is wiped, so the form submits empty and the app
- *    correctly answers "Please fill in all fields". We therefore fill inside
- *    an `expect.toPass()` loop and only submit once both values stick.
+ *    before that settles — or a re-render that lands between the fill and
+ *    the click — is wiped, so the form submits empty and the app correctly
+ *    answers "Please fill in all fields". We therefore fill inside an
+ *    `expect.toPass()` loop and RETRY the whole fill+submit cycle whenever
+ *    that error appears, instead of failing the test.
  *
  * 2. Strict-mode violations. `getByRole("button", { name: /sign in/i })`
  *    matches both the submit button and the "Sign in with mobile OTP"
  *    button. Always click the `login-submit` test id.
  */
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 const AFTER_LOGIN = /\/(dashboard|my-courses)/;
+const FILL_FIELDS_ERROR = "Please fill in all fields";
 
 /** Fills a controlled input and re-fills until React keeps the value. */
 export async function fillStable(page: Page, testId: string, value: string) {
-  const field = page.getByTestId(testId);
+  await fillStableLocator(page.getByTestId(testId), value);
+}
+
+/** Same as fillStable but for any locator (e.g. signup fields addressed by id). */
+export async function fillStableLocator(field: Locator, value: string) {
   await expect(field).toBeVisible({ timeout: 30_000 });
   await expect(async () => {
     await field.fill(value);
@@ -31,9 +38,16 @@ export async function fillStable(page: Page, testId: string, value: string) {
 export async function signIn(page: Page, email: string, password: string) {
   await page.goto("/login", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("login-form")).toBeVisible({ timeout: 30_000 });
-  await fillStable(page, "login-email", email);
-  await fillStable(page, "login-password", password);
-  await page.getByTestId("login-submit").click();
+  await expect(async () => {
+    await fillStable(page, "login-email", email);
+    await fillStable(page, "login-password", password);
+    await page.getByTestId("login-submit").click();
+    // A re-render can clear the controlled fields between the fill and the
+    // click; the app then shows the fill-fields error. Retry the whole
+    // cycle in that case. Any other inline error (e.g. invalid credentials)
+    // means the submit actually ran — leave it for the caller to assert.
+    await expect(page.getByText(FILL_FIELDS_ERROR)).toHaveCount(0, { timeout: 1_500 });
+  }).toPass({ timeout: 90_000, intervals: [500, 1_000, 2_000] });
 }
 
 /** Signs in and waits for the post-login route, reporting the inline error. */
