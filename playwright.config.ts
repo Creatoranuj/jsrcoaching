@@ -51,7 +51,7 @@ export default defineConfig({
       use: { ...devices["iPhone 12"] },
     },
     {
-      // Closer to typical Sadguru Coaching Classes user device (Android 13+, large screen)
+      // Closer to typical JSR Coaching user device (Android 13+, large screen)
       name: "android-pixel7",
       use: { ...devices["Pixel 7"] },
     },
