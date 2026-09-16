@@ -7,38 +7,93 @@ Credentials come from two repo secrets that the workflow exports:
   LOVABLE_API_KEY      - gateway bearer token
   GOOGLE_DRIVE_API_KEY - connection key for the linked Google Drive account
 
-No service-account JSON is needed. Missing files are skipped; upload failures
-are reported as GitHub warnings and never fail the build.
+Uses a Drive *resumable* upload session: the ~20 MB APK/AAB is sent in 8 MiB
+chunks, which survives proxy/gateway connection drops that kill one-shot
+multipart uploads ("EOF occurred in violation of protocol"). Each chunk and
+the session start retry with backoff. Missing files are skipped; upload
+failures are reported as GitHub warnings and never fail the build.
 """
 import json
 import os
 import sys
+import time
+import urllib.error
 import urllib.request
 
 GATEWAY = "https://connector-gateway.lovable.dev/google_drive"
-UPLOAD_URL = (
-    GATEWAY + "/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true"
+RESUMABLE_URL = (
+    GATEWAY + "/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true"
 )
-BOUNDARY = "jsrcoachingbuildupload"
+CHUNK_SIZE = 8 * 1024 * 1024  # 8 MiB, multiple of Drive's 256 KiB granularity
+MAX_RETRIES = 4
 
 
-def multipart_body(metadata: dict, name: str, payload: bytes) -> bytes:
-    dash = ("--" + BOUNDARY).encode()
-    parts = [
-        dash,
-        b'Content-Disposition: form-data; name="metadata"',
-        b"Content-Type: application/json; charset=UTF-8",
-        b"",
-        json.dumps(metadata).encode(),
-        dash,
-        ('Content-Disposition: form-data; name="file"; filename="%s"' % name).encode(),
-        b"Content-Type: application/octet-stream",
-        b"",
-        payload,
-        ("--" + BOUNDARY + "--").encode(),
-        b"",
-    ]
-    return b"\r\n".join(parts)
+def http(req: urllib.request.Request, timeout: int = 900) -> urllib.request.BaseHandler:
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
+def retryable(exc: Exception) -> bool:
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code in (408, 429, 500, 502, 503, 504)
+    return isinstance(exc, (urllib.error.URLError, TimeoutError, OSError))
+
+
+def with_retries(fn, what: str):
+    last = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            return fn()
+        except urllib.error.HTTPError as exc:
+            detail = exc.read()[:300].decode("utf8", "replace")
+            if not retryable(exc):
+                raise RuntimeError("[%s] %s" % (exc.code, detail)) from exc
+            last = RuntimeError("[%s] %s" % (exc.code, detail))
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+        time.sleep(min(2 ** attempt, 15))
+    raise RuntimeError("%s after %d attempts: %s" % (what, MAX_RETRIES, last))
+
+
+def start_session(headers: dict, name: str, folder_id: str, size: int) -> str:
+    meta = {"name": name, "parents": [folder_id]}
+    body = json.dumps(meta).encode()
+    h = dict(headers)
+    h["Content-Type"] = "application/json; charset=UTF-8"
+    h["X-Upload-Content-Type"] = "application/octet-stream"
+    h["X-Upload-Content-Length"] = str(size)
+
+    def call():
+        req = urllib.request.Request(RESUMABLE_URL, data=body, headers=h, method="POST")
+        with http(req) as res:
+            loc = res.headers.get("Location") or res.headers.get("location")
+            if not loc:
+                raise RuntimeError("no upload session URL returned")
+            return loc
+
+    return with_retries(call, "session start")
+
+
+def put_chunk(session_url: str, payload: bytes, start: int, total: int, last: bool) -> None:
+    end = start + len(payload) - 1
+    span = "*" if last else "%d-%d/%d" % (start, end, total)
+    h = {
+        "Content-Length": str(len(payload)),
+        "Content-Range": "bytes %s" % span,
+    }
+    if last:
+        h["Content-Range"] = "bytes %d-%d/%d" % (start, end, total)
+
+    def call():
+        req = urllib.request.Request(session_url, data=payload, headers=h, method="PUT")
+        try:
+            with http(req) as res:
+                return json.loads(res.read() or b"{}")
+        except urllib.error.HTTPError as exc:
+            if exc.code == 308:  # accepted, keep going
+                return {}
+            raise
+
+    with_retries(call, "chunk %d-%d" % (start, end))
 
 
 def main() -> int:
@@ -61,22 +116,19 @@ def main() -> int:
     headers = {
         "Authorization": "Bearer " + lovable_key,
         "X-Connection-Api-Key": drive_key,
-        "Content-Type": "multipart/related; boundary=" + BOUNDARY,
     }
 
     for path in files:
         name = os.path.basename(path)
         with open(path, "rb") as handle:
             payload = handle.read()
-        body = multipart_body({"name": name, "parents": [folder_id]}, name, payload)
-        req = urllib.request.Request(UPLOAD_URL, data=body, headers=headers, method="POST")
         try:
-            with urllib.request.urlopen(req, timeout=900) as res:
-                info = json.loads(res.read() or b"{}")
-            print("Uploaded %s -> %s" % (path, info.get("id")))
-        except urllib.error.HTTPError as exc:  # noqa: PERF203
-            detail = exc.read()[:500].decode("utf8", "replace")
-            print("::warning::Drive upload failed for %s [%s]: %s" % (path, exc.code, detail))
+            session_url = start_session(headers, name, folder_id, len(payload))
+            info = {}
+            for start in range(0, len(payload), CHUNK_SIZE):
+                last = start + CHUNK_SIZE >= len(payload)
+                info = put_chunk(session_url, payload[start : start + CHUNK_SIZE], start, len(payload), last)
+            print("Uploaded %s -> %s" % (path, info.get("id", "ok")))
         except Exception as exc:  # noqa: BLE001
             print("::warning::Drive upload failed for %s: %s" % (path, exc))
     return 0
