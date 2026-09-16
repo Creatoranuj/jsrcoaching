@@ -297,19 +297,18 @@ function LazyPage({
       ref={ref}
       data-page={pageNumber}
       data-page-rendered={render ? "true" : "false"}
-      className="mx-auto flex w-full justify-start overflow-hidden"
-      style={{ maxWidth: width }}
+      className="mx-auto"
+      style={{ width }}
     >
       {render ? (
         <Page
           pageNumber={pageNumber}
           width={width}
-          className="!max-w-full overflow-hidden"
           onLoadSuccess={handlePageLoad}
           onRenderSuccess={() => onRendered(pageNumber)}
           renderAnnotationLayer
           renderTextLayer={false}
-            loading={<div style={{ width, height: placeholderHeight }} className="bg-white" />}
+          loading={<div style={{ width, height: placeholderHeight }} className="bg-white" />}
         />
       ) : (
         <div style={{ width, height: placeholderHeight }} className="bg-white" />
@@ -1129,7 +1128,13 @@ const FastPdfReader = forwardRef<FastPdfReaderHandle, Props>(
       <div
         ref={scrollRef}
         data-archive-virtualized={isArchiveSource(src) ? "true" : undefined}
-        className="absolute inset-0 overflow-y-auto overflow-x-hidden overscroll-contain bg-background [&_.react-pdf__Document]:w-full [&_.react-pdf__Page]:!mx-auto [&_.react-pdf__Page]:!w-full [&_.react-pdf__Page]:!max-w-full [&_.react-pdf__Page__canvas]:!h-auto [&_.react-pdf__Page__canvas]:!w-full [&_.react-pdf__Page__canvas]:!max-w-full [&_.react-pdf__Page__canvas]:!block [&_.react-pdf__Page]:!mb-0 [&_.react-pdf__Page]:!bg-white [&_.annotationLayer_section]:!pointer-events-auto"
+        // NOTE: underscores inside class-name selectors MUST be escaped (\_) in
+        // Tailwind arbitrary variants — unescaped, `.react-pdf__Page` compiled
+        // to `.react-pdf Page` and every fit-to-screen override silently
+        // stopped matching, so zoomed pages rendered past the viewport edge
+        // and were clipped. overflow-x-auto lets a zoomed page pan instead of
+        // losing its right side.
+        className="absolute inset-0 overflow-y-auto overflow-x-auto overscroll-contain bg-background [&_.react-pdf\_\_Document]:w-full [&_.react-pdf\_\_Page]:!mx-auto [&_.react-pdf\_\_Page]:!w-full [&_.react-pdf\_\_Page]:!max-w-full [&_.react-pdf\_\_Page\_\_canvas]:!h-auto [&_.react-pdf\_\_Page\_\_canvas]:!w-full [&_.react-pdf\_\_Page\_\_canvas]:!max-w-full [&_.react-pdf\_\_Page\_\_canvas]:!block [&_.react-pdf\_\_Page]:!mb-0 [&_.react-pdf\_\_Page]:!bg-white [&_.annotationLayer\_section]:!pointer-events-auto"
         onClick={onSurfaceTap}
         style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-x pan-y pinch-zoom" }}
       >
