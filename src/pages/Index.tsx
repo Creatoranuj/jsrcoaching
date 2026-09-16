@@ -37,6 +37,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useHero } from "@/hooks/useHero";
 import { useLandingCourses } from "@/hooks/useLandingCourses";
 import { supabase } from "@/integrations/supabase/client";
+import WhatsAppFab from "@/components/common/WhatsAppFab";
 
 export interface HomepageCourse {
   id: string;
@@ -65,7 +66,8 @@ const defaultCourses: HomepageCourse[] = [
   price_effective: null,
 }));
 
-const WHATSAPP_URL = "https://wa.me/916386474017";
+const WHATSAPP_PHONE = "916386474017";
+const WHATSAPP_URL = `https://wa.me/${WHATSAPP_PHONE}`;
 const YOUTUBE_URL = "https://www.youtube.com/channel/UCP4lJcfTj9AnAS3vutTuMHA";
 const MAPS_URL = "https://maps.app.goo.gl/94xmibXHD3K2KsQV8?g_st=ac";
 const ADDRESS = "Ugapur Road, Uttar Pradesh 221301";
@@ -575,17 +577,11 @@ export default function Index() {
         </div>
       </footer>
 
-      <a
-        href={WHATSAPP_URL}
-        target="_blank"
-        rel="noreferrer"
-        aria-label="WhatsApp par enquiry karein"
-        style={{ bottom: "calc(5.5rem + env(safe-area-inset-bottom))" }}
-        className="fixed right-5 z-40 grid size-14 place-items-center rounded-full bg-whatsapp text-whatsapp-foreground shadow-lg transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none sm:hidden"
-
-      >
-        <WhatsAppIcon className="size-7" />
-      </a>
+      <WhatsAppFab
+        phone={WHATSAPP_PHONE}
+        message="Namaste JSR COACHING, mujhe admission aur batch details chahiye."
+        className="sm:hidden"
+      />
 
       <FloatingAuthButton />
     </div>

@@ -50,9 +50,32 @@ public class MainActivity extends BridgeActivity {
         com.getcapacitor.Bridge b = getBridge();
         if (b != null && b.getWebView() != null) {
             b.getWebView().setWebChromeClient(new BridgeFullscreenWebChromeClient(this));
+            // Renderer-death recovery: if Android kills the WebView renderer
+            // while the app is backgrounded, we rebuild the Activity instead of
+            // leaving the user on a blank screen. See RecoveryWebViewClient.
+            b.getWebView().setWebViewClient(new RecoveryWebViewClient(b, this));
             b.getWebView().addJavascriptInterface(new ImmersiveBridge(this), "AndroidImmersive");
         }
         handleSmokeLoginIntent(getIntent());
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Some OEM skins (MIUI / ColorOS / Funtouch) leave the WebView's JS
+        // timers paused after a long background stint, which freezes rAF and
+        // setTimeout — the UI paints but never updates. Resuming explicitly is
+        // cheap and idempotent.
+        try {
+            com.getcapacitor.Bridge bridge = getBridge();
+            WebView webView = bridge != null ? bridge.getWebView() : null;
+            if (webView != null) {
+                webView.onResume();
+                webView.resumeTimers();
+            }
+        } catch (Exception ignored) {
+            // best-effort
+        }
     }
 
     @Override

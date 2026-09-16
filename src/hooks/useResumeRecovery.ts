@@ -66,6 +66,21 @@ function clearReloadGuard() {
   try { sessionStorage.removeItem(RELOAD_KEY); } catch { /* ignore */ }
 }
 
+/** Blank-screen watchdog: after a resume, verify the app actually painted.
+ *  If the React root is empty (renderer was recycled and restored an empty
+ *  document, or hydration died while backgrounded), reload once. */
+const BLANK_CHECK_MS = 900;
+function startBlankScreenWatchdog(): () => void {
+  const id = setTimeout(() => {
+    try {
+      const root = document.getElementById("root") ?? document.body;
+      const empty = !root || root.childElementCount === 0 || root.innerHTML.trim() === "";
+      if (empty) safeReload("blank screen after resume");
+    } catch { /* ignore */ }
+  }, BLANK_CHECK_MS);
+  return () => clearTimeout(id);
+}
+
 /** Notify the app that we just resumed — App.tsx invalidates queries. */
 function emitResumed() {
   try { window.dispatchEvent(new Event("app:resumed")); } catch { /* ignore */ }
@@ -115,7 +130,9 @@ export function useResumeRecovery(): void {
       clearReloadGuard();
       // Track disposer so unmount cancels the pending watchdog timer.
       disposeWatchdog?.();
-      disposeWatchdog = startRafWatchdog();
+      const disposeRaf = startRafWatchdog();
+      const disposeBlank = startBlankScreenWatchdog();
+      disposeWatchdog = () => { disposeRaf(); disposeBlank(); };
       emitResumed();
     };
     let disposeWatchdog: (() => void) | null = null;
