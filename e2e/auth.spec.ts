@@ -18,6 +18,7 @@
  */
 
 import { test, expect, Page } from "@playwright/test";
+import { fillStable, signIn, signInAndLand } from "./helpers/auth";
 
 const BASE_URL = process.env.BASE_URL || "http://localhost:8080";
 
@@ -41,46 +42,30 @@ const AFTER_LOGIN = /\/(dashboard|my-courses)/;
 async function openLogin(page: Page) {
   await page.goto(`${BASE_URL}/login`, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("login-form")).toBeVisible({ timeout: 30_000 });
-  const submit = page.getByTestId("login-submit");
-  await expect(submit).toBeEnabled();
-  // Typing into a controlled input only "sticks" once React is listening.
-  const email = page.getByTestId("login-email");
-  await email.fill("hydration@probe.test");
-  await expect(email).toHaveValue("hydration@probe.test", { timeout: 15_000 });
-  await email.fill("");
+  await expect(page.getByTestId("login-submit")).toBeEnabled();
 }
 
 async function openSignup(page: Page) {
   await page.goto(`${BASE_URL}/signup`, { waitUntil: "domcontentloaded" });
-  await expect(page.locator('input[id="name"]')).toBeVisible({ timeout: 30_000 });
-  await page.locator('input[id="name"]').fill("Hydration Probe");
-  await expect(page.locator('input[id="name"]')).toHaveValue("Hydration Probe", { timeout: 15_000 });
+  const name = page.locator('input[id="name"]');
+  await expect(name).toBeVisible({ timeout: 30_000 });
+  // Same controlled-input settle as the login screen.
+  await expect(async () => {
+    await name.fill("Hydration Probe");
+    await expect(name).toHaveValue("Hydration Probe", { timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
+  await name.fill("");
 }
 
 async function login(page: Page, email: string, password: string) {
-  await openLogin(page);
-  await page.getByTestId("login-email").fill(email);
-  await page.getByTestId("login-password").fill(password);
-  await page.getByTestId("login-submit").click();
+  await signIn(page, email, password);
 }
 
 /** Login + land on the post-login route, surfacing the inline error if any. */
 async function loginAndLand(page: Page, email: string, password: string) {
-  await login(page, email, password);
-  try {
-    await page.waitForURL(AFTER_LOGIN, { timeout: 30_000 });
-  } catch (err) {
-    const inline = await page
-      .locator("p.text-destructive")
-      .first()
-      .textContent()
-      .catch(() => null);
-    throw new Error(
-      `Login did not reach ${AFTER_LOGIN} (url=${page.url()}). Inline error: ${inline?.trim() || "none"}. ` +
-        `If it says invalid credentials, refresh the TEST_USER_EMAIL / TEST_USER_PASSWORD repo secrets.`,
-    );
-  }
+  await signInAndLand(page, email, password, AFTER_LOGIN);
 }
+
 
 // ============================================================
 // PUBLIC FORM BEHAVIOUR (no credentials needed)
@@ -201,8 +186,8 @@ test.describe("Authenticated student", () => {
 
   test("dashboard should load within 20 seconds after login", async ({ page }) => {
     await openLogin(page);
-    await page.getByTestId("login-email").fill(TEST_USER.email);
-    await page.getByTestId("login-password").fill(TEST_USER.password);
+    await fillStable(page, "login-email", TEST_USER.email);
+    await fillStable(page, "login-password", TEST_USER.password);
 
     const startTime = Date.now();
     await page.getByTestId("login-submit").click();
