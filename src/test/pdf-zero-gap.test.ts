@@ -10,7 +10,11 @@ describe("PDF pages render with no gap between them", () => {
     const wrappers = src.match(/className="mx-auto[^"]*"/g) ?? [];
     expect(wrappers.length).toBeGreaterThan(0);
     for (const cls of wrappers) expect(cls).not.toMatch(/\bmb-\d/);
-    expect(src).toContain("[&_.react-pdf__Page]:!mb-0");
+    // Underscores inside arbitrary-variant selectors MUST be escaped (\_) —
+    // unescaped, Tailwind compiles `.react-pdf__Page` to `.react-pdf Page`
+    // and the rule matches nothing (root cause of the clipped-page bug).
+    expect(src).toContain("[&_.react-pdf\\_\\_Page]:!mb-0");
+    expect(src).not.toMatch(/\[\&_\.react-pdf__Page\]/);
   });
 
   it("FastPdfReader scroll surface has no horizontal padding strips", () => {
