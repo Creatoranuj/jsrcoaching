@@ -105,11 +105,10 @@ jobs:
           E2E_COURSE_ID: ${{ secrets.E2E_COURSE_ID }}
           E2E_PAID_COURSE_ID: ${{ secrets.E2E_PAID_COURSE_ID || secrets.TEST_PAID_COURSE_ID }}
           E2E_QUIZ_ID: ${{ secrets.E2E_QUIZ_ID }}
-        # Soft-fail: don't block downstream jobs on flaky E2E runs. The HTML
-        # report + traces are always uploaded below; check the artifact for
-        # actual failures. Convert to hard-fail by removing `|| true` once
-        # the suite is stable across 5+ consecutive green runs.
-        run: bunx playwright test --project=chromium --reporter=html,json || echo "::warning::Playwright tests failed — see playwright-report artifact"
+        # Hard gate: a green run must mean green tests. The old `|| warning`
+        # swallowed real failures and reported success. Report + traces are
+        # still uploaded by the always() step below.
+        run: bunx playwright test --project=chromium --reporter=html,json
 
       - name: 📤 Upload Playwright report (always)
         if: always()
