@@ -26,7 +26,12 @@ android {
         versionName numericVersion
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
-            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+            // Strip build artefacts that must never ship inside the APK/AAB:
+            //  - *.map  → 331 sourcemaps (~28 MB) from dist/ AND from the
+            //    ionfileviewer-android AAR's bundled pdf.js. They leak full
+            //    source and bloat the package; Sentry uses the uploaded copies.
+            //  - compressed.tracemonkey-pldi-09.pdf → pdf.js demo document (1 MB).
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~:!*.map:!compressed.tracemonkey-pldi-09.pdf'
         }
         // Ship only ARM native libs — x86/x86_64 cuts ~12-18 MB and is unused
         // on real student devices. CI signed-smoke overrides via
