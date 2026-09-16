@@ -25,8 +25,8 @@ test.describe("Breadcrumb back-navigation", () => {
     // We can't deterministically drill into a real course without seeded data;
     // this test guards the contract via the BackButtonDebug page, which
     // exercises the same NavigationHistoryContext + breadcrumb helpers.
-    await page.goto("/back-button-debug");
-    await expect(page).toHaveURL(/back-button-debug/);
+    await page.goto("/debug/back-button");
+    await expect(page).toHaveURL(/debug\/back-button/);
 
     // Ensure the page is tall enough to scroll in headless viewports, then
     // scroll to a known offset. Short routes previously reported scrollY=0.
@@ -51,11 +51,11 @@ test.describe("Breadcrumb back-navigation", () => {
     // Navigate forward to a sibling route, then back.
     await page.goto("/");
     await page.goBack();
-    await expect(page).toHaveURL(/back-button-debug/);
+    await expect(page).toHaveURL(/debug\/back-button/);
 
     // Scroll restoration is browser-managed; we assert the user is back on
     // the expected route (not collapsed to /) which was the original bug.
     const url = page.url();
-    expect(url).toContain("back-button-debug");
+    expect(url).toContain("/debug/back-button");
   });
 });
