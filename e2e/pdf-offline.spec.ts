@@ -11,6 +11,7 @@
  *   E2E_EMAIL=... E2E_PASSWORD=... npx playwright test e2e/pdf-offline.spec.ts --project=chromium
  */
 import { test, expect, type Page } from "@playwright/test";
+import { signIn } from "./helpers/auth";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -24,10 +25,7 @@ const EXTERNAL_PDF =
 
 async function login(page: Page) {
   if (!EMAIL || !PASSWORD) test.skip(true, "E2E_EMAIL / E2E_PASSWORD not set");
-  await page.goto("/login");
-  await page.fill('input[type="email"]', EMAIL!);
-  await page.fill('input[type="password"]', PASSWORD!);
-  await page.click('button[type="submit"]');
+  await signIn(page, EMAIL!, PASSWORD!);
   await page.waitForURL((url) => !/\/login/.test(url.pathname), { timeout: 15000 });
 }
 
