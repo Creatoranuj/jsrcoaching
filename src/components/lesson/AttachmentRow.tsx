@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { reportError } from "@/lib/sentry";
-import { FileText, FileType2, Image as ImageIcon, Music, Video, File, Loader2, Play } from "lucide-react";
+import { FileText, FileType2, Image as ImageIcon, Music, Video, File, Loader2, Eye } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import type { LessonAttachment, LessonAttachmentKind } from "@/hooks/useLessonAttachments";
@@ -145,11 +145,11 @@ export function AttachmentRow({ attachment, onOpenPdf, resolveUrl, onDownloaded,
           </div>
           {compact ? (
             <div className="shrink-0 inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground group-active:bg-accent group-active:text-accent-foreground transition-colors">
-              <Play className="h-4 w-4 fill-current" />
+              <Eye className="h-4 w-4" />
             </div>
           ) : (
             <div className="shrink-0 inline-flex items-center justify-center gap-1.5 bg-primary text-primary-foreground rounded-xl h-10 px-4 text-sm font-semibold transition-colors [@media(hover:hover)]:group-hover:bg-primary/90">
-              <Play className="h-4 w-4 fill-current" />
+              <Eye className="h-4 w-4" />
               View
             </div>
           )}
