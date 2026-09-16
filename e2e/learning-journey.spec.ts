@@ -26,8 +26,8 @@ const QUIZ_ID = process.env.E2E_QUIZ_ID;
 
 async function login(page: Page) {
   await page.goto("/login");
-  await page.getByLabel(/email/i).fill(EMAIL!);
-  await page.getByLabel(/password/i).fill(PASSWORD!);
+  await page.getByTestId("login-email").fill(EMAIL!);
+  await page.getByTestId("login-password").fill(PASSWORD!);
   await page.getByRole("button", { name: /log\s*in|sign\s*in/i }).click();
   await expect(page).toHaveURL(/\/(dashboard|my-courses)/, { timeout: 20_000 });
 }
