@@ -1,5 +1,5 @@
 # Verifies the overlay-sentinel back-button contract for PDFs.
-appId: com.sadguru.classes
+appId: com.jsrcoaching.app
 ---
 - launchApp
 - tapOn: "My Courses"
