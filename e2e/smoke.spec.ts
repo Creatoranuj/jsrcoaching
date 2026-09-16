@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { signIn } from "./helpers/auth";
 
 /**
  * Critical-flow smoke tests. Run after every release candidate.
@@ -21,18 +22,12 @@ test.describe("smoke", () => {
   });
 
   test("login flow succeeds", async ({ page }) => {
-    await page.goto("/login");
-    await page.getByTestId("login-email").fill(EMAIL!);
-    await page.getByTestId("login-password").fill(PASSWORD!);
-    await page.getByRole("button", { name: /log\s*in|sign\s*in/i }).click();
+    await signIn(page, EMAIL!, PASSWORD!);
     await expect(page).toHaveURL(/\/(dashboard|my-courses)/, { timeout: 15_000 });
   });
 
   test("dashboard reachable after login", async ({ page }) => {
-    await page.goto("/login");
-    await page.getByTestId("login-email").fill(EMAIL!);
-    await page.getByTestId("login-password").fill(PASSWORD!);
-    await page.getByRole("button", { name: /log\s*in|sign\s*in/i }).click();
+    await signIn(page, EMAIL!, PASSWORD!);
     await page.goto("/dashboard");
     await expect(page.locator("body")).toContainText(/course|class|dashboard/i, {
       timeout: 10_000,
@@ -40,10 +35,7 @@ test.describe("smoke", () => {
   });
 
   test("subscription page loads payment CTA", async ({ page }) => {
-    await page.goto("/login");
-    await page.getByTestId("login-email").fill(EMAIL!);
-    await page.getByTestId("login-password").fill(PASSWORD!);
-    await page.getByRole("button", { name: /log\s*in|sign\s*in/i }).click();
+    await signIn(page, EMAIL!, PASSWORD!);
     await page.goto("/subscription");
     await expect(page.getByRole("button", { name: /subscribe|pay|upgrade/i }).first())
       .toBeVisible({ timeout: 10_000 });
