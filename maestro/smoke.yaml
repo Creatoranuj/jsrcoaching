@@ -3,7 +3,7 @@
 # Run locally:    maestro test maestro/smoke.yaml --env MAESTRO_EMAIL=... --env MAESTRO_PASSWORD=...
 # In CI:          set MAESTRO_EMAIL / MAESTRO_PASSWORD as repo secrets and pass with --env.
 # NEVER hardcode credentials here — this file is committed to the repo.
-appId: com.sadguru.classes
+appId: com.jsrcoaching.app
 # Re-enabled 2026-07-16 for the API 33 hard-gate. Root cause of v1.0.29 red:
 # app rendered fine (cold_boot=4324ms, no crashes) but its landing content
 # lives in the Capacitor WebView DOM — Android accessibility tree only
@@ -20,7 +20,7 @@ appId: com.sadguru.classes
 androidWebViewHierarchy: devtools
 ---
 # 1) Cold start → wait for ANY app content to paint, then navigate to Login.
-# Previous versions used `openLink com.sadguru.classes://login` right after
+# Previous versions used `openLink com.jsrcoaching.app://login` right after
 # `launchApp`. That fires the VIEW intent before WebView + React Router have
 # hydrated, so Capacitor's App.addListener("appUrlOpen") is not yet registered
 # and the deeplink is dropped (root cause of v1.0.20-smoke API 28/35 failures —
