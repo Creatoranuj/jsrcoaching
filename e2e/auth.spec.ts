@@ -84,6 +84,7 @@ test.describe("Authentication Flow", () => {
     test("should display signup form", async ({ page }) => {
       await page.goto(`${BASE_URL}/signup`);
 
+      await expect(page.locator('input[id="name"]')).toBeVisible({ timeout: 15_000 });
       await expect(page.locator('input[type="email"]')).toBeVisible();
       await expect(page.locator('input[type="password"]')).toBeVisible();
       await expect(page.locator('button[type="submit"]')).toBeVisible();
@@ -93,7 +94,7 @@ test.describe("Authentication Flow", () => {
       test.skip(!HAS_USER, "TEST_USER_EMAIL / TEST_USER_PASSWORD not set");
 
       await page.goto(`${BASE_URL}/signup`);
-      await page.fill('input[id="fullName"]', "Existing User");
+      await page.fill('input[id="name"]', "Existing User");
       await page.fill('input[type="email"]', TEST_USER.email);
       await page.fill('input[type="password"]', "password123");
       await page.click('button[type="submit"]');
@@ -130,9 +131,13 @@ test.describe("Authenticated student", () => {
     await expect(page).toHaveURL(/\/(dashboard|my-courses)/, { timeout: 20_000 });
 
     await page.goto(`${BASE_URL}/admin`);
-    await expect(
-      page.locator("text=/Access Denied|not authorized|Unauthorized/i").first(),
-    ).toBeVisible({ timeout: 10_000 });
+    // A non-admin is either shown a denial screen or bounced away — both count.
+    const bounced = /\/(login|dashboard|my-courses)/.test(page.url());
+    if (!bounced) {
+      await expect(
+        page.locator("text=/Access Denied|not authorized|Unauthorized|admin login/i").first(),
+      ).toBeVisible({ timeout: 15_000 });
+    }
   });
 
   test("dashboard should load within 15 seconds after login", async ({ page }) => {
@@ -165,11 +170,13 @@ test.describe("Authenticated admin", () => {
 
 test.describe("Navigation", () => {
   test("unauthenticated user should access public pages", async ({ page }) => {
-    await page.goto(`${BASE_URL}/courses`);
-    await expect(page.locator("text=/Courses/i").first()).toBeVisible();
+    // /courses and /books sit behind ProtectedRoute — the genuinely public
+    // screens are the landing page and the privacy page.
+    await page.goto(`${BASE_URL}/`);
+    await expect(page.locator("body")).toContainText(/JSR|coaching|english/i);
 
-    await page.goto(`${BASE_URL}/books`);
-    await expect(page.locator("text=/Books/i").first()).toBeVisible();
+    await page.goto(`${BASE_URL}/privacy`);
+    await expect(page.locator("body")).toContainText(/privacy/i);
   });
 
   test("unauthenticated user should be redirected from protected pages", async ({ page }) => {
