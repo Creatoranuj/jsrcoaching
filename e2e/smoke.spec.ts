@@ -22,16 +22,16 @@ test.describe("smoke", () => {
 
   test("login flow succeeds", async ({ page }) => {
     await page.goto("/login");
-    await page.getByLabel(/email/i).fill(EMAIL!);
-    await page.getByLabel(/password/i).fill(PASSWORD!);
+    await page.getByTestId("login-email").fill(EMAIL!);
+    await page.getByTestId("login-password").fill(PASSWORD!);
     await page.getByRole("button", { name: /log\s*in|sign\s*in/i }).click();
     await expect(page).toHaveURL(/\/(dashboard|my-courses)/, { timeout: 15_000 });
   });
 
   test("dashboard reachable after login", async ({ page }) => {
     await page.goto("/login");
-    await page.getByLabel(/email/i).fill(EMAIL!);
-    await page.getByLabel(/password/i).fill(PASSWORD!);
+    await page.getByTestId("login-email").fill(EMAIL!);
+    await page.getByTestId("login-password").fill(PASSWORD!);
     await page.getByRole("button", { name: /log\s*in|sign\s*in/i }).click();
     await page.goto("/dashboard");
     await expect(page.locator("body")).toContainText(/course|class|dashboard/i, {
@@ -41,8 +41,8 @@ test.describe("smoke", () => {
 
   test("subscription page loads payment CTA", async ({ page }) => {
     await page.goto("/login");
-    await page.getByLabel(/email/i).fill(EMAIL!);
-    await page.getByLabel(/password/i).fill(PASSWORD!);
+    await page.getByTestId("login-email").fill(EMAIL!);
+    await page.getByTestId("login-password").fill(PASSWORD!);
     await page.getByRole("button", { name: /log\s*in|sign\s*in/i }).click();
     await page.goto("/subscription");
     await expect(page.getByRole("button", { name: /subscribe|pay|upgrade/i }).first())
