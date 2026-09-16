@@ -1,4 +1,4 @@
-// Sadguru Coaching Classes PDF.js bridge — parent readiness, progress, errors + autoscroll.
+// JSR Coaching PDF.js bridge — parent readiness, progress, errors + autoscroll.
 (function () {
   // Authoritative float scroll position. Reading back `scrollTop` snaps to
   // whole device pixels in Android WebView, so a per-frame 0.1px delta was
