@@ -7,11 +7,9 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { toast } from "sonner";
 import { Eye, EyeOff, Shield, UserPlus, Loader2 } from "lucide-react";
-import logoAsset from "../assets/logo.webp.asset.json";
-import { getAssetUrl } from "@/lib/assetUrl";
+import logo from "../assets/branding/jsr-mark.webp";
 import { getErrorMessage } from "@/lib/errorMessage";
 
-const logo = getAssetUrl(logoAsset);
 
 const AdminRegister = () => {
   const [name, setName] = useState("");

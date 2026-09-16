@@ -19,11 +19,9 @@ import {
   ChevronRight, ClipboardCheck, Plus, FolderPlus, FolderOpen, GripVertical, Camera,
   Pencil, X, Save, Paperclip, ImageIcon,
 } from "lucide-react";
-import logoAsset from "../assets/logo.webp.asset.json";
-import { getAssetUrl } from "@/lib/assetUrl";
+import logo from "../assets/branding/jsr-mark.webp";
 import MediaPreview from "../components/admin/MediaPreview";
 
-const logo = getAssetUrl(logoAsset);
 import { useLessonPdfs, type LessonPdf } from "../hooks/useLessonPdfs";
 import { AdminLessonAttachments } from "../components/admin/AdminLessonAttachments";
 import {
