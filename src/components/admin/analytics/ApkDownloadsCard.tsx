@@ -18,7 +18,7 @@ interface Release {
   assets: ReleaseAsset[];
 }
 
-const REPO = "Creatoranuj/jsrcoaching";
+const REPO = "MrAnujBabu/JRS-COACHING-INSTALL";
 
 export default function ApkDownloadsCard() {
   const [loading, setLoading] = useState(true);
