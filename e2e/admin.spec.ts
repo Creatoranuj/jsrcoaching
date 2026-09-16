@@ -9,6 +9,7 @@
  */
 
 import { test, expect, Page } from "@playwright/test";
+import { signIn } from "./helpers/auth";
 
 const BASE_URL = process.env.BASE_URL || "http://localhost:8080";
 
@@ -21,10 +22,7 @@ const HAS_ADMIN = !!(ADMIN_USER.email && ADMIN_USER.password);
 const SKIP_REASON = "E2E_ADMIN_EMAIL / E2E_ADMIN_PASSWORD not set";
 
 async function loginAsAdmin(page: Page) {
-  await page.goto(`${BASE_URL}/login`);
-  await page.fill('input[type="email"]', ADMIN_USER.email);
-  await page.fill('input[type="password"]', ADMIN_USER.password);
-  await page.click('button[type="submit"]');
+  await signIn(page, ADMIN_USER.email, ADMIN_USER.password);
   await page.waitForURL(/\/(dashboard|admin|my-courses)/, { timeout: 20_000 });
 }
 
