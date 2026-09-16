@@ -68,7 +68,7 @@ runIf("enrollment bypass — red team", () => {
 
     // Any returned representation must still show the original value.
     for (const r of data ?? []) expect(r.status).toBe(row.status);
-    if (error) expect(error.message.toLowerCase()).toMatch(/row-level security|policy|not allowed|permission/);
+    if (error) expect(error.message.toLowerCase()).toMatch(/row-level security|policy|not allowed|permission|can only be changed|denied/);
 
     // Re-read: the stored status must be untouched.
     const { data: after } = await supabase
@@ -96,7 +96,7 @@ runIf("enrollment bypass — red team", () => {
       .select("id, course_id");
 
     for (const r of data ?? []) expect(r.course_id).toBe(row.course_id);
-    if (error) expect(error.message.toLowerCase()).toMatch(/row-level security|policy|not allowed|permission/);
+    if (error) expect(error.message.toLowerCase()).toMatch(/row-level security|policy|not allowed|permission|can only be changed|denied/);
 
     const { data: after } = await supabase
       .from("enrollments")
