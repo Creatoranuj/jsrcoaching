@@ -13,10 +13,10 @@ this release. No CRITICAL, no open HIGH.
 
 | # | Finding (was) | Fix |
 |---|---|---|
-| HIGH | 331 sourcemaps (~28 MB uncompressed) shipped inside the APK/AAB — full source readable by anyone who unzips the package | `aaptOptions.ignoreAssetsPattern` now excludes `*.map`, plus an explicit strip step in `build-apk.yml` after `cap copy` |
+| HIGH | 331 sourcemaps (~28 MB uncompressed) shipped inside the APK/AAB — full source readable by anyone who unzips the package | `aaptOptions.ignoreAssetsPattern` in `android/app/build.gradle` now excludes `*.map` at packaging time (covers dist assets and AAR-merged assets alike) |
 | HIGH | pdf.js shipped twice: `assets/public/pdfjs` (5.9 MB, our patched viewer) **and** `assets/pdfjs` (18.4 MB) | Root cause identified: the second copy is **not** in the repo — it is merged in from the `io.ionic.libs:ionfileviewer-android:1.0.1` AAR pulled by `@capacitor/file-viewer`. Its sourcemaps and demo PDF are now excluded at packaging time; the library itself stays because `openNativeDocument` depends on it |
-| HIGH | pdf.js demo document `compressed.tracemonkey-pldi-09.pdf` (1 MB) shipped | Excluded by name in `ignoreAssetsPattern` + strip step |
-| MEDIUM | `unit-tests`, `typecheck-build`, `lighthouse-ci`, `migration-drift` on Node20 action majors | Bumped to `checkout@v5`, `setup-node@v5`, `upload-artifact@v5`, `cache@v6` |
+| HIGH | pdf.js demo document `compressed.tracemonkey-pldi-09.pdf` (1 MB) shipped | Excluded by name in `ignoreAssetsPattern` |
+| MEDIUM | `unit-tests`, `typecheck-build`, `lighthouse-ci`, `migration-drift` on Node20 action majors | Patch prepared (`checkout@v5`, `setup-node@v5`, `upload-artifact@v5`, `cache@v6`) but NOT pushed — the GitHub connection used for this commit has no `workflow` scope, so `.github/workflows/**` writes are rejected. Apply manually or push from a token with `workflow` scope |
 | MEDIUM | `package.json` version 1.6.0 vs released tag v1.6.4 | Bumped to 1.6.5, matching this tag |
 | MEDIUM | Sentry loaded on the initial graph | Verified already correct: `src/main.tsx` initialises Sentry inside `idle(...)` via dynamic import — no change needed |
 
