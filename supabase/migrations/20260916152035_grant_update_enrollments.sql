@@ -1,0 +1,1 @@
+GRANT UPDATE ON public.enrollments TO authenticated;
