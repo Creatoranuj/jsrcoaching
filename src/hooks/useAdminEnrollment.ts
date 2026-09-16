@@ -75,7 +75,16 @@ export const useAdminEnrollment = () => {
       };
     } catch (error: unknown) {
       reportError(error, { surface: 'useAdminEnrollment.enroll' });
-      toast.error('Enroll nahi ho paaya — dobara try karo');
+      // Surface the real reason instead of a blind "try again" — a permission
+      // error means the DB grant/policy blocked the write, and retrying can
+      // never help. (Root cause 2026-09-16: `authenticated` lacked UPDATE on
+      // `enrollments`, so the upsert failed with 42501.)
+      const code = (error as { code?: string } | null)?.code;
+      toast.error(
+        code === '42501' || code === '42P01'
+          ? 'Enroll block ho gaya — permission ki dikkat hai, admin ko batayein'
+          : `Enroll nahi ho paaya — ${getErrorMessage(error)}`
+      );
       return { success: false, error: getErrorMessage(error) };
     } finally {
       setIsEnrolling(false);
