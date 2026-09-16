@@ -16,16 +16,14 @@
  *     npx playwright test e2e/comment-image-in-app.spec.ts --project=chromium
  */
 import { test, expect, type Page } from "@playwright/test";
+import { signIn } from "./helpers/auth";
 
 const EMAIL = process.env.E2E_EMAIL;
 const PASSWORD = process.env.E2E_PASSWORD;
 const LESSON_ID = process.env.E2E_LESSON_ID;
 
 async function login(page: Page) {
-  await page.goto("/login");
-  await page.fill('input[type="email"]', EMAIL!);
-  await page.fill('input[type="password"]', PASSWORD!);
-  await page.click('button[type="submit"]');
+  await signIn(page, EMAIL!, PASSWORD!);
   await page.waitForURL((u) => !/\/login/.test(u.pathname), { timeout: 15000 });
 }
 
