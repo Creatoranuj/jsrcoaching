@@ -79,18 +79,9 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: bun run build
 
-      - name: ▶️ Start preview server
-        run: |
-          bunx vite preview --port 8080 --host 0.0.0.0 &
-          echo "PREVIEW_PID=$!" >> $GITHUB_ENV
-          # Wait for server to accept connections
-          for i in {1..30}; do
-            if curl -sf http://localhost:8080 >/dev/null; then
-              echo "Preview server ready"; exit 0
-            fi
-            sleep 1
-          done
-          echo "::error::Preview server failed to start"; exit 1
+      # No manual preview server here: playwright.config.ts `webServer` owns
+      # :8080 and `reuseExistingServer` is false on CI, so starting a second
+      # one made every run die with "http://localhost:8080 is already used".
 
       - name: 🧪 Run Playwright (chromium only)
         env:
