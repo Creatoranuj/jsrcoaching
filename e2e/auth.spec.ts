@@ -18,7 +18,7 @@
  */
 
 import { test, expect, Page } from "@playwright/test";
-import { fillStable, signIn, signInAndLand } from "./helpers/auth";
+import { fillStable, fillStableLocator, signIn, signInAndLand } from "./helpers/auth";
 
 const BASE_URL = process.env.BASE_URL || "http://localhost:8080";
 
@@ -134,11 +134,18 @@ test.describe("Authentication Flow", () => {
       test.skip(!HAS_USER, "TEST_USER_EMAIL / TEST_USER_PASSWORD not set");
 
       await openSignup(page);
-      await page.locator('input[id="name"]').fill("Existing User");
-      await page.locator('input[id="email"]').fill(TEST_USER.email);
-      await page.locator('input[id="password"]').fill("Password123!");
-      await page.locator('input[id="confirmPassword"]').fill("Password123!");
-      await page.locator('button[type="submit"]').first().click();
+      // Same hydration race as the login form: retry the whole fill+submit
+      // cycle if the controlled fields were wiped before the click landed.
+      await expect(async () => {
+        await fillStableLocator(page.locator('input[id="name"]'), "Existing User");
+        await fillStableLocator(page.locator('input[id="email"]'), TEST_USER.email);
+        await fillStableLocator(page.locator('input[id="password"]'), "Password123!");
+        await fillStableLocator(page.locator('input[id="confirmPassword"]'), "Password123!");
+        await page.locator('button[type="submit"]').first().click();
+        await expect(page.getByText("Please fill in all fields")).toHaveCount(0, {
+          timeout: 1_500,
+        });
+      }).toPass({ timeout: 90_000, intervals: [500, 1_000, 2_000] });
 
       await expect(
         page
