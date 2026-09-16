@@ -164,7 +164,23 @@ const QueryCacheBoot = () => {
     // When useResumeRecovery fires `app:resumed`, invalidate all queries so
     // every visible screen refetches fresh data after returning from another
     // app. Prevents the "UI looks alive but data is frozen" symptom.
-    const onResumed = () => { void queryClient.invalidateQueries(); };
+    // Single-flight + hard timeout: a slow/offline network used to leave the
+    // refetch pending forever, so every screen kept showing its "Refreshing"
+    // spinner. We refetch only the ACTIVE queries, ignore overlapping resume
+    // events while one pass is still running, and give up after 8s so the UI
+    // falls back to cached data instead of spinning.
+    let refreshing = false;
+    const RESUME_REFRESH_TIMEOUT_MS = 8000;
+    const onResumed = () => {
+      if (refreshing) return;
+      refreshing = true;
+      const done = () => { refreshing = false; };
+      const timer = window.setTimeout(done, RESUME_REFRESH_TIMEOUT_MS);
+      void queryClient
+        .invalidateQueries({ type: "active" })
+        .catch(() => { /* stale cache is fine — never block the UI */ })
+        .finally(() => { window.clearTimeout(timer); done(); });
+    };
     window.addEventListener("app:resumed", onResumed);
     return () => {
       stop?.();
