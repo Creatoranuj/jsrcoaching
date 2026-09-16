@@ -1,16 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="JSR COACHING">
-  <!-- laurel -->
-  <g fill="none" stroke="#C9A227" stroke-width="2.4" stroke-linecap="round">
-    <path d="M12 34c-3 8 1 15 8 19" />
-    <path d="M52 34c3 8-1 15-8 19" />
-  </g>
-  <!-- shield -->
-  <path d="M32 3 57 11v20c0 14.5-10.6 23.4-25 27.5C17.6 54.4 7 45.5 7 31V11L32 3z" fill="#1E1B4B"/>
-  <path d="M32 7.4 53 14v17c0 12.3-8.9 19.9-21 23.4C19.9 50.9 11 43.3 11 31V14l21-6.6z" fill="none" stroke="#C9A227" stroke-width="1.8"/>
-  <!-- star -->
-  <path d="M32 11.5l1.7 3.6 3.9.4-2.9 2.6 0.8 3.8L32 20l-3.5 1.9.8-3.8-2.9-2.6 3.9-.4L32 11.5z" fill="#C9A227"/>
-  <!-- SCC monogram -->
-  <text x="32" y="38" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="17" fill="#C9A227">SCC</text>
-  <!-- open book -->
-  <path d="M15 43h15c1.1 0 1.9.6 2 1.5V52c-.1-.9-.9-1.5-2-1.5H15V43zm34 0H34c-1.1 0-1.9.6-2 1.5V52c.1-.9.9-1.5 2-1.5h15V43z" fill="#FFFFFF"/>
+  <rect width="64" height="64" rx="12" fill="#F7F4EE"/>
+  <text x="32" y="41" text-anchor="middle"
+        font-family="Arial Black, Arial, Helvetica, sans-serif"
+        font-size="24" font-weight="900" fill="#DD9033" letter-spacing="-0.5">JSR</text>
 </svg>
