@@ -177,6 +177,7 @@ jobs:
           # INSTALL_FAILED_NO_MATCHING_ABIS. Widen only for the smoke build.
           ANDROID_ABI_FILTERS: "arm64-v8a,armeabi-v7a,x86_64"
         run: |
+          chmod +x ./gradlew
           ./gradlew assembleRelease --no-daemon \
             -Pandroid.injected.signing.store.file="$(pwd)/app/release.keystore" \
             -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
@@ -955,6 +956,7 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           ANDROID_ABI_FILTERS: "arm64-v8a,armeabi-v7a,x86_64"
         run: |
+          chmod +x ./gradlew
           ./gradlew assembleRelease --no-daemon \
             -Pandroid.injected.signing.store.file="$(pwd)/app/release.keystore" \
             -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
@@ -1134,6 +1136,7 @@ jobs:
           # Play upload AAB uses production ABIs only (arm64-v8a, armeabi-v7a).
           # Do NOT widen with x86_64 here — that was only for the emulator smoke.
         run: |
+          chmod +x ./gradlew
           ./gradlew bundleRelease --no-daemon \
             -Pandroid.injected.signing.store.file="$(pwd)/app/release.keystore" \
             -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
