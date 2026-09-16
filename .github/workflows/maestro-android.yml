@@ -117,6 +117,11 @@ jobs:
 
       - name: 🤖 Run Android emulator + Maestro flows
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          MAESTRO_EMAIL: ${{ secrets.MAESTRO_EMAIL }}
+          MAESTRO_PASSWORD: ${{ secrets.MAESTRO_PASSWORD }}
+          TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+          TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
         with:
           api-level: 33
           target: google_apis
@@ -126,7 +131,9 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: |
-            set -euo pipefail
+            # dash-safe: android-emulator-runner executes this under /bin/sh,
+            # where `set -o pipefail` aborts the whole script (Illegal option).
+            set -eu
             mkdir -p maestro-artifacts
             adb logcat -c
             adb logcat -v threadtime > maestro-artifacts/logcat.txt 2>&1 &
@@ -135,8 +142,13 @@ jobs:
             adb install -r android/app/build/outputs/apk/debug/app-debug.apk
             adb shell pm path com.jsrcoaching.app | tee maestro-artifacts/install-check.txt
             grep -q '^package:' maestro-artifacts/install-check.txt || { echo 'com.jsrcoaching.app was not installed'; exit 1; }
-            export MAESTRO_EMAIL='${{ secrets.TEST_USER_EMAIL }}'
-            export MAESTRO_PASSWORD='${{ secrets.TEST_USER_PASSWORD }}'
+            # Prefer the dedicated MAESTRO_* secrets (same pair signed-apk-smoke
+            # uses); fall back to TEST_USER_* so forks without them still run.
+            export MAESTRO_EMAIL="${MAESTRO_EMAIL:-$TEST_USER_EMAIL}"
+            export MAESTRO_PASSWORD="${MAESTRO_PASSWORD:-$TEST_USER_PASSWORD}"
+            if [ -z "$MAESTRO_EMAIL" ] || [ -z "$MAESTRO_PASSWORD" ]; then
+              echo "::error::No Maestro login credentials (MAESTRO_EMAIL/PASSWORD or TEST_USER_EMAIL/PASSWORD)"; exit 1
+            fi
             # Smoke is the gate — it must fail the job when it fails. The
             # previous `|| echo "smoke failed"` swallowed real regressions and
             # let the job report green while login/dashboard were broken.
