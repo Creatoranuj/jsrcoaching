@@ -3,7 +3,7 @@
 #
 # Requires the device to support `adb shell svc data` (real device or
 # emulator). Login state is reused from smoke.yaml — run that first.
-appId: com.sadguru.classes
+appId: com.jsrcoaching.app
 ---
 - launchApp
 - extendedWaitUntil:
