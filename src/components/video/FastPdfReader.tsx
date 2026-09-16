@@ -31,6 +31,7 @@ import { friendlyPdfErrorMessage } from "../../lib/pdfErrorMessage";
 import { supabase } from "@/integrations/supabase/client";
 import { usePlayerReaderControls } from "../../hooks/usePlayerReaderControls";
 import ReaderZoomControls from "../library/reader/ReaderZoomControls";
+import PageIndicatorPill from "../viewer/PageIndicatorPill";
 import { validatePdfBlob } from "../../lib/validatePdfBlob";
 
 // Guard worker assignment for SSR / non-browser execution.
@@ -328,6 +329,8 @@ const FastPdfReader = forwardRef<FastPdfReaderHandle, Props>(
     const [numPages, setNumPages] = useState(0);
     const [error, setError] = useState<string | null>(null);
     const [progress, setProgress] = useState<number | null>(null);
+    /** Reading progress 0-100 (scroll depth) — persists after the download overlay clears. */
+    const [readProgress, setReadProgress] = useState(0);
     const [fallbackData, setFallbackData] = useState<Uint8Array | null>(null);
     const [fallbackLoading, setFallbackLoading] = useState(false);
     // Bumped on every app resume. Android can evict the WebView's backing
@@ -552,6 +555,7 @@ const FastPdfReader = forwardRef<FastPdfReaderHandle, Props>(
       setNumPages(0);
       setError(null);
       setProgress(null);
+      setReadProgress(0);
       setFallbackData(null);
       setFallbackLoading(false);
       didJump.current = false;
@@ -1000,6 +1004,22 @@ const FastPdfReader = forwardRef<FastPdfReaderHandle, Props>(
       return () => window.clearTimeout(t);
     }, [numPages, initialPage]);
 
+    // ── Reading progress (scroll depth) ─────────────────────────────────
+    // The download bar clears once pdf.js is ready; this keeps a persistent
+    // top progress bar showing how far the student has read. Re-attached when
+    // the document re-keys (src change, retry, numPages known).
+    useEffect(() => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const onScroll = () => {
+        const max = el.scrollHeight - el.clientHeight;
+        setReadProgress(max > 4 ? Math.min(100, Math.round((el.scrollTop / max) * 100)) : 0);
+      };
+      onScroll();
+      el.addEventListener("scroll", onScroll, { passive: true });
+      return () => el.removeEventListener("scroll", onScroll);
+    }, [file, numPages, retryNonce]);
+
     const handleVisible = useCallback(
       (page: number) => {
         if (didJump.current || !initialPage || initialPage <= 1) onPageChange?.(page);
@@ -1121,6 +1141,21 @@ const FastPdfReader = forwardRef<FastPdfReaderHandle, Props>(
             />
           </div>
         )}
+        {progress === null && numPages > 0 && !isArchiveSource(src) && (
+          <div
+            className="sticky top-0 z-20 h-1 w-full bg-muted/60"
+            role="progressbar"
+            aria-label="Reading progress"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={readProgress}
+          >
+            <div
+              className="h-full bg-primary/80 transition-[width] duration-150"
+              style={{ width: `${readProgress}%` }}
+            />
+          </div>
+        )}
         {fallbackLoading && (
           <div className="sticky top-1 z-20 mx-auto mt-2 flex w-fit items-center gap-2 rounded-full border border-border bg-background/95 px-3 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur">
             <span className="relative flex h-1.5 w-1.5">
@@ -1194,6 +1229,9 @@ const FastPdfReader = forwardRef<FastPdfReaderHandle, Props>(
             onZoomBy={handleZoomBy}
             onFitWidth={handleFitWidth}
           />
+        )}
+        {numPages > 0 && (
+          <PageIndicatorPill targetRef={scrollRef} />
         )}
       </div>
     );
