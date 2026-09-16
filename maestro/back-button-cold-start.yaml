@@ -1,7 +1,7 @@
 # Maestro flow — cold-start hardware back regression test.
 # Locks in the CRITICAL fix from useAndroidBackButton (static dynamic import).
 # Run locally: maestro test maestro/back-button-cold-start.yaml
-appId: com.sadguru.classes
+appId: com.jsrcoaching.app
 ---
 # Fresh cold start — clearState forces a brand new process so the
 # back-button setup race (Capacitor App plugin import on first paint)
