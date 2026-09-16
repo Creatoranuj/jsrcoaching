@@ -16,7 +16,7 @@ import { toast } from "sonner";
 import {
   Plus, Trash2, ChevronLeft, Eye, EyeOff, Save, Loader2,
   ClipboardList, FlaskConical, Edit2, ArrowLeft, Check, X, Link2,
-  Users, ImagePlus, XCircle,
+  Users, ImagePlus, XCircle, Search,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import {
@@ -60,6 +60,12 @@ const AdminQuizManager = () => {
 
   // Collapsible questions
   const [expandedQuestions, setExpandedQuestions] = useState<Record<string, boolean>>({});
+
+  // List search/filter + per-quiz stats
+  const [searchQuery, setSearchQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<"all" | "dpp" | "test" | "published" | "draft">("all");
+  const [questionCounts, setQuestionCounts] = useState<Record<string, number>>({});
+  const [attemptCounts, setAttemptCounts] = useState<Record<string, number>>({});
 
   // Quiz form
   const [quizForm, setQuizForm] = useState({
@@ -110,8 +116,24 @@ const AdminQuizManager = () => {
   }, []);
 
   const fetchQuizzes = async () => {
-    const { data } = await supabase.from("quizzes").select("*, lessons(title)").order("created_at", { ascending: false });
+    const { data, error } = await supabase.from("quizzes").select("*, lessons(title)").order("created_at", { ascending: false });
+    if (error) { toast.error(error.message); }
     setQuizzes((data || []) as Quiz[]);
+    fetchCounts();
+  };
+
+  // Per-quiz question & attempt tallies for the list cards
+  const fetchCounts = async () => {
+    const [{ data: qs }, { data: as }] = await Promise.all([
+      supabase.from("questions").select("quiz_id"),
+      supabase.from("quiz_attempts").select("quiz_id").not("submitted_at", "is", null),
+    ]);
+    const qCount: Record<string, number> = {};
+    (qs || []).forEach((r: any) => { qCount[r.quiz_id] = (qCount[r.quiz_id] || 0) + 1; });
+    const aCount: Record<string, number> = {};
+    (as || []).forEach((r: any) => { aCount[r.quiz_id] = (aCount[r.quiz_id] || 0) + 1; });
+    setQuestionCounts(qCount);
+    setAttemptCounts(aCount);
   };
 
   const fetchCourses = async () => {
@@ -387,6 +409,14 @@ const AdminQuizManager = () => {
 
   // ─── LIST VIEW ────────────────────────────────────────────────────────────
   if (view === "list") {
+    const filteredQuizzes = quizzes.filter((q) => {
+      if (searchQuery && !q.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+      if (typeFilter === "dpp" && q.type !== "dpp") return false;
+      if (typeFilter === "test" && q.type !== "test") return false;
+      if (typeFilter === "published" && !q.is_published) return false;
+      if (typeFilter === "draft" && q.is_published) return false;
+      return true;
+    });
     return (
       <div className="min-h-dvh bg-background">
         <header className="bg-card border-b px-4 py-4 sticky top-0 z-10 pt-[calc(env(safe-area-inset-top)+1rem)]">
@@ -411,14 +441,47 @@ const AdminQuizManager = () => {
         </header>
 
         <main className="max-w-4xl mx-auto p-4 space-y-3">
+          <div className="space-y-2.5">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search quizzes…"
+                className="pl-9 h-11 rounded-xl"
+              />
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {([["all", "All"], ["dpp", "DPP"], ["test", "Test"], ["published", "Published"], ["draft", "Draft"]] as const).map(([val, label]) => (
+                <button
+                  key={val}
+                  onClick={() => setTypeFilter(val)}
+                  className={cn(
+                    "px-3.5 h-9 rounded-full border text-xs font-medium whitespace-nowrap transition-colors",
+                    typeFilter === val
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-card text-muted-foreground border-border hover:bg-accent",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
           {quizzes.length === 0 ? (
             <div className="text-center py-16 text-muted-foreground">
               <ClipboardList className="h-12 w-12 mx-auto mb-3 opacity-30" />
               <p className="font-medium">No quizzes yet</p>
               <p className="text-sm">Create your first DPP or Test quiz</p>
             </div>
+          ) : filteredQuizzes.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <Search className="h-10 w-10 mx-auto mb-3 opacity-30" />
+              <p className="font-medium text-sm">No quizzes match</p>
+              <p className="text-sm">Try a different search or filter</p>
+            </div>
           ) : (
-            quizzes.map((quiz) => (
+            filteredQuizzes.map((quiz) => (
               <div key={quiz.id} className="bg-card border rounded-xl p-4">
                 <div className="flex items-start gap-3">
                   <div className={cn(
@@ -436,7 +499,7 @@ const AdminQuizManager = () => {
                       <Badge variant="outline" className="text-[10px] uppercase">{quiz.type}</Badge>
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {quiz.total_marks} marks · {quiz.duration_minutes > 0 ? `${quiz.duration_minutes} min` : "No limit"} · Pass: {quiz.pass_percentage}%
+                      {questionCounts[quiz.id] ?? 0} questions · {quiz.total_marks} marks · {quiz.duration_minutes > 0 ? `${quiz.duration_minutes} min` : "No limit"} · Pass: {quiz.pass_percentage}%{attemptCounts[quiz.id] ? ` · ${attemptCounts[quiz.id]} attempts` : ""}
                     </p>
                     {quiz.lessons?.title && (
                       <p className="text-xs text-primary/70 mt-0.5 flex items-center gap-1">
@@ -446,7 +509,7 @@ const AdminQuizManager = () => {
                   </div>
                   {/* Action buttons - stack on mobile */}
                   <div className="flex flex-col sm:flex-row items-center gap-1 shrink-0">
-                    <Button variant="ghost" size="icon" className="h-10 w-10" onClick={() => openAttempts(quiz)} title="View Attempts">
+                    <Button variant="ghost" size="icon" className="h-10 w-10" onClick={() => openAttempts(quiz)} title={`View Attempts (${attemptCounts[quiz.id] ?? 0})`}
                       <Users className="h-4 w-4" />
                     </Button>
                     <Button variant="ghost" size="icon" className="h-10 w-10" onClick={() => loadQuizForEdit(quiz)} title="Edit questions">
