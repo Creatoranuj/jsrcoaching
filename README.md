@@ -1,4 +1,4 @@
-# Sadguru Classes
+# jrscoaching
 
 E-learning platform for Sadguru Coaching Classes: courses, lessons, video + PDF
 readers, quizzes, doubts, AI chatbot, payments/subscriptions, and an Android
