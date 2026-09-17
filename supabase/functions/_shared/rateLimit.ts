@@ -65,7 +65,11 @@ export interface TextRateLimitOptions {
  * AUDIT 2026-09-17: admin-register had no throttle at all, so the admin code
  * could be brute-forced as fast as the network allowed.
  *
- * Returns true when the caller is over the limit. Fails open on RPC error.
+ * Returns true when the caller is over the limit.
+ *
+ * AUDIT 2026-09-17: this used to FAIL OPEN, so an RPC error turned OTP send and
+ * admin-register into unthrottled endpoints (SMS cost + brute force). It now
+ * fails CLOSED, matching isRateLimited above: only an explicit `true` allows.
  */
 export async function isRateLimitedByKey(opts: TextRateLimitOptions): Promise<boolean> {
   try {
@@ -76,13 +80,13 @@ export async function isRateLimitedByKey(opts: TextRateLimitOptions): Promise<bo
       _window_seconds: opts.windowSeconds,
     });
     if (error) {
-      console.error(`[rateLimit:${opts.bucket}] rpc error`, error.message);
-      return false;
+      console.error(`[rateLimit:${opts.bucket}] rpc error — failing closed`, error.message);
+      return true;
     }
-    return data === false;
+    return data !== true;
   } catch (e) {
-    console.error(`[rateLimit:${opts.bucket}] failed`, (e as Error).message);
-    return false;
+    console.error(`[rateLimit:${opts.bucket}] failed — failing closed`, (e as Error).message);
+    return true;
   }
 }
 

@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { requireUser } from "../_shared/auth.ts";
+import { isRateLimited as sharedIsRateLimited } from "../_shared/rateLimit.ts";
 import { buildCorsHeaders } from "../_shared/cors.ts";
 import { sanitizeAiField } from "../_shared/sanitize.ts";
 import {
@@ -63,41 +64,18 @@ function shouldUseWebFallback(msg: string, queryType: string): boolean {
   return /\b(latest|current|today|news|web|internet|google|search|online|202[5-9]|abhi ka|naya|recent)\b/i.test(msg);
 }
 
-// Durable rate limit backed by public.rate_limits. The user id is derived from
-// the verified JWT above; do not trust any userId sent in the request body.
-async function isRateLimited(supabase: any, userId: string): Promise<boolean> {
-  try {
-    const max = 15;
-    const windowSeconds = 60;
-    const nowSec = Math.floor(Date.now() / 1000);
-    const windowStart = new Date(Math.floor(nowSec / windowSeconds) * windowSeconds * 1000).toISOString();
-    const key = { bucket: 'chatbot', user_id: userId, window_start: windowStart };
-
-    const { data: existing, error: readError } = await supabase
-      .from('rate_limits')
-      .select('count')
-      .match(key)
-      .maybeSingle();
-    if (readError) throw readError;
-
-    const nextCount = Number(existing?.count || 0) + 1;
-    const write = existing
-      ? supabase.from('rate_limits').update({ count: nextCount }).match(key)
-      : supabase.from('rate_limits').insert({ ...key, count: nextCount });
-    const { error: writeError } = await write;
-    if (writeError) throw writeError;
-
-    if (Math.random() < 0.05) {
-      void supabase
-        .from('rate_limits')
-        .delete()
-        .lt('window_start', new Date(Date.now() - windowSeconds * 4 * 1000).toISOString());
-    }
-    return nextCount > max;
-  } catch (e) {
-    console.error('rate limit check failed:', e);
-    return false;
-  }
+// AUDIT 2026-09-17: this function used to keep its own read-then-write counter
+// against public.rate_limits and FAIL OPEN on any error, so a forced error made
+// the LLM endpoint unlimited. It now delegates to the shared, atomic,
+// fail-closed limiter (public.check_rate_limit RPC) used by every other
+// AI/OTP function. The user id always comes from the verified JWT.
+async function isRateLimited(_supabase: unknown, userId: string): Promise<boolean> {
+  return await sharedIsRateLimited({
+    bucket: 'chatbot',
+    userId,
+    max: 15,
+    windowSeconds: 60,
+  });
 }
 
 // Identity / brand questions (founder, institute, agent itself)
