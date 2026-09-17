@@ -295,6 +295,84 @@ export const buildNativeCheckoutPayload = (
   return payload;
 };
 
+/**
+ * Upper bound on "the sheet is still alive, keep waiting" rounds. Each round is
+ * {@link NATIVE_RESUME_TIMEOUT_MS}, so this caps the wait at a few minutes —
+ * enough for a slow UPI app round trip, while never waiting forever.
+ */
+export const MAX_LIVE_SHEET_WAITS = 30;
+
+/** Internal marker for "our watchdog fired", kept off the public error path. */
+const WATCHDOG = Symbol("razorpay-watchdog");
+
+/**
+ * Waits for the native checkout result without ever abandoning a live sheet.
+ *
+ * The previous implementation rejected on the first watchdog tick and asked the
+ * bridge to cancel. On slow devices (and on OEM WebViews whose JS timers thaw
+ * only on resume) the Razorpay Activity was frequently still open and still
+ * processing: cancelling dropped its callback, the caller opened a second,
+ * web checkout underneath it, and the user was left staring at a payment screen
+ * wired to nothing — the "Opening payment" stuck state.
+ *
+ * Now the bridge is asked whether the sheet is genuinely gone. `dismissed:false`
+ * means the native Activity is alive, so we re-arm and keep waiting instead of
+ * tearing down a real payment. Only a confirmed-dead sheet raises
+ * {@link RazorpayLaunchTimeoutError} for the caller's web fallback.
+ */
+export const awaitNativeCheckoutResult = async (
+  plugin: { cancel: () => Promise<unknown> },
+  openPromise: Promise<unknown>,
+): Promise<unknown> => {
+  for (let attempt = 0; ; attempt += 1) {
+    let launchTimer: ReturnType<typeof setTimeout> | undefined;
+    let stopWatching: () => void = () => {};
+    let outcome: unknown;
+    try {
+      outcome = await Promise.race([
+        openPromise,
+        new Promise<typeof WATCHDOG>((resolve) => {
+          const arm = (ms: number) => {
+            if (launchTimer) clearTimeout(launchTimer);
+            launchTimer = setTimeout(() => resolve(WATCHDOG), ms);
+          };
+          const disarm = () => {
+            if (launchTimer) { clearTimeout(launchTimer); launchTimer = undefined; }
+          };
+          // First round: the sheet must appear within the launch window.
+          // Later rounds: short grace period after we regain the foreground.
+          arm(attempt === 0 ? NATIVE_LAUNCH_TIMEOUT_MS : NATIVE_RESUME_TIMEOUT_MS);
+          // While the checkout Activity (or a UPI app) is on top of us the user
+          // may legitimately take minutes, so the watchdog is disarmed.
+          stopWatching = onWebViewVisibility((hidden) => {
+            if (hidden) disarm();
+            else arm(NATIVE_RESUME_TIMEOUT_MS);
+          });
+        }),
+      ]);
+    } finally {
+      if (launchTimer) clearTimeout(launchTimer);
+      stopWatching();
+    }
+
+    if (outcome !== WATCHDOG) return outcome;
+
+    // Watchdog fired — ask the bridge whether the native sheet actually died.
+    let dismissed = true;
+    try {
+      const res = (await plugin.cancel()) as { dismissed?: boolean } | undefined;
+      if (res && res.dismissed === false) dismissed = false;
+    } catch {
+      // Older APKs have no cancel(): treat as dead and fall back to web.
+    }
+    if (dismissed || attempt >= MAX_LIVE_SHEET_WAITS) {
+      throw new RazorpayLaunchTimeoutError();
+    }
+  }
+};
+
+
+
 export const openNativeRazorpayCheckout = async (
   options: NativeRazorpayOptions
 ): Promise<RazorpaySuccessResponse> => {
@@ -326,54 +404,15 @@ export const openNativeRazorpayCheckout = async (
     }
 
     const RazorpayNative = await loadRazorpayNative();
-    let launchTimer: ReturnType<typeof setTimeout> | undefined;
-    let stopWatching: () => void = () => {};
-    try {
-      result = await Promise.race([
-        RazorpayNative.open(payload),
-        new Promise<never>((_, reject) => {
-          const arm = (ms: number) => {
-            if (launchTimer) clearTimeout(launchTimer);
-            launchTimer = setTimeout(
-              () => reject(new RazorpayLaunchTimeoutError()),
-              ms,
-            );
-          };
-          const disarm = () => {
-            if (launchTimer) { clearTimeout(launchTimer); launchTimer = undefined; }
-          };
-          // Launch window: the sheet must appear within a few seconds.
-          arm(NATIVE_LAUNCH_TIMEOUT_MS);
-          // While the checkout Activity (or a UPI app) is on top of us the
-          // user may legitimately take minutes, so the watchdog is disarmed.
-          // The moment we are foregrounded again it is re-armed with a short
-          // grace period: if the plugin still hasn't answered, the Activity
-          // died without a callback and we must not hang on "Opening payment…".
-          stopWatching = onWebViewVisibility((hidden) => {
-            if (hidden) disarm();
-            else arm(NATIVE_RESUME_TIMEOUT_MS);
-          });
-        }),
-      ]);
-    } finally {
-      if (launchTimer) clearTimeout(launchTimer);
-      stopWatching();
-    }
+    const openPromise = RazorpayNative.open(payload);
+    // The watchdog can abandon this promise; keep a no-op handler so an
+    // eventual native rejection never surfaces as an unhandled rejection.
+    void Promise.resolve(openPromise).catch(() => {});
+    result = await awaitNativeCheckoutResult(RazorpayNative, openPromise);
   } catch (e: any) {
     // Structural failures are re-thrown untouched so the caller can react
     // (fall back to web / show the "didn't open" message).
-    if (e instanceof RazorpayLaunchTimeoutError) {
-      // The native promise can still be alive after Promise.race rejects. Clear
-      // its Android callback before the caller opens web checkout, otherwise a
-      // late native result can trigger a second payment/verification path.
-      try {
-        const RazorpayNative = await loadRazorpayNative();
-        await RazorpayNative.cancel();
-      } catch {
-        // Best effort for older APKs that do not expose cancel().
-      }
-      throw e;
-    }
+    if (e instanceof RazorpayLaunchTimeoutError) throw e;
     if (e instanceof RazorpayBridgeMissingError) throw e;
     const msg = e?.message || e?.errorMessage || String(e ?? "");
     if (looksLikeCancel(msg)) throw new RazorpayCancelledError();

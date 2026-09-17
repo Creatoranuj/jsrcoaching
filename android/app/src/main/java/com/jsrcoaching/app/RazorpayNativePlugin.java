@@ -45,10 +45,32 @@ public class RazorpayNativePlugin extends Plugin {
     private static final Object PENDING_LOCK = new Object();
     private static PluginCall pendingCall;
 
+    /**
+     * True between a successful {@code checkout.open()} and its Activity result.
+     * Together with {@link #hostResumed} this tells us whether the Razorpay
+     * checkout Activity is genuinely still on screen — the JS watchdog must
+     * never tear down a live payment sheet.
+     */
+    private static volatile boolean checkoutLaunched;
+
+    /** True while our own WebView Activity is the foreground surface. */
+    private static volatile boolean hostResumed = true;
+
+    @Override
+    protected void handleOnResume() {
+        hostResumed = true;
+    }
+
+    @Override
+    protected void handleOnPause() {
+        hostResumed = false;
+    }
+
     private static PluginCall takePending() {
         synchronized (PENDING_LOCK) {
             final PluginCall call = pendingCall;
             pendingCall = null;
+            checkoutLaunched = false;
             return call;
         }
     }
@@ -106,6 +128,7 @@ public class RazorpayNativePlugin extends Plugin {
             activity.runOnUiThread(() -> {
                 try {
                     checkout.open(activity, payload);
+                    checkoutLaunched = true;
                 } catch (Throwable t) {
                     String msg = t.getMessage() == null ? "Unable to open checkout" : t.getMessage();
                     rejectPending("OPEN_FAILED", msg);
@@ -117,11 +140,28 @@ public class RazorpayNativePlugin extends Plugin {
         }
     }
 
-    /** Cancels the JS bridge call after its launch watchdog expires. */
+    /**
+     * Called when the JS launch watchdog expires.
+     *
+     * Resolves {@code dismissed:false} — WITHOUT rejecting the pending call —
+     * while the Razorpay checkout Activity is still open on top of our WebView.
+     * Cancelling in that state dropped a live payment's callback and left the
+     * user on a payment screen wired to nothing. Only a sheet that is really
+     * gone is cancelled and reported as {@code dismissed:true}.
+     */
     @PluginMethod
     public void cancel(PluginCall call) {
+        final JSObject out = new JSObject();
+        synchronized (PENDING_LOCK) {
+            if (pendingCall != null && checkoutLaunched && !hostResumed) {
+                out.put("dismissed", false);
+                call.resolve(out);
+                return;
+            }
+        }
         rejectPending("LAUNCH_CANCELLED", "Checkout launch was cancelled");
-        call.resolve();
+        out.put("dismissed", true);
+        call.resolve(out);
     }
 
     /** Warms up Razorpay so the method list (incl. UPI apps) is ready on first open. */
