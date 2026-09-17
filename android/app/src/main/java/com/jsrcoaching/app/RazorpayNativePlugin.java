@@ -38,13 +38,23 @@ public class RazorpayNativePlugin extends Plugin {
      * Razorpay's SDK starts its own activity via `activity.startActivityForResult`,
      * so the result arrives on MainActivity, not on a Capacitor
      * ActivityResultLauncher. MainActivity#onActivityResult forwards it here.
-     * Only one checkout can be open at a time, so a single static slot is safe.
+     * Access to the single in-flight checkout is synchronized so double taps,
+     * watchdog cancellation, and late Activity results cannot settle the wrong
+     * JavaScript promise.
      */
+    private static final Object PENDING_LOCK = new Object();
     private static PluginCall pendingCall;
 
+    private static PluginCall takePending() {
+        synchronized (PENDING_LOCK) {
+            final PluginCall call = pendingCall;
+            pendingCall = null;
+            return call;
+        }
+    }
+
     private static void rejectPending(String code, String description) {
-        final PluginCall call = pendingCall;
-        pendingCall = null;
+        final PluginCall call = takePending();
         if (call == null) return;
         call.setKeepAlive(false);
         call.reject(
@@ -68,9 +78,6 @@ public class RazorpayNativePlugin extends Plugin {
             return;
         }
 
-        // Reject any stale call rather than leaking it.
-        rejectPending("SUPERSEDED", "A new checkout was started");
-
         JSObject options = call.getData();
 
         try {
@@ -83,7 +90,17 @@ public class RazorpayNativePlugin extends Plugin {
             checkout.setKeyID(key);
 
             call.setKeepAlive(true);
-            pendingCall = call;
+            synchronized (PENDING_LOCK) {
+                if (pendingCall != null) {
+                    call.setKeepAlive(false);
+                    call.reject(
+                        "{\"code\":\"ALREADY_IN_PROGRESS\",\"description\":\"A checkout is already open\"}",
+                        "ALREADY_IN_PROGRESS"
+                    );
+                    return;
+                }
+                pendingCall = call;
+            }
             // Capacitor plugin methods may execute off the Android UI thread.
             // Razorpay starts an Activity and must always be opened on it.
             activity.runOnUiThread(() -> {
@@ -121,8 +138,10 @@ public class RazorpayNativePlugin extends Plugin {
      * @return true when this plugin consumed the result.
      */
     public static boolean handleCheckoutResult(Activity activity, int requestCode, int resultCode, Intent data) {
-        final PluginCall call = pendingCall;
-        pendingCall = null;
+        if (requestCode != Checkout.RZP_REQUEST_CODE) {
+            return false;
+        }
+        final PluginCall call = takePending();
         if (call == null) {
             return false;
         }
@@ -132,12 +151,22 @@ public class RazorpayNativePlugin extends Plugin {
                 new PaymentResultWithDataListener() {
                     @Override
                     public void onPaymentSuccess(String razorpayPaymentId, PaymentData paymentData) {
+                        final String orderId = paymentData == null ? null : paymentData.getOrderId();
+                        final String signature = paymentData == null ? null : paymentData.getSignature();
+                        if (razorpayPaymentId == null || razorpayPaymentId.trim().isEmpty()
+                            || orderId == null || orderId.trim().isEmpty()
+                            || signature == null || signature.trim().isEmpty()) {
+                            call.setKeepAlive(false);
+                            call.reject(
+                                "{\"code\":\"INCOMPLETE_RESPONSE\",\"description\":\"Payment response was incomplete\"}",
+                                "INCOMPLETE_RESPONSE"
+                            );
+                            return;
+                        }
                         JSObject response = new JSObject();
                         response.put("razorpay_payment_id", razorpayPaymentId);
-                        if (paymentData != null) {
-                            response.put("razorpay_order_id", paymentData.getOrderId());
-                            response.put("razorpay_signature", paymentData.getSignature());
-                        }
+                        response.put("razorpay_order_id", orderId);
+                        response.put("razorpay_signature", signature);
                         JSObject result = new JSObject();
                         result.put("response", response);
                         call.setKeepAlive(false);
