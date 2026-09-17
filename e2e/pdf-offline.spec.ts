@@ -13,6 +13,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { signIn } from "./helpers/auth";
 import path from "node:path";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const EMAIL = process.env.E2E_EMAIL;
@@ -39,21 +40,30 @@ async function openMyLibrary(page: Page) {
 }
 
 /**
- * Adds the fixture PDF through the real "Add file from device" control.
+ * Adds the fixture PDF through the real "Add files from device" control.
  *
- * The old code attached the file to `input[type=file]` .first(), which is the
- * library shell's own hidden input — not the open folder's. The upload silently
- * went nowhere and the item never appeared. Driving the visible button through
- * the file chooser always hits the right input.
+ * Two earlier bugs: (1) the file was attached to `input[type=file]`.first(),
+ * which is the shell's own hidden input, and (2) the importer DEDUPES by
+ * content+name, so re-running the suite silently skipped the upload and the
+ * folder stayed empty. Uploading the fixture bytes under a unique name each
+ * run makes the import deterministic.
  */
-async function uploadFixture(page: Page) {
+async function uploadFixture(page: Page): Promise<string> {
+  const name = `e2e-${Date.now()}.pdf`;
   const trigger = page
-    .getByRole("button", { name: /add file from device|add pdf|add file/i })
+    .getByRole("button", { name: /add files? from device/i })
     .first();
   await expect(trigger).toBeVisible({ timeout: 30000 });
   const chooser = page.waitForEvent("filechooser", { timeout: 15000 });
   await trigger.click();
-  await (await chooser).setFiles(FIXTURE);
+  await (
+    await chooser
+  ).setFiles({
+    name,
+    mimeType: "application/pdf",
+    buffer: readFileSync(FIXTURE),
+  });
+  return name;
 }
 
 /** A file row in the open folder — each row carries its own "Open" button. */
