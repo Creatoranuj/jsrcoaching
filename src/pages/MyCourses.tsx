@@ -294,8 +294,13 @@ const MyCourses = () => {
   useEffect(() => { setConfirmText(""); }, [deleteTarget]);
 
   // ── useCallback so useEffect dep array is stable ──────────────────────────
+  // PERF (audit 2026-09-17): depend on the stable user *id*, not the user
+  // object. AuthContext hands back a fresh object on every token refresh /
+  // provider re-render, which re-created this callback and re-fired both
+  // effects below — the purchased-courses read was the #1 query (10,677 calls).
+  const userId = user?.id;
   const fetchEnrolledCourses = useCallback(async () => {
-    if (!user) { setLoading(false); return; }
+    if (!userId) { setLoading(false); return; }
     try {
       setFetchError(null);
       // ── 3 queries → 2 parallel groups (enrollments → then progress+lessons) ─
@@ -304,7 +309,7 @@ const MyCourses = () => {
       const { data: enrollments, error } = await supabase
         .from('enrollments')
         .select('id, course_id, purchased_at, status, courses(id, title, grade, image_url, thumbnail_url, price, start_date, end_date, description)')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .eq('status', 'active');
 
       if (error) throw error;
@@ -316,7 +321,7 @@ const MyCourses = () => {
         supabase
           .from('user_progress')
           .select('lesson_id, completed, course_id')
-          .eq('user_id', user.id),
+          .eq('user_id', userId),
         supabase
           .from('lessons')
           .select('id, course_id')
@@ -390,7 +395,7 @@ const MyCourses = () => {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [userId]);
 
   useEffect(() => {
     fetchEnrolledCourses();

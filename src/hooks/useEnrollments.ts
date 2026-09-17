@@ -30,8 +30,11 @@ export const useEnrollments = () => {
   const aliveRef = useRef(true);
   useEffect(() => () => { aliveRef.current = false; }, []);
 
+  // PERF (audit 2026-09-17): key off the stable user id so a token refresh
+  // (new user object, same id) no longer re-runs the enrollments read.
+  const userId = user?.id;
   const fetchEnrollments = useCallback(async () => {
-    if (!user) {
+    if (!userId) {
       if (!aliveRef.current) return;
       setEnrollments([]);
       setEnrolledCourseIds([]);
@@ -46,7 +49,7 @@ export const useEnrollments = () => {
       const { data, error: dbError } = await supabase
         .from("enrollments")
         .select("id,user_id,course_id,purchased_at,status,courses(id,title,description,grade,price,image_url,thumbnail_url,created_at)")
-        .eq("user_id", user.id);
+        .eq("user_id", userId);
 
       if (dbError) throw dbError;
 
@@ -89,7 +92,7 @@ export const useEnrollments = () => {
     } finally {
       if (aliveRef.current) setLoading(false);
     }
-  }, [user]);
+  }, [userId]);
 
   const isEnrolled = useCallback((courseId: number): boolean => {
     return enrolledCourseIds.includes(courseId);

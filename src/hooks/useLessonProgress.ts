@@ -10,6 +10,9 @@ import {
 } from "@/lib/watchedIntervals";
 
 
+/** Minimum gap between lesson_progress upserts while actively watching. */
+const WRITE_INTERVAL_MS = 15_000;
+
 export interface LessonProgressRow {
   watched_seconds: number;
   last_position_seconds: number;
@@ -21,7 +24,8 @@ export interface LessonProgressRow {
  * Reads existing progress for (user, lesson) on mount, and exposes a
  * debounced `report(currentSeconds)` and `flush()` that upserts to Supabase.
  *
- *   • Writes at most once every 5s while the user is actively reporting.
+ *   • Writes at most once every 15s while the user is actively reporting, and
+ *     skips a write entirely when nothing changed since the last one.
  *   • Call `flush()` on pause / unmount / app-background for immediate write.
  *   • Marks `completed = true` when ACCUMULATED unique watched seconds
  *     reach ≥ 90 % of duration (jumping to the end does NOT count).
@@ -39,6 +43,9 @@ export function useLessonProgress(
   const pendingRef = useRef(false);
   const lastWriteAtRef = useRef(0);
   const completedRef = useRef(false);
+  // Signature of the last successfully written payload — lets us skip
+  // no-op upserts (paused video, idle tab) instead of rewriting the same row.
+  const lastWrittenSigRef = useRef<string | null>(null);
   const onResumeRef = useRef(onResumeAvailable);
   onResumeRef.current = onResumeAvailable;
   // Snapshot duration in a ref so writeNow's identity stays stable across
@@ -64,6 +71,7 @@ export function useLessonProgress(
       lastPosRef.current = row.last_position_seconds ?? 0;
       completedRef.current = !!row.completed;
       intervalsRef.current = normaliseIntervals(row.watched_intervals);
+      lastWrittenSigRef.current = null;
       if (row.last_position_seconds > 5 && onResumeRef.current) {
         onResumeRef.current(row.last_position_seconds);
       }
@@ -77,7 +85,6 @@ export function useLessonProgress(
   const writeNow = useCallback(async () => {
     if (!user?.id || !lessonId) return;
     pendingRef.current = false;
-    lastWriteAtRef.current = Date.now();
     const covered = coveredSeconds(intervalsRef.current);
     const dur = durationRef.current;
     const completed =
@@ -92,6 +99,17 @@ export function useLessonProgress(
       watched_intervals: intervalsRef.current,
       updated_at: new Date().toISOString(),
     };
+    // PERF (audit 2026-09-17): 6,696 upserts — many of them identical rows.
+    // Skip the write when no tracked value moved since the last one.
+    const sig = [
+      payload.watched_seconds,
+      payload.last_position_seconds,
+      payload.completed,
+      JSON.stringify(payload.watched_intervals),
+    ].join("|");
+    if (sig === lastWrittenSigRef.current) return;
+    lastWriteAtRef.current = Date.now();
+    lastWrittenSigRef.current = sig;
     // Offline-first: skip the online attempt and queue immediately so the
     // mutation queue's idempotency dedupe handles bursts during patchy networks.
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
@@ -124,7 +142,7 @@ export function useLessonProgress(
         watchedRef.current = currentSeconds;
       }
       const now = Date.now();
-      if (now - lastWriteAtRef.current >= 5000) {
+      if (now - lastWriteAtRef.current >= WRITE_INTERVAL_MS) {
         void writeNow();
       } else {
         pendingRef.current = true;
