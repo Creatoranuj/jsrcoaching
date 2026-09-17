@@ -30,7 +30,7 @@ export default function PersonalLibraryGate({ onAllow }: Props) {
         <ShieldCheck className="h-3.5 w-3.5" />
         Private to this device · removed if you uninstall the app
       </div>
-      <Button onClick={onAllow} className="w-full">
+      <Button onClick={onAllow} className="w-full" data-testid="enable-library-button">
         Enable My Library
       </Button>
     </div>

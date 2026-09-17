@@ -52,7 +52,6 @@ test.describe("student journey", () => {
     test.skip(!PAID_COURSE_ID, "E2E_PAID_COURSE_ID not set");
     await login(page);
     await page.goto(`/classes/${PAID_COURSE_ID}/lessons`);
-    await page.waitForLoadState("networkidle");
 
     const gate = page.getByText(/enrol|enroll|buy|purchase|subscribe|access denied|not enrolled/i);
     const bounced = /\/(buy-course|course|courses|dashboard|subscription)/.test(
@@ -65,18 +64,15 @@ test.describe("student journey", () => {
     test.skip(!COURSE_ID, "E2E_COURSE_ID not set");
     await login(page);
     await page.goto(`/classes/${COURSE_ID}/lessons`);
-    await page.waitForLoadState("networkidle");
 
     // Lesson shell present (title/list), and no crash boundary.
     await expect(page.locator("body")).not.toContainText(/Lesson failed to load/i);
-    const items = page.locator(
-      '[data-testid="lesson-item"], [data-testid="lesson-card"], article, li',
-    );
+    const items = page.getByTestId("lesson-card");
     await expect(items.first()).toBeVisible({ timeout: 20_000 });
 
     // Opening the first lesson must surface player or reader chrome.
-    await items.first().click({ trial: false }).catch(() => {});
-    await page.waitForTimeout(1_500);
+    await items.first().click();
+    await expect(page).toHaveURL(/lessonId=|\/chapter\//, { timeout: 20_000 });
     const media = page.locator(
       'video, iframe, canvas, [data-testid="pdf-viewer"], [data-testid="video-player"]',
     );

@@ -23,13 +23,10 @@ async function login(page: Page) {
 
 async function openFirstLesson(page: Page) {
   await page.goto(`/classes/${COURSE_ID}/lessons`);
-  await page.waitForLoadState("networkidle");
-  const items = page.locator(
-    '[data-testid="lesson-item"], [data-testid="lesson-card"], [data-testid*="lesson" i], article, li',
-  );
+  const items = page.getByTestId("lesson-card");
   await expect(items.first()).toBeVisible({ timeout: 30_000 });
-  await items.first().click().catch(() => {});
-  await page.waitForTimeout(1_500);
+  await items.first().click();
+  await expect(page).toHaveURL(/lessonId=|\/chapter\//, { timeout: 20_000 });
 }
 
 test.describe("lesson completion", () => {
@@ -67,7 +64,6 @@ test.describe("lesson completion", () => {
 
     const url = page.url();
     await page.reload();
-    await page.waitForLoadState("networkidle");
     expect(page.url()).toBe(url);
     await expect(page.locator("body")).toContainText(/complete|completed|done/i, { timeout: 20_000 });
   });
@@ -75,7 +71,6 @@ test.describe("lesson completion", () => {
   test("course progress reflects completed lessons", async ({ page }) => {
     await login(page);
     await page.goto("/my-courses");
-    await page.waitForLoadState("networkidle");
     await expect(page.locator("body")).toContainText(/%|progress|complete|lesson/i, { timeout: 20_000 });
   });
 });

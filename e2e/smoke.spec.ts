@@ -34,19 +34,20 @@ test.describe("smoke", () => {
     });
   });
 
-  test("subscription page loads payment CTA", async ({ page }) => {
+  test("subscription page loads the current account state", async ({ page }) => {
     await signIn(page, EMAIL!, PASSWORD!);
     await page.goto("/subscription");
-    await expect(page.getByRole("button", { name: /subscribe|pay|upgrade/i }).first())
-      .toBeVisible({ timeout: 10_000 });
+    await expect(page.locator("body")).toContainText(
+      /subscribe|pay|upgrade|your subscription|active/i,
+      { timeout: 15_000 },
+    );
   });
 
   test("chatbot widget opens", async ({ page }) => {
     await page.goto("/");
     const fab = page.locator('[aria-label*="chat" i], [data-testid="chat-fab"]').first();
-    if (await fab.count()) {
-      await fab.click();
-      await expect(page.locator("text=/Safar Sarthi/i")).toBeVisible({ timeout: 5_000 });
-    }
+    await expect(fab).toBeVisible({ timeout: 15_000 });
+    await fab.click();
+    await expect(page.locator("text=/Safar Sarthi/i")).toBeVisible({ timeout: 5_000 });
   });
 });

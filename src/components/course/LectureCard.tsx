@@ -89,6 +89,7 @@ const LectureCardImpl = ({
   if (compact) {
     return (
       <div
+        data-testid="lesson-card"
         onClick={onClick}
         role="button"
         tabIndex={0}
@@ -136,6 +137,7 @@ const LectureCardImpl = ({
   if (isPdf && !compact) {
     return (
       <div
+        data-testid="lesson-card"
         onClick={onClick}
         onKeyDown={(e) => {
           if (isLocked) return;
@@ -227,6 +229,7 @@ const LectureCardImpl = ({
 
   return (
     <div
+      data-testid="lesson-card"
       onClick={onClick}
       onKeyDown={(e) => {
         if (isLocked) return;

@@ -419,7 +419,7 @@ const Downloads = () => {
         <Tabs defaultValue="course" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="course" className="text-xs">From Courses</TabsTrigger>
-            <TabsTrigger value="mine" className="text-xs">My Library</TabsTrigger>
+            <TabsTrigger value="mine" className="text-xs" data-testid="my-library-tab">My Library</TabsTrigger>
           </TabsList>
 
           <TabsContent value="course" className="mt-4 space-y-5">
