@@ -63,7 +63,11 @@ SIGN_OUT="$(mktemp)"
 cat "$SIGN_OUT"
 grep -q "Verified using v2 scheme (APK Signature Scheme v2): true" "$SIGN_OUT" \
   || fail "APK Signature Scheme v2 is missing — Android 7+ devices reject or downgrade such packages."
-CERT_SHA="$(grep -iE 'Signer #1 certificate SHA-?256 digest:' "$SIGN_OUT" | head -n1 | awk '{print $NF}' | tr 'A-F' 'a-f')"
+# apksigner labels the signer differently across build-tools versions:
+#   "Signer #1 certificate SHA-256 digest: ..."   (older / v1+v2 output)
+#   "V3.0 Signer: certificate SHA-256 digest: ..." (build-tools 35+, v3-only)
+# Accept any signer label, and never match the public-key digest lines.
+CERT_SHA="$(grep -iE '^.*certificate SHA-?256 digest:' "$SIGN_OUT" | grep -vi 'public key' | head -n1 | awk '{print $NF}' | tr 'A-F' 'a-f')"
 [ -n "$CERT_SHA" ] || fail "could not read the signing certificate SHA-256 from apksigner output."
 echo "   certificate SHA-256: $CERT_SHA"
 if [ -n "${EXPECTED_CERT_SHA256:-}" ]; then
