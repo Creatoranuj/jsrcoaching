@@ -89,6 +89,36 @@ export const NATIVE_LAUNCH_TIMEOUT_MS = 5000;
 export const NATIVE_RESUME_TIMEOUT_MS = 6000;
 
 /**
+ * Hard cap on the "load the bridge" steps (`@capacitor/core` chunk hydration
+ * and `loadRazorpayNative()`). These awaits had NO watchdog: if the lazy chunk
+ * never resolved inside the APK WebView the CTA stayed on "Opening payment…"
+ * forever with no error and no fallback — exactly the reported symptom.
+ */
+export const BRIDGE_LOAD_TIMEOUT_MS = 4000;
+
+/** Coarse progress marker surfaced in the UI so a stuck step is visible. */
+export type NativeCheckoutStep = "bridge" | "sheet";
+
+/** Rejects with `onTimeout()` when `promise` does not settle in `ms`. */
+export const withTimeout = async <T,>(
+  promise: Promise<T>,
+  ms: number,
+  onTimeout: () => Error,
+): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(onTimeout()), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
+
+/**
  * Tracks whether the WebView is the foreground surface.
  *
  * `hidden === true` means something (the Razorpay checkout Activity, a UPI app)
@@ -383,9 +413,15 @@ export const awaitNativeCheckoutResult = async (
 
     // Watchdog fired — ask the bridge whether the native sheet actually died.
     let dismissed = true;
+    // If OUR WebView is the visible surface right now, no Razorpay Activity can
+    // be on top of it. A bridge claiming `dismissed:false` in that state is
+    // stale bookkeeping — believing it is what kept the CTA spinning for
+    // minutes. Treat it as a failed launch and let the caller use web checkout.
+    const weAreForeground =
+      typeof document !== "undefined" && document.visibilityState === "visible";
     try {
       const res = (await plugin.cancel()) as { dismissed?: boolean } | undefined;
-      if (res && res.dismissed === false) dismissed = false;
+      if (res && res.dismissed === false && !weAreForeground) dismissed = false;
     } catch {
       // Older APKs have no cancel(): treat as dead and fall back to web.
     }
@@ -406,7 +442,8 @@ export const awaitNativeCheckoutResult = async (
 
 
 export const openNativeRazorpayCheckout = async (
-  options: NativeRazorpayOptions
+  options: NativeRazorpayOptions,
+  onStep?: (step: NativeCheckoutStep) => void,
 ): Promise<RazorpaySuccessResponse> => {
   const payload = buildNativeCheckoutPayload(options);
 
@@ -429,13 +466,23 @@ export const openNativeRazorpayCheckout = async (
     // Fail fast when the APK predates the native bridge: registerPlugin()
     // returns a proxy either way, so without this check the call can hang
     // silently and the user just sees a frozen checkout screen.
-    const { Capacitor } = await import("@capacitor/core");
+    onStep?.("bridge");
+    const { Capacitor } = await withTimeout(
+      import("@capacitor/core"),
+      BRIDGE_LOAD_TIMEOUT_MS,
+      () => new RazorpayBridgeMissingError(),
+    );
     if (typeof Capacitor.isPluginAvailable === "function"
       && !Capacitor.isPluginAvailable("RazorpayNative")) {
       throw new RazorpayBridgeMissingError();
     }
 
-    const RazorpayNative = await loadRazorpayNative();
+    const RazorpayNative = await withTimeout(
+      loadRazorpayNative(),
+      BRIDGE_LOAD_TIMEOUT_MS,
+      () => new RazorpayBridgeMissingError(),
+    );
+    onStep?.("sheet");
     const openPromise = RazorpayNative.open(payload);
     // The watchdog can abandon this promise; keep a no-op handler so an
     // eventual native rejection never surfaces as an unhandled rejection.

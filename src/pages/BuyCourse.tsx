@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useAdminEnrollment } from "../hooks/useAdminEnrollment";
 import { openRazorpayCheckout, formatRazorpayError, buildRazorpayPrefill, UPI_FIRST_CHECKOUT_CONFIG, type RazorpaySuccessResponse } from "../utils/razorpay";
-import { openNativeRazorpayCheckout, RazorpayCancelledError, RazorpayNativeError, RazorpayBridgeMissingError, RazorpayLaunchTimeoutError, RazorpayInvalidResponseError, RazorpaySheetUnresponsiveError } from "../utils/razorpayNative";
+import { openNativeRazorpayCheckout, type NativeCheckoutStep, RazorpayCancelledError, RazorpayNativeError, RazorpayBridgeMissingError, RazorpayLaunchTimeoutError, RazorpayInvalidResponseError, RazorpaySheetUnresponsiveError } from "../utils/razorpayNative";
 import { invokePaymentFunction, recoverEnrollment } from "../utils/paymentApi";
 import { tapMedium, notifySuccess, notifyError } from "../lib/nativeChrome";
 import { LoadingSpinner } from "../components/ui/loading-spinner";
@@ -43,6 +43,9 @@ const BuyCourse = () => {
   // stays locked across BOTH phases so an impatient double-tap can never
   // start a second checkout attempt.
   const [payPhase, setPayPhase] = useState<null | "preparing" | "opening">(null);
+  // Exact sub-step of the checkout launch. Rendered as a tiny diagnostic line
+  // so a stuck attempt can be reported from a screenshot instead of guessed at.
+  const [payStep, setPayStep] = useState<null | "order" | "bridge" | "sheet" | "web">(null);
   const [course, setCourse] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [adminAutoEnrolled, setAdminAutoEnrolled] = useState(false);
@@ -294,6 +297,7 @@ const BuyCourse = () => {
 
     setIsRazorpayLoading(true);
     setPayPhase(opts?.forceWeb ? "opening" : "preparing");
+    setPayStep(opts?.forceWeb ? "web" : "order");
     const idempotency_key = idemKeyFor(user.id, String(courseId));
     let orderData: any = opts?.existingOrder;
     try {
@@ -326,12 +330,14 @@ const BuyCourse = () => {
           navigate(`/my-courses/${courseId}?payment=success`, { replace: true, state: { justPurchased: Number(courseId) } });
           setIsRazorpayLoading(false);
           setPayPhase(null);
+          setPayStep(null);
           return;
         }
       }
       toast.error(error?.message || "Failed to initiate payment. Please try again.");
       setIsRazorpayLoading(false);
       setPayPhase(null);
+      setPayStep(null);
       return;
     }
     // NOTE: deliberately still locked. The button is released only once the
@@ -387,13 +393,16 @@ const BuyCourse = () => {
     if (Capacitor.isNativePlatform() && !opts?.forceWeb) {
       try {
         void tapMedium();
-        const resp = await openNativeRazorpayCheckout(sharedOpts);
+        const resp = await openNativeRazorpayCheckout(sharedOpts, (step) => {
+          if (isMountedRef.current) setPayStep(step);
+        });
         await verifyRazorpayPayment(resp);
       } catch (e: any) {
         if (e instanceof RazorpayBridgeMissingError) {
           // Old APK without the native bridge — silently use the in-app web
           // checkout instead of dead-ending the purchase.
           logger.warn("Native Razorpay bridge missing — falling back to web checkout");
+          setPayStep("web");
           await handleRazorpayPayment({ forceWeb: true, existingOrder: orderData });
           return;
         }
@@ -403,6 +412,7 @@ const BuyCourse = () => {
           // the in-app web checkout so the user can always pay.
           logger.warn("Native Razorpay sheet did not open — falling back to web checkout");
           toast.info("Payment screen khul nahi payi — browser checkout se khol rahe hain…");
+          setPayStep("web");
           await handleRazorpayPayment({ forceWeb: true, existingOrder: orderData });
           return;
         } else if (e instanceof RazorpayCancelledError) {
@@ -437,7 +447,7 @@ const BuyCourse = () => {
       } finally {
         // Defense-in-depth: never leave the CTA stuck in "Processing…" if any
         // branch above threw synchronously after we cleared the initial spinner.
-        if (isMountedRef.current) { setIsRazorpayLoading(false); setPayPhase(null); }
+        if (isMountedRef.current) { setIsRazorpayLoading(false); setPayPhase(null); setPayStep(null); }
       }
       return;
     }
@@ -475,7 +485,7 @@ const BuyCourse = () => {
           " If payment was captured, enrollment will happen automatically via webhook."
       );
     } finally {
-      if (isMountedRef.current) { setIsRazorpayLoading(false); setPayPhase(null); }
+      if (isMountedRef.current) { setIsRazorpayLoading(false); setPayPhase(null); setPayStep(null); }
     }
   };
 
@@ -726,14 +736,24 @@ const BuyCourse = () => {
                     </Button>
                   )}
                   {isNative && !isIosNative && (
-                    <button
-                      type="button"
-                      onClick={() => { void tapMedium(); void handleRazorpayPayment({ forceWeb: true }); }}
-                      disabled={isRazorpayLoading}
-                      className="mt-2 w-full rounded-md py-2 text-xs font-medium text-muted-foreground underline-offset-4 transition-transform duration-150 ease-out active:scale-[0.97] active:opacity-90 disabled:opacity-50"
-                    >
-                      UPI option nahi dikh raha? Browser checkout se pay karein
-                    </button>
+                    <>
+                      {/* Always tappable — even mid-attempt. If the native sheet
+                          misbehaves the user must never be trapped behind a
+                          disabled escape hatch. */}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => { void tapMedium(); void handleRazorpayPayment({ forceWeb: true }); }}
+                        className="mt-2 h-11 w-full text-sm font-medium"
+                      >
+                        UPI option nahi dikh raha? Browser checkout se pay karein
+                      </Button>
+                      {payStep && (
+                        <p className="mt-1.5 text-center text-[11px] text-muted-foreground">
+                          step: {payStep}
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
               </>
