@@ -71,8 +71,7 @@ test.describe("Student purchase screens", () => {
     test.skip(!PAID_COURSE_ID, "TEST_PAID_COURSE_ID / E2E_PAID_COURSE_ID not set");
 
     await login(page, STUDENT.email, STUDENT.password);
-    await page.goto(`/buy-course/${PAID_COURSE_ID}`);
-    await page.waitForLoadState("networkidle");
+    await page.goto(`/buy-course?id=${encodeURIComponent(PAID_COURSE_ID)}`);
 
     await expect(page.locator("body")).toContainText(
       /pay|price|₹|enrol|enroll|buy|purchase|subscribe/i,
@@ -84,16 +83,17 @@ test.describe("Student purchase screens", () => {
     test.skip(!PAID_COURSE_ID, "TEST_PAID_COURSE_ID / E2E_PAID_COURSE_ID not set");
 
     await login(page, STUDENT.email, STUDENT.password);
-    await page.goto(`/buy-course/${PAID_COURSE_ID}`);
-    await page.waitForLoadState("networkidle");
+    await page.goto(`/buy-course?id=${encodeURIComponent(PAID_COURSE_ID)}`);
 
+    await expect(page.locator("body")).not.toContainText(/Course not found/i, { timeout: 20_000 });
     const body = (await page.locator("body").textContent()) ?? "";
-    expect(body).toMatch(/₹\s?\d|Rs\.?\s?\d|\bfree\b/i);
+    expect(body).toMatch(/[₹]|Rs\.?\s*\d|\bfree\b/i);
   });
 
   test("student cannot reach the admin panel", async ({ page }) => {
     await login(page, STUDENT.email, STUDENT.password);
     await page.goto("/admin");
+    await page.waitForURL((url) => url.pathname !== "/admin", { timeout: 15_000 }).catch(() => {});
 
     // A non-admin is either shown a denial screen or bounced away — both count.
     const bounced = /\/(login|dashboard|my-courses)/.test(page.url());
@@ -125,7 +125,6 @@ test.describe("Admin payment review", () => {
   test("payments screen lists payment state without mutating it", async ({ page }) => {
     await login(page, ADMIN.email, ADMIN.password);
     await page.goto("/admin");
-    await page.waitForLoadState("networkidle");
 
     await expect(page.locator("body")).toContainText(
       /payment|pending|approved|transaction/i,

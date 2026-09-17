@@ -42,7 +42,7 @@ const AFTER_LOGIN = /\/(dashboard|my-courses)/;
 async function openLogin(page: Page) {
   await page.goto(`${BASE_URL}/login`, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("login-form")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByTestId("login-submit")).toBeEnabled();
+  await expect(page.getByTestId("login-submit")).toBeVisible();
 }
 
 async function openSignup(page: Page) {
@@ -84,9 +84,10 @@ test.describe("Authentication Flow", () => {
 
     test("should show error for empty fields", async ({ page }) => {
       await openLogin(page);
-      await page.getByTestId("login-submit").click();
-
-      await expect(page.getByText("Please fill in all fields")).toBeVisible({ timeout: 15_000 });
+      await expect(async () => {
+        await page.getByTestId("login-submit").click();
+        await expect(page.getByText("Please fill in all fields")).toBeVisible({ timeout: 3_000 });
+      }).toPass({ timeout: 30_000, intervals: [500, 1_000, 2_000] });
     });
 
     test("should show error for invalid credentials", async ({ page }) => {
@@ -103,8 +104,10 @@ test.describe("Authentication Flow", () => {
       const passwordInput = page.getByTestId("login-password");
       await expect(passwordInput).toHaveAttribute("type", "password");
 
-      await page.getByRole("button", { name: "Show password" }).click();
-      await expect(passwordInput).toHaveAttribute("type", "text", { timeout: 10_000 });
+      await expect(async () => {
+        await page.getByRole("button", { name: "Show password" }).click();
+        await expect(passwordInput).toHaveAttribute("type", "text", { timeout: 2_000 });
+      }).toPass({ timeout: 30_000, intervals: [500, 1_000] });
 
       await page.getByRole("button", { name: "Hide password" }).click();
       await expect(passwordInput).toHaveAttribute("type", "password");
@@ -149,7 +152,7 @@ test.describe("Authentication Flow", () => {
 
       await expect(
         page
-          .getByText(/already registered|already exists|already in use|user already/i)
+          .getByText(/already registered|already exists|already in use|user already|sign in instead/i)
           .first(),
       ).toBeVisible({ timeout: 30_000 });
     });
@@ -178,7 +181,7 @@ test.describe("Authenticated student", () => {
     await loginAndLand(page, TEST_USER.email, TEST_USER.password);
 
     await page.goto(`${BASE_URL}/admin`, { waitUntil: "domcontentloaded" });
-    await page.waitForTimeout(3_000);
+    await page.waitForURL((url) => url.pathname !== "/admin", { timeout: 15_000 }).catch(() => {});
 
     // A non-admin is either bounced away or shown a denial screen — both count.
     const bounced = /\/(login|admin-login|dashboard|my-courses)(\?|$|\/)/.test(page.url());

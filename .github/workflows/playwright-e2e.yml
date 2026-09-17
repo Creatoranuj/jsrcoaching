@@ -58,7 +58,18 @@ jobs:
 
       - name: 🔎 Verify Playwright dependency is declared
         run: |
-          node -e "const p=require('./package.json'); if (!p.devDependencies?.['@playwright/test']) { console.error('::error::@playwright/test is missing from devDependencies'); process.exit(1) }"
+          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('./package.json', 'utf8')); if (!p.devDependencies?.['@playwright/test']) { console.error('::error::@playwright/test is missing from devDependencies'); process.exit(1) }"
+
+      - name: 🔐 Verify E2E account and configured courses
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+          E2E_COURSE_ID: ${{ secrets.E2E_COURSE_ID }}
+          E2E_PAID_COURSE_ID: ${{ secrets.E2E_PAID_COURSE_ID }}
+          TEST_PAID_COURSE_ID: ${{ secrets.TEST_PAID_COURSE_ID }}
+        run: node .github/scripts/e2e-preflight.mjs
 
       # Cache Playwright's browser download (~180MB) between runs.
       - name: 🗂️ Cache Playwright browsers

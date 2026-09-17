@@ -31,8 +31,8 @@ async function login(page: Page) {
 
 async function openMyLibrary(page: Page) {
   await page.goto("/downloads");
-  await page.getByRole("button", { name: /my library/i }).click();
-  const enable = page.getByRole("button", { name: /enable my library/i });
+  await page.getByTestId("my-library-tab").click();
+  const enable = page.getByTestId("enable-library-button");
   if (await enable.isVisible().catch(() => false)) await enable.click();
 }
 
