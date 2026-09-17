@@ -20,6 +20,7 @@ import {
   openNativeRazorpayCheckout,
   RazorpayBridgeMissingError,
   RazorpayLaunchTimeoutError,
+  RazorpayInvalidResponseError,
   NATIVE_LAUNCH_TIMEOUT_MS,
   NATIVE_RESUME_TIMEOUT_MS,
   onWebViewBackgrounded,
@@ -113,6 +114,35 @@ describe("native checkout launch guards", () => {
     setVisibility("visible");
     await vi.advanceTimersByTimeAsync(NATIVE_RESUME_TIMEOUT_MS + 10);
     await assertion;
+  });
+
+  it("rejects a partial success callback instead of sending unsigned data to verification", async () => {
+    openMock.mockResolvedValue({
+      response: {
+        razorpay_payment_id: "pay_1",
+        razorpay_order_id: opts.order_id,
+      },
+    });
+
+    await expect(openNativeRazorpayCheckout(opts)).rejects.toBeInstanceOf(
+      RazorpayInvalidResponseError,
+    );
+  });
+
+  it("accepts only a complete signed native response", async () => {
+    openMock.mockResolvedValue({
+      response: {
+        razorpay_payment_id: "pay_1",
+        razorpay_order_id: opts.order_id,
+        razorpay_signature: "sig_1",
+      },
+    });
+
+    await expect(openNativeRazorpayCheckout(opts)).resolves.toEqual({
+      razorpay_payment_id: "pay_1",
+      razorpay_order_id: opts.order_id,
+      razorpay_signature: "sig_1",
+    });
   });
 });
 

@@ -12,3 +12,5 @@
 - [ ] Flip migration-drift CI to blocking after first clean run
 
 - [ ] Razorpay checkout blank screen (Capacitor/app WebView) — investigate reported empty payment sheet (video: screen-20260912-174141.mp4)
+- [x] Verify `Creatoranuj's Project` backend connection after workspace move
+- [ ] Harden native Razorpay callback validation and produce a verified Android APK (callback validation + regression tests done; APK build pending)
