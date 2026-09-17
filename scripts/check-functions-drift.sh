@@ -22,7 +22,8 @@ curl -sSL "https://codeload.github.com/$REPO/tar.gz/$REF" | tar -xz -C "$TMP" ||
 REMOTE_DIR="$(find "$TMP" -maxdepth 4 -type d -path "*/supabase/functions" | head -1)"
 [ -n "$REMOTE_DIR" ] || { echo "FAIL: $REF has no supabase/functions"; exit 1; }
 
-if diff -ru "$REMOTE_DIR" "$LOCAL_DIR" > "$TMP/diff.txt"; then
+# node_modules / .deno are local Deno cache artifacts, never part of the repo.
+if diff -ru -x node_modules -x .deno -x '.DS_Store' "$REMOTE_DIR" "$LOCAL_DIR" > "$TMP/diff.txt"; then
   echo "OK: server code here is identical to $REPO@$REF."
   exit 0
 fi
