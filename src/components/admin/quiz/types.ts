@@ -8,6 +8,8 @@ export interface Quiz {
   pass_percentage: number;
   course_id: number | null;
   lesson_id: string | null;
+  chapter_id?: string | null;
+  description?: string | null;
   created_at: string;
   lessons?: { title: string } | null;
 }

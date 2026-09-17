@@ -46,9 +46,12 @@ const AdminQuizManager = () => {
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
   const [lessons, setLessons] = useState<any[]>([]);
+  const [chapters, setChapters] = useState<any[]>([]);
 
   // UI state
   const [view, setView] = useState<"list" | "create" | "edit-questions">("list");
+  // When set, the create form is editing this existing quiz instead of inserting.
+  const [editingDetailsId, setEditingDetailsId] = useState<string | null>(null);
   const [editingQuizId, setEditingQuizId] = useState<string | null>(null);
   const [savingQuiz, setSavingQuiz] = useState(false);
 
@@ -73,6 +76,7 @@ const AdminQuizManager = () => {
     type: "dpp",
     course_id: "",
     lesson_id: "",
+    chapter_id: "",
     duration_minutes: 30,
     total_marks: 0,
     pass_percentage: 40,
@@ -152,8 +156,48 @@ const AdminQuizManager = () => {
     }
   };
 
+  const fetchChapters = async (courseId: number) => {
+    try {
+      const { data } = await supabase.from("chapters").select("id, title, position")
+        .eq("course_id", courseId).is("parent_id", null).order("position");
+      setChapters(data || []);
+    } catch (err) {
+      reportError(err, { surface: "AdminQuizManager.fetchChapters" });
+      setChapters([]);
+    }
+  };
+
+  const openCreate = () => {
+    setEditingDetailsId(null);
+    setChapters([]);
+    setLessons([]);
+    setQuizForm({ title: "", type: "dpp", course_id: "", lesson_id: "", chapter_id: "", duration_minutes: 30, total_marks: 0, pass_percentage: 40, description: "" });
+    setView("create");
+  };
+
+  const openEditDetails = (quiz: any) => {
+    setEditingDetailsId(quiz.id);
+    setQuizForm({
+      title: quiz.title || "",
+      type: quiz.type || "dpp",
+      course_id: quiz.course_id ? String(quiz.course_id) : "",
+      lesson_id: quiz.lesson_id || "",
+      chapter_id: quiz.chapter_id || "",
+      duration_minutes: quiz.duration_minutes ?? 30,
+      total_marks: quiz.total_marks ?? 0,
+      pass_percentage: quiz.pass_percentage ?? 40,
+      description: quiz.description || "",
+    });
+    if (quiz.course_id) { fetchLessons(Number(quiz.course_id)); fetchChapters(Number(quiz.course_id)); }
+    setView("create");
+  };
+
   const handleCreateQuiz = async () => {
     if (!quizForm.title.trim()) { toast.error("Title is required"); return; }
+    if (!quizForm.course_id) {
+      toast.error("Course choose karein — bina course ke quiz kisi bhi course me nahi dikhega");
+      return;
+    }
     setSavingQuiz(true);
     try {
       const payload: any = {
@@ -163,19 +207,30 @@ const AdminQuizManager = () => {
         total_marks: quizForm.total_marks,
         pass_percentage: quizForm.pass_percentage,
         description: quizForm.description || null,
-        is_published: false,
+        course_id: Number(quizForm.course_id),
+        lesson_id: quizForm.lesson_id || null,
+        chapter_id: quizForm.chapter_id || null,
       };
-      if (quizForm.course_id) payload.course_id = Number(quizForm.course_id);
-      if (quizForm.lesson_id) payload.lesson_id = quizForm.lesson_id;
 
+      if (editingDetailsId) {
+        const { error } = await supabase.from("quizzes").update(payload).eq("id", editingDetailsId);
+        if (error) throw error;
+        toast.success("Quiz details updated");
+        await fetchQuizzes();
+        setEditingDetailsId(null);
+        setView("list");
+        return;
+      }
+
+      payload.is_published = false;
       const { data, error } = await supabase.from("quizzes").insert(payload).select().single();
       if (error) throw error;
       toast.success("Quiz created! Now add questions.");
       await fetchQuizzes();
       setEditingQuizId(data.id);
-      setQuestionForms([defaultQuestion()]);
-      const firstId = questionForms[0]?._uid;
-      setExpandedQuestions(firstId ? { [firstId]: true } : {});
+      const firstQ = defaultQuestion();
+      setQuestionForms([firstQ]);
+      setExpandedQuestions({ [firstQ._uid]: true });
       setView("edit-questions");
     } catch (err: unknown) {
       toast.error(getErrorMessage(err));
@@ -195,7 +250,11 @@ const AdminQuizManager = () => {
       const formsWithUrls = await Promise.all(questionForms.map(async (q) => {
         if (q._imageFile) {
           const fileExt = q._imageFile.name.split('.').pop();
-          const fileName = `questions/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+          // NOTE: stored under `thumbnails/questions/...` so the storage read
+          // policy for authenticated users covers question images (students
+          // must be able to sign these; the bare `questions/` prefix is
+          // staff-only after the 2026-09-17 storage hardening).
+          const fileName = `thumbnails/questions/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
           const { error: uploadErr } = await supabase.storage.from('content').upload(fileName, q._imageFile);
           if (uploadErr) throw uploadErr;
           // Store bucket-agnostic URI — resolver signs on read.
@@ -204,7 +263,11 @@ const AdminQuizManager = () => {
         return q;
       }));
 
-      await supabase.from("questions").delete().eq("quiz_id", editingQuizId);
+      // Insert first, delete old rows after — an insert failure must never
+      // wipe the existing question set.
+      const { data: existing, error: existingErr } = await supabase
+        .from("questions").select("id").eq("quiz_id", editingQuizId);
+      if (existingErr) throw existingErr;
       const rows = formsWithUrls.map((q, idx) => ({
         quiz_id: editingQuizId,
         question_text: q.question_text.trim(),
@@ -219,17 +282,35 @@ const AdminQuizManager = () => {
       }));
       const { error } = await supabase.from("questions").insert(rows);
       if (error) throw error;
+      const oldIds = (existing || []).map((r: any) => r.id);
+      if (oldIds.length > 0) {
+        const { error: delErr } = await supabase.from("questions").delete().in("id", oldIds);
+        if (delErr) throw delErr;
+      }
       const totalMarks = formsWithUrls.reduce((s, q) => s + q.marks, 0);
       await supabase.from("quizzes").update({ total_marks: totalMarks }).eq("id", editingQuizId);
       revokeAllQuestionPreviews();
       setQuestionForms(formsWithUrls);
       toast.success("Questions saved!");
       await fetchQuizzes();
+      return true;
     } catch (err: unknown) {
+      reportError(err, { surface: "AdminQuizManager.handleSaveQuestions" });
       toast.error(getErrorMessage(err));
+      return false;
     } finally {
       setSavingQuestions(false);
     }
+  };
+
+  // Save questions and publish in one tap — a draft quiz is invisible to students.
+  const handleSaveAndPublish = async () => {
+    const ok = await handleSaveQuestions();
+    if (!ok || !editingQuizId) return;
+    const { error } = await supabase.from("quizzes").update({ is_published: true }).eq("id", editingQuizId);
+    if (error) { toast.error(getErrorMessage(error)); return; }
+    toast.success("Published — students ko course me dikhega");
+    await fetchQuizzes();
   };
 
   const loadQuizForEdit = async (quiz: Quiz) => {
@@ -428,10 +509,7 @@ const AdminQuizManager = () => {
             <Button
               size="sm"
               className="gap-1.5 min-h-[44px]"
-              onClick={() => {
-                setQuizForm({ title: "", type: "dpp", course_id: "", lesson_id: "", duration_minutes: 30, total_marks: 0, pass_percentage: 40, description: "" });
-                setView("create");
-              }}
+              onClick={openCreate}
             >
               <Plus className="h-4 w-4" />
               <span className="hidden sm:inline">New Quiz</span>
@@ -496,11 +574,21 @@ const AdminQuizManager = () => {
                       <Badge variant={quiz.is_published ? "default" : "secondary"} className="text-[10px]">
                         {quiz.is_published ? "Published" : "Draft"}
                       </Badge>
-                      <Badge variant="outline" className="text-[10px] uppercase">{quiz.type}</Badge>
+                      <Badge variant="outline" className="text-[10px] uppercase">{quiz.type === "dpp-attempt" ? "DPP ATTEMPT" : quiz.type}</Badge>
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">
                       {questionCounts[quiz.id] ?? 0} questions · {quiz.total_marks} marks · {quiz.duration_minutes > 0 ? `${quiz.duration_minutes} min` : "No limit"} · Pass: {quiz.pass_percentage}%{attemptCounts[quiz.id] ? ` · ${attemptCounts[quiz.id]} attempts` : ""}
                     </p>
+                    {!quiz.is_published && (
+                      <p className="text-xs text-amber-600 mt-0.5 font-medium">
+                        Draft — students ko nahi dikhega. Publish karein.
+                      </p>
+                    )}
+                    {!quiz.course_id && (
+                      <p className="text-xs text-destructive mt-0.5 font-medium">
+                        Koi course link nahi — course choose karein warna kahin nahi dikhega.
+                      </p>
+                    )}
                     {quiz.lessons?.title && (
                       <p className="text-xs text-primary/70 mt-0.5 flex items-center gap-1">
                         <Link2 className="h-3 w-3" /> {quiz.lessons.title}
@@ -514,6 +602,9 @@ const AdminQuizManager = () => {
                     </Button>
                     <Button variant="ghost" size="icon" className="h-10 w-10" onClick={() => loadQuizForEdit(quiz)} title="Edit questions">
                       <Edit2 className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-10 w-10" onClick={() => openEditDetails(quiz)} title="Edit quiz details (course, chapter, time)">
+                      <ClipboardList className="h-4 w-4" />
                     </Button>
                     <Button variant="ghost" size="icon" className="h-10 w-10" onClick={() => togglePublish(quiz)} title={quiz.is_published ? "Unpublish" : "Publish"}>
                       {quiz.is_published ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -628,7 +719,7 @@ const AdminQuizManager = () => {
             <button onClick={() => setView("list")} className="text-muted-foreground hover:text-foreground p-2 min-h-[44px] min-w-[44px] flex items-center justify-center rounded">
               <ArrowLeft className="h-5 w-5" />
             </button>
-            <h1 className="text-base font-bold flex-1">Create New Quiz</h1>
+            <h1 className="text-base font-bold flex-1">{editingDetailsId ? "Edit Quiz Details" : "Create New Quiz"}</h1>
           </div>
         </header>
         <main className="max-w-2xl mx-auto p-4 space-y-5">
@@ -677,10 +768,13 @@ const AdminQuizManager = () => {
           </div>
 
           <div className="space-y-1.5">
-            <Label>Link to Course (optional)</Label>
+            <Label>Link to Course *</Label>
             <Select
               value={quizForm.course_id}
-              onValueChange={v => { setQuizForm(f => ({ ...f, course_id: v, lesson_id: "" })); if (v) fetchLessons(Number(v)); }}
+              onValueChange={v => {
+                setQuizForm(f => ({ ...f, course_id: v, lesson_id: "", chapter_id: "" }));
+                if (v) { fetchLessons(Number(v)); fetchChapters(Number(v)); }
+              }}
             >
               <SelectTrigger className="h-12"><SelectValue placeholder="Select course..." /></SelectTrigger>
               <SelectContent>
@@ -688,6 +782,19 @@ const AdminQuizManager = () => {
               </SelectContent>
             </Select>
           </div>
+
+          {quizForm.course_id && (
+            <div className="space-y-1.5">
+              <Label>Chapter (optional — blank = poore course me dikhega)</Label>
+              <Select value={quizForm.chapter_id || "__none__"} onValueChange={v => setQuizForm(f => ({ ...f, chapter_id: v === "__none__" ? "" : v }))}>
+                <SelectTrigger className="h-12"><SelectValue placeholder="Whole course" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Whole course (no chapter)</SelectItem>
+                  {chapters.map(c => <SelectItem key={c.id} value={c.id}>{c.title}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {quizForm.course_id && (
             <div className="space-y-1.5">
@@ -718,7 +825,7 @@ const AdminQuizManager = () => {
 
           <Button onClick={handleCreateQuiz} disabled={savingQuiz} className="w-full gap-2 h-12 text-base">
             {savingQuiz ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-            Create & Add Questions
+            {editingDetailsId ? "Save Details" : "Create & Add Questions"}
           </Button>
         </main>
       </div>
@@ -765,6 +872,17 @@ const AdminQuizManager = () => {
           >
             {savingQuestions ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
             Save
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="gap-1 min-h-[44px] shrink-0"
+            onClick={handleSaveAndPublish}
+            disabled={savingQuestions}
+            title="Save and publish so students can see it"
+          >
+            <Eye className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Publish</span>
           </Button>
         </div>
       </header>
@@ -1015,6 +1133,16 @@ const AdminQuizManager = () => {
         >
           {savingQuestions ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           Save All Questions
+        </Button>
+
+        <Button
+          variant="secondary"
+          className="w-full gap-2 h-12 text-base"
+          onClick={handleSaveAndPublish}
+          disabled={savingQuestions}
+        >
+          <Eye className="h-4 w-4" />
+          Save & Publish (students ko dikhega)
         </Button>
       </main>
     </div>
