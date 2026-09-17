@@ -101,15 +101,37 @@ test.describe("student journey", () => {
     await page.goto(`/quiz/${QUIZ_ID}`);
     await page.waitForLoadState("domcontentloaded");
 
-    // The app bounces to /all-tests when the configured quiz isn't attemptable
-    // for this account (unpublished, expired, not assigned). That's a config
-    // problem, not an app bug — say so instead of timing out on a locator that
-    // then resolves against the /all-tests banner carousel.
-    await page.waitForTimeout(2000);
+    // The app bounces away from /quiz/<id> (to /all-tests or /dashboard) when
+    // the configured quiz isn't attemptable for this account — unpublished,
+    // expired, already attempted, or not assigned. That's a config problem, not
+    // an app bug: detect the bounce (it can take a few seconds, after the quiz
+    // fetch resolves) and skip with a message naming the fix.
+    const quizPath = () => new URL(page.url()).pathname;
+    const deadline = Date.now() + 15_000;
+    let bounced = false;
+    while (Date.now() < deadline) {
+      if (!/^\/quiz\//.test(quizPath())) {
+        bounced = true;
+        break;
+      }
+      // Quiz UI actually rendered → stop waiting and run the attempt.
+      const ready = await page
+        .locator("main")
+        .first()
+        .getByRole("button", {
+          name: /^(next|submit quiz|start|begin|attempt)$/i,
+        })
+        .first()
+        .isVisible()
+        .catch(() => false);
+      if (ready) break;
+      await page.waitForTimeout(500);
+    }
     test.skip(
-      !/\/quiz\//.test(new URL(page.url()).pathname),
-      `Quiz ${QUIZ_ID} is not attemptable for the test account (redirected to ${new URL(page.url()).pathname}) — update E2E_QUIZ_ID`,
+      bounced,
+      `Quiz ${QUIZ_ID} is not attemptable for the test account (redirected to ${quizPath()}) — update the E2E_QUIZ_ID secret`,
     );
+
     await expect(page.locator("body")).not.toContainText(
       /Quiz failed to load/i,
     );
