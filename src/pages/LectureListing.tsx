@@ -279,14 +279,17 @@ const LectureListing = () => {
       // 2. Standalone quizzes — filter by chapter_id when viewing a chapter
       let standaloneQuery = supabase
         .from("quizzes")
-        .select("id, title, type, duration_minutes, created_at")
+        .select("id, title, type, duration_minutes, total_marks, created_at")
         .eq("course_id", Number(courseId))
         .is("lesson_id", null)
         .eq("is_published", true)
         .order("created_at", { ascending: false });
       
+      // Inside a chapter, also keep course-wide quizzes (chapter_id NULL) —
+      // otherwise a DPP uploaded for the whole course disappears from every
+      // chapter view and looks like it was never saved.
       if (chapterId && chapterId !== "__all__") {
-        standaloneQuery = standaloneQuery.eq("chapter_id", chapterId);
+        standaloneQuery = standaloneQuery.or(`chapter_id.eq.${chapterId},chapter_id.is.null`);
       }
       
       const { data: standaloneQuizzes } = await standaloneQuery;
@@ -578,8 +581,18 @@ const LectureListing = () => {
                   {/* Standalone course-level quizzes (DPP tab or All tab) */}
                   {(activeTab === "all" || activeTab === "dpps" || activeTab === "tests") &&
                     standaloneQuizzes
-                      .filter(q => activeTab === "all" || (activeTab === "dpps" && q.type === "dpp") || (activeTab === "tests" && q.type !== "dpp"))
-                      .map((quiz) => (
+                      .filter(q => {
+                        const isDpp = q.type === "dpp" || q.type === "dpp-attempt";
+                        if (activeTab === "all") return true;
+                        if (activeTab === "dpps") return isDpp;
+                        return !isDpp;
+                      })
+                      .map((quiz) => {
+                        const isDpp = quiz.type === "dpp" || quiz.type === "dpp-attempt";
+                        const kindLabel = quiz.type === "dpp-attempt"
+                          ? "DPP Attempt"
+                          : isDpp ? "Daily Practice Paper" : "Test";
+                        return (
                         <div key={quiz.id} className="relative">
                           <button
                             onClick={() => navigate(`/quiz/${quiz.id}`)}
@@ -591,12 +604,19 @@ const LectureListing = () => {
                             <div className="flex-1 min-w-0">
                               <p className="font-medium text-sm truncate">{quiz.title}</p>
                               <p className="text-xs text-muted-foreground">
-                                {quiz.type === "dpp" ? "Daily Practice Paper" : "Test"} · {quiz.duration_minutes} min
+                                {kindLabel}
+                                {quiz.duration_minutes ? ` · ${quiz.duration_minutes} min` : " · No time limit"}
+                                {quiz.total_marks ? ` · ${quiz.total_marks} marks` : ""}
                               </p>
+                              <span className="mt-1.5 inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-semibold">
+                                <ClipboardList className="h-3.5 w-3.5" />
+                                {isDpp ? "Attempt DPP" : "Take Test"}
+                              </span>
                             </div>
                           </button>
                         </div>
-                      ))
+                        );
+                      })
                   }
                 </div>
               )}
