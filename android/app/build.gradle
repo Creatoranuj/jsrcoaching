@@ -68,6 +68,15 @@ android {
     }
     buildTypes {
         debug {
+            // Debug builds get their OWN package id so a QA/CI debug install
+            // can never collide with the production app. A debug-signed APK
+            // sharing com.jsrcoaching.app makes Android reject the production
+            // APK with "App not installed as package appears to be invalid"
+            // (signature mismatch on the same package) — the exact symptom
+            // reported on 2026-09-17. Never remove these two suffixes.
+            applicationIdSuffix ".debug"
+            versionNameSuffix "-debug"
+
             // R8 / minify is disabled for debug — AGP itself warns that a
             // debuggable build with minifyEnabled=true performs NO real
             // optimization or obfuscation ("All code optimizations and

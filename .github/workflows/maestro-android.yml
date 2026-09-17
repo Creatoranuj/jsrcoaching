@@ -104,6 +104,19 @@ jobs:
           unzip -l "$APK" | tee apk-contents.txt
           grep -q 'lib/x86_64/' apk-contents.txt || { echo 'Debug APK is missing x86_64 native libraries'; exit 1; }
 
+      - name: 🏷️ Point Maestro flows at the debug package id
+        # Debug builds ship as com.jsrcoaching.app.debug (applicationIdSuffix in
+        # android/app/build.gradle) so a CI/QA install can never conflict with
+        # the production app on a real device — a debug-signed install under the
+        # production package id makes Android reject the release APK with
+        # "package appears to be invalid". Flows keep the production appId in
+        # git; only this ephemeral checkout is rewritten.
+        run: |
+          set -euo pipefail
+          find maestro -name '*.yaml' -print0 \
+            | xargs -0 sed -i 's/^appId: com\.jsrcoaching\.app$/appId: com.jsrcoaching.app.debug/'
+          grep -rn '^appId:' maestro | sort -u
+
       - name: 📥 Install pinned Maestro
         run: |
           set -euo pipefail
@@ -145,10 +158,11 @@ jobs:
             adb logcat -c
             adb logcat -v threadtime > maestro-artifacts/logcat.txt 2>&1 &
             LOGCAT_PID=$!
-            trap 'adb shell screencap -p /sdcard/maestro-final.png >/dev/null 2>&1 || true; adb pull /sdcard/maestro-final.png maestro-artifacts/final-screen.png >/dev/null 2>&1 || true; adb shell pm list packages > maestro-artifacts/packages.txt 2>&1 || true; adb shell getprop ro.product.cpu.abilist > maestro-artifacts/device-abis.txt 2>&1 || true; adb shell dumpsys package com.jsrcoaching.app > maestro-artifacts/app-package.txt 2>&1 || true; kill $LOGCAT_PID >/dev/null 2>&1 || true' EXIT
+            trap 'adb shell screencap -p /sdcard/maestro-final.png >/dev/null 2>&1 || true; adb pull /sdcard/maestro-final.png maestro-artifacts/final-screen.png >/dev/null 2>&1 || true; adb shell pm list packages > maestro-artifacts/packages.txt 2>&1 || true; adb shell getprop ro.product.cpu.abilist > maestro-artifacts/device-abis.txt 2>&1 || true; adb shell dumpsys package com.jsrcoaching.app.debug > maestro-artifacts/app-package.txt 2>&1 || true; kill $LOGCAT_PID >/dev/null 2>&1 || true' EXIT
+            adb uninstall com.jsrcoaching.app.debug >/dev/null 2>&1 || true
             adb install -r android/app/build/outputs/apk/debug/app-debug.apk
-            adb shell pm path com.jsrcoaching.app | tee maestro-artifacts/install-check.txt
-            grep -q '^package:' maestro-artifacts/install-check.txt || { echo 'com.jsrcoaching.app was not installed'; exit 1; }
+            adb shell pm path com.jsrcoaching.app.debug | tee maestro-artifacts/install-check.txt
+            grep -q '^package:' maestro-artifacts/install-check.txt || { echo 'com.jsrcoaching.app.debug was not installed'; exit 1; }
             # Prefer the dedicated MAESTRO_* secrets (same pair signed-apk-smoke
             # uses); fall back to TEST_USER_* so forks without them still run.
             # NOTE: this script runs one line per `sh -c`, so no multi-line
