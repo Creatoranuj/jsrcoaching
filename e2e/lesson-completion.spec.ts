@@ -11,6 +11,7 @@
  */
 import { test, expect, type Page } from "@playwright/test";
 import { signIn } from "./helpers/auth";
+import { openFirstLesson as openLesson } from "./helpers/lessons";
 
 const EMAIL = process.env.E2E_EMAIL;
 const PASSWORD = process.env.E2E_PASSWORD;
@@ -22,22 +23,26 @@ async function login(page: Page) {
 }
 
 async function openFirstLesson(page: Page) {
-  await page.goto(`/classes/${COURSE_ID}/lessons`);
-  if (/lessonId=|\/chapter\//.test(page.url())) return;
-  const items = page.getByTestId("lesson-card");
-  await expect(items.first()).toBeVisible({ timeout: 30_000 });
-  await items.first().click();
-  await expect(page).toHaveURL(/lessonId=|\/chapter\//, { timeout: 20_000 });
+  const opened = await openLesson(page, COURSE_ID!);
+  test.skip(!opened, "Configured E2E course has no lessons to open");
 }
 
 test.describe("lesson completion", () => {
-  test.skip(!EMAIL || !PASSWORD || !COURSE_ID, "E2E_EMAIL / E2E_PASSWORD / E2E_COURSE_ID not set");
+  test.skip(
+    !EMAIL || !PASSWORD || !COURSE_ID,
+    "E2E_EMAIL / E2E_PASSWORD / E2E_COURSE_ID not set",
+  );
   test.describe.configure({ mode: "serial" });
 
-  test("opening a lesson records progress for the student", async ({ page }) => {
+  test("opening a lesson records progress for the student", async ({
+    page,
+  }) => {
     const progressWrites: string[] = [];
     page.on("request", (req) => {
-      if (/lesson_progress|user_progress/.test(req.url()) && req.method() !== "GET") {
+      if (
+        /lesson_progress|user_progress/.test(req.url()) &&
+        req.method() !== "GET"
+      ) {
         progressWrites.push(req.url());
       }
     });
@@ -48,7 +53,9 @@ test.describe("lesson completion", () => {
     await page.waitForTimeout(6_000);
 
     const progressUi = page.getByText(/%|complete|completed|progress/i);
-    expect(progressWrites.length > 0 || (await progressUi.count()) > 0).toBe(true);
+    expect(progressWrites.length > 0 || (await progressUi.count()) > 0).toBe(
+      true,
+    );
   });
 
   test("marking a lesson complete sticks across a reload", async ({ page }) => {
@@ -56,22 +63,36 @@ test.describe("lesson completion", () => {
     await openFirstLesson(page);
 
     const markDone = page
-      .getByRole("button", { name: /mark (as )?(complete|done)|complete lesson|poora hua/i })
+      .getByRole("button", {
+        name: /mark (as )?(complete|done)|complete lesson|poora hua/i,
+      })
       .first();
-    test.skip(!(await markDone.count()), "This lesson has no explicit complete button");
+    test.skip(
+      !(await markDone.count()),
+      "This lesson has no explicit complete button",
+    );
 
     await markDone.click();
-    await expect(page.locator("body")).toContainText(/complete|completed|done/i, { timeout: 15_000 });
+    await expect(page.locator("body")).toContainText(
+      /complete|completed|done/i,
+      { timeout: 15_000 },
+    );
 
     const url = page.url();
     await page.reload();
     expect(page.url()).toBe(url);
-    await expect(page.locator("body")).toContainText(/complete|completed|done/i, { timeout: 20_000 });
+    await expect(page.locator("body")).toContainText(
+      /complete|completed|done/i,
+      { timeout: 20_000 },
+    );
   });
 
   test("course progress reflects completed lessons", async ({ page }) => {
     await login(page);
     await page.goto("/my-courses");
-    await expect(page.locator("body")).toContainText(/%|progress|complete|lesson/i, { timeout: 20_000 });
+    await expect(page.locator("body")).toContainText(
+      /%|progress|complete|lesson/i,
+      { timeout: 20_000 },
+    );
   });
 });

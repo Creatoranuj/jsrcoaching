@@ -18,7 +18,12 @@
  */
 
 import { test, expect, Page } from "@playwright/test";
-import { fillStable, fillStableLocator, signIn, signInAndLand } from "./helpers/auth";
+import {
+  fillStable,
+  fillStableLocator,
+  signIn,
+  signInAndLand,
+} from "./helpers/auth";
 
 const BASE_URL = process.env.BASE_URL || "http://localhost:8080";
 
@@ -66,7 +71,6 @@ async function loginAndLand(page: Page, email: string, password: string) {
   await signInAndLand(page, email, password, AFTER_LOGIN);
 }
 
-
 // ============================================================
 // PUBLIC FORM BEHAVIOUR (no credentials needed)
 // ============================================================
@@ -76,7 +80,9 @@ test.describe("Authentication Flow", () => {
     test("should display login form", async ({ page }) => {
       await openLogin(page);
 
-      await expect(page.getByRole("heading", { name: /Welcome Back/i })).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: /Welcome Back/i }),
+      ).toBeVisible();
       await expect(page.getByTestId("login-email")).toBeVisible();
       await expect(page.getByTestId("login-password")).toBeVisible();
       await expect(page.getByTestId("login-submit")).toBeVisible();
@@ -86,7 +92,9 @@ test.describe("Authentication Flow", () => {
       await openLogin(page);
       await expect(async () => {
         await page.getByTestId("login-submit").click();
-        await expect(page.getByText("Please fill in all fields")).toBeVisible({ timeout: 3_000 });
+        await expect(page.getByText("Please fill in all fields")).toBeVisible({
+          timeout: 3_000,
+        });
       }).toPass({ timeout: 30_000, intervals: [500, 1_000, 2_000] });
     });
 
@@ -94,7 +102,9 @@ test.describe("Authentication Flow", () => {
       await login(page, "wrong@email.com", "wrongpassword");
 
       await expect(
-        page.getByText(/invalid email or password|invalid login credentials/i).first(),
+        page
+          .getByText(/invalid email or password|invalid login credentials/i)
+          .first(),
       ).toBeVisible({ timeout: 30_000 });
     });
 
@@ -106,7 +116,9 @@ test.describe("Authentication Flow", () => {
 
       await expect(async () => {
         await page.getByRole("button", { name: "Show password" }).click();
-        await expect(passwordInput).toHaveAttribute("type", "text", { timeout: 2_000 });
+        await expect(passwordInput).toHaveAttribute("type", "text", {
+          timeout: 2_000,
+        });
       }).toPass({ timeout: 30_000, intervals: [500, 1_000] });
 
       await page.getByRole("button", { name: "Hide password" }).click();
@@ -140,20 +152,37 @@ test.describe("Authentication Flow", () => {
       // Same hydration race as the login form: retry the whole fill+submit
       // cycle if the controlled fields were wiped before the click landed.
       await expect(async () => {
-        await fillStableLocator(page.locator('input[id="name"]'), "Existing User");
-        await fillStableLocator(page.locator('input[id="email"]'), TEST_USER.email);
+        await fillStableLocator(
+          page.locator('input[id="name"]'),
+          "Existing User",
+        );
+        await fillStableLocator(
+          page.locator('input[id="email"]'),
+          TEST_USER.email,
+        );
         const probePassword = `E2e-${Date.now()}-Qx7!vN4#`;
-        await fillStableLocator(page.locator('input[id="password"]'), probePassword);
-        await fillStableLocator(page.locator('input[id="confirmPassword"]'), probePassword);
+        await fillStableLocator(
+          page.locator('input[id="password"]'),
+          probePassword,
+        );
+        await fillStableLocator(
+          page.locator('input[id="confirmPassword"]'),
+          probePassword,
+        );
         await page.locator('button[type="submit"]').first().click();
-        await expect(page.getByText("Please fill in all fields")).toHaveCount(0, {
-          timeout: 1_500,
-        });
+        await expect(page.getByText("Please fill in all fields")).toHaveCount(
+          0,
+          {
+            timeout: 1_500,
+          },
+        );
       }).toPass({ timeout: 90_000, intervals: [500, 1_000, 2_000] });
 
       await expect(
         page
-          .getByText(/already registered|already exists|already in use|user already|sign in instead/i)
+          .getByText(
+            /already registered|already exists|already in use|user already|sign in instead/i,
+          )
           .first(),
       ).toBeVisible({ timeout: 30_000 });
     });
@@ -182,20 +211,28 @@ test.describe("Authenticated student", () => {
     await loginAndLand(page, TEST_USER.email, TEST_USER.password);
 
     await page.goto(`${BASE_URL}/admin`, { waitUntil: "domcontentloaded" });
-    await page.waitForURL((url) => url.pathname !== "/admin", { timeout: 15_000 }).catch(() => {});
+    await page
+      .waitForURL((url) => url.pathname !== "/admin", { timeout: 15_000 })
+      .catch(() => {});
 
     // A non-admin is either bounced away or shown a denial screen — both count.
-    const bounced = /\/(login|admin-login|dashboard|my-courses)(\?|$|\/)/.test(page.url());
+    const bounced = /\/(login|admin-login|dashboard|my-courses)(\?|$|\/)/.test(
+      page.url(),
+    );
     if (!bounced) {
       await expect(
         page
-          .getByText(/Access Denied|not authorized|Unauthorized|admin login|permission/i)
+          .getByText(
+            /Access Denied|not authorized|Unauthorized|admin login|permission/i,
+          )
           .first(),
       ).toBeVisible({ timeout: 20_000 });
     }
   });
 
-  test("dashboard should load within 20 seconds after login", async ({ page }) => {
+  test("dashboard should load within 20 seconds after login", async ({
+    page,
+  }) => {
     const startTime = Date.now();
     await loginAndLand(page, TEST_USER.email, TEST_USER.password);
 
@@ -210,7 +247,9 @@ test.describe("Authenticated admin", () => {
     await loginAndLand(page, ADMIN_USER.email, ADMIN_USER.password);
     await page.goto(`${BASE_URL}/admin`, { waitUntil: "domcontentloaded" });
 
-    await expect(page.getByText(/Admin/i).first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(/Admin/i).first()).toBeVisible({
+      timeout: 20_000,
+    });
   });
 });
 
@@ -223,13 +262,19 @@ test.describe("Navigation", () => {
     // /courses and /books sit behind ProtectedRoute — the genuinely public
     // screens are the landing page and the privacy page.
     await page.goto(`${BASE_URL}/`, { waitUntil: "domcontentloaded" });
-    await expect(page.locator("body")).toContainText(/JSR|coaching|english/i, { timeout: 30_000 });
+    await expect(page.locator("body")).toContainText(/JSR|coaching|english/i, {
+      timeout: 30_000,
+    });
 
     await page.goto(`${BASE_URL}/privacy`, { waitUntil: "domcontentloaded" });
-    await expect(page.locator("body")).toContainText(/privacy/i, { timeout: 30_000 });
+    await expect(page.locator("body")).toContainText(/privacy/i, {
+      timeout: 30_000,
+    });
   });
 
-  test("unauthenticated user should be redirected from protected pages", async ({ page }) => {
+  test("unauthenticated user should be redirected from protected pages", async ({
+    page,
+  }) => {
     await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "domcontentloaded" });
     await expect(page).toHaveURL(/\/login/, { timeout: 30_000 });
   });
@@ -254,9 +299,16 @@ test.describe("Accessibility", () => {
 
 test.describe("Security Probes", () => {
   test("should handle SQL injection in email field", async ({ page }) => {
-    await login(page, "' OR '1'='1", "password");
+    // Deliberately bogus input: the shared signIn helper waits for a *successful*
+    // or *known-error* outcome, which a rejected probe never reaches. Submit the
+    // form directly and assert only that the app stays on the login screen.
+    await openLogin(page);
+    await fillStable(page, "login-email", "' OR '1'='1");
+    await fillStable(page, "login-password", "password");
+    await page.getByTestId("login-submit").click();
 
     await expect(page.getByTestId("login-email")).toBeVisible();
+    await expect(page).toHaveURL(/\/login/);
   });
 
   test("should not expose sensitive data in page source", async ({ page }) => {
@@ -271,7 +323,9 @@ test.describe("Security Probes", () => {
   test("login page should load within 10 seconds", async ({ page }) => {
     const startTime = Date.now();
     await page.goto(`${BASE_URL}/login`, { waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("login-form")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("login-form")).toBeVisible({
+      timeout: 30_000,
+    });
     expect(Date.now() - startTime).toBeLessThan(10_000);
   });
 });

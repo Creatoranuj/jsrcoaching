@@ -162,8 +162,10 @@ const Login = () => {
       
       <div className="hidden lg:flex flex-1 bg-primary items-center justify-center p-12">
         <div className="max-w-lg text-center text-primary-foreground">
-          <h2 className="text-3xl font-bold mb-4">Roz ka English, tumhaari raftaar pe</h2>
-          <p className="text-primary-foreground/80 text-lg">JSR COACHING pe wapas swagat hai.</p>
+          <h2 className="text-3xl font-bold mb-4">JSR COACHING ke saath English seekhein</h2>
+          <p className="text-primary-foreground/80 text-lg">
+            Live classes, daily practice aur PDF notes — sab ek hi jagah.
+          </p>
         </div>
       </div>
     </main>
