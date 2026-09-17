@@ -66,6 +66,14 @@ public class RazorpayNativePlugin extends Plugin {
     /** True while our own WebView Activity is the foreground surface. */
     private static volatile boolean hostResumed = true;
 
+    /**
+     * True once our Activity has actually been paused since the checkout was
+     * launched — i.e. something really came on top of us. Without this a
+     * checkout that "launched" but never rendered kept reporting
+     * {@code dismissed:false} and the JS side waited forever.
+     */
+    private static volatile boolean checkoutEverPaused;
+
     @Override
     protected void handleOnResume() {
         hostResumed = true;
@@ -74,6 +82,7 @@ public class RazorpayNativePlugin extends Plugin {
     @Override
     protected void handleOnPause() {
         hostResumed = false;
+        if (checkoutLaunched) checkoutEverPaused = true;
     }
 
     private static boolean hasPending() {
@@ -87,6 +96,7 @@ public class RazorpayNativePlugin extends Plugin {
             final PluginCall call = pendingCall;
             pendingCall = null;
             checkoutLaunched = false;
+            checkoutEverPaused = false;
             return call;
         }
     }
@@ -144,6 +154,7 @@ public class RazorpayNativePlugin extends Plugin {
             // be opened on it.
             activity.runOnUiThread(() -> {
                 try {
+                    checkoutEverPaused = false;
                     checkout.open(activity, payload);
                     checkoutLaunched = true;
                 } catch (Throwable t) {
@@ -170,7 +181,7 @@ public class RazorpayNativePlugin extends Plugin {
     public void cancel(PluginCall call) {
         final JSObject out = new JSObject();
         synchronized (PENDING_LOCK) {
-            if (pendingCall != null && checkoutLaunched && !hostResumed) {
+            if (pendingCall != null && checkoutLaunched && checkoutEverPaused && !hostResumed) {
                 out.put("dismissed", false);
                 call.resolve(out);
                 return;

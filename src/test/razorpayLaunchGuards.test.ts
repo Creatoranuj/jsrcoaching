@@ -4,8 +4,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // run *before* and *around* the native call, not the plugin itself.
 const openMock = vi.fn();
 const cancelMock = vi.fn();
+const loadRazorpayNativeMock = vi.fn(async () => ({ open: openMock, cancel: cancelMock }));
 vi.mock("@/lib/native/razorpay", () => ({
-  loadRazorpayNative: async () => ({ open: openMock, cancel: cancelMock }),
+  loadRazorpayNative: () => loadRazorpayNativeMock(),
 }));
 vi.mock("@/lib/sentry", () => ({ addBreadcrumb: vi.fn() }));
 
@@ -28,6 +29,7 @@ import {
   NATIVE_LAUNCH_TIMEOUT_MS,
   NATIVE_RESUME_TIMEOUT_MS,
   MAX_LIVE_SHEET_WAITS,
+  BRIDGE_LOAD_TIMEOUT_MS,
   onWebViewBackgrounded,
   type NativeRazorpayOptions,
 } from "@/utils/razorpayNative";
@@ -42,8 +44,19 @@ const opts: NativeRazorpayOptions = {
   order_id: "order_Tb7VBFK0WeMNyQ",
 };
 
+/**
+ * Silently pretend the WebView is (or isn't) the visible surface. No
+ * visibilitychange event is dispatched, so the watchdog stays armed — these
+ * tests exercise the foreground check inside the watchdog, not the listener.
+ */
+const setVisibilityStateSilently = (value: "visible" | "hidden") => {
+  Object.defineProperty(document, "visibilityState", { value, configurable: true });
+};
+
 beforeEach(() => {
+  setVisibilityStateSilently("visible");
   openMock.mockReset();
+  loadRazorpayNativeMock.mockReset().mockImplementation(async () => ({ open: openMock, cancel: cancelMock }));
   // Default: the bridge confirms the native sheet is really gone.
   cancelMock.mockReset().mockResolvedValue({ dismissed: true });
   isPluginAvailable.mockReset().mockReturnValue(true);
@@ -126,7 +139,8 @@ describe("native checkout launch guards", () => {
     vi.useFakeTimers();
     let settle: (v: unknown) => void = () => {};
     openMock.mockImplementation(() => new Promise((resolve) => { settle = resolve; }));
-    // The Razorpay Activity is alive: cancel() must not tear it down.
+    // The Razorpay Activity is alive on top of us: cancel() must not tear it down.
+    setVisibilityStateSilently("hidden");
     cancelMock.mockResolvedValue({ dismissed: false });
 
     const promise = openNativeRazorpayCheckout(opts);
@@ -146,6 +160,7 @@ describe("native checkout launch guards", () => {
   it("gives up only once the bridge confirms the sheet was dismissed", async () => {
     vi.useFakeTimers();
     openMock.mockImplementation(() => new Promise(() => {}));
+    setVisibilityStateSilently("hidden");
     cancelMock
       .mockResolvedValueOnce({ dismissed: false })
       .mockResolvedValue({ dismissed: true });
@@ -160,6 +175,7 @@ describe("native checkout launch guards", () => {
   it("never opens a web fallback under a sheet that stays alive past the ceiling", async () => {
     vi.useFakeTimers();
     // The bridge insists the Razorpay Activity is still on top, every time.
+    setVisibilityStateSilently("hidden");
     cancelMock.mockResolvedValue({ dismissed: false });
     const openPromise = new Promise(() => {});
     const promise = awaitNativeCheckoutResult({ cancel: cancelMock }, openPromise);
@@ -174,6 +190,7 @@ describe("native checkout launch guards", () => {
 
   it("re-throws the unresponsive-sheet error untouched to the caller", async () => {
     vi.useFakeTimers();
+    setVisibilityStateSilently("hidden");
     cancelMock.mockResolvedValue({ dismissed: false });
     openMock.mockImplementation(() => new Promise(() => {}));
     const promise = openNativeRazorpayCheckout(opts);
@@ -182,6 +199,29 @@ describe("native checkout launch guards", () => {
       NATIVE_LAUNCH_TIMEOUT_MS + NATIVE_RESUME_TIMEOUT_MS * (MAX_LIVE_SHEET_WAITS + 1) + 500,
     );
     await assertion;
+  });
+
+  it("ignores a stale dismissed:false while our WebView is the visible surface", async () => {
+    vi.useFakeTimers();
+    // Bridge bookkeeping says a sheet is alive, but we are clearly on screen —
+    // nothing can be on top of us, so this must NOT keep the CTA spinning.
+    setVisibilityStateSilently("visible");
+    cancelMock.mockResolvedValue({ dismissed: false });
+    openMock.mockImplementation(() => new Promise(() => {}));
+    const promise = openNativeRazorpayCheckout(opts);
+    const assertion = expect(promise).rejects.toBeInstanceOf(RazorpayLaunchTimeoutError);
+    await vi.advanceTimersByTimeAsync(NATIVE_LAUNCH_TIMEOUT_MS + 50);
+    await assertion;
+  });
+
+  it("treats a bridge that never loads as a missing bridge instead of hanging", async () => {
+    vi.useFakeTimers();
+    loadRazorpayNativeMock.mockImplementation(() => new Promise(() => {}));
+    const promise = openNativeRazorpayCheckout(opts);
+    const assertion = expect(promise).rejects.toBeInstanceOf(RazorpayBridgeMissingError);
+    await vi.advanceTimersByTimeAsync(BRIDGE_LOAD_TIMEOUT_MS + 50);
+    await assertion;
+    expect(openMock).not.toHaveBeenCalled();
   });
 
   it("maps the Activity-listener cancel payload (code 2, reason) to a cancellation", async () => {
