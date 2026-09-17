@@ -1,4 +1,4 @@
-# Roadmap — 4.1 → 5/5 hardening
+# Roadmap ― 4.1 → 5/5 hardening
 
 - [x] Typecheck + build CI (workflow `typecheck-build.yml`, commit 8334c88)
 - [x] Review 17 SECURITY DEFINER functions — all verified safe-by-design (admin functions self-check role; read helpers scope by auth.uid(); all have fixed search_path). No revocation: would break app + RLS.
@@ -11,6 +11,6 @@
 - [ ] Remaining 529 `any` warnings — gradual
 - [ ] Flip migration-drift CI to blocking after first clean run
 
-- [ ] Razorpay checkout blank screen (Capacitor/app WebView) — investigate reported empty payment sheet (video: screen-20260912-174141.mp4)
+- [x] Razorpay checkout blank screen (Capacitor/app WebView) — native SDK callback lifecycle hardened; Android build #195 passed
 - [x] Verify `Creatoranuj's Project` backend connection after workspace move
-- [ ] Harden native Razorpay callback validation and produce a verified Android APK (callback validation + regression tests done; APK build pending)
+- [x] Harden native Razorpay callback validation and produce a verified Android APK (GitHub Android build #195 passed)
