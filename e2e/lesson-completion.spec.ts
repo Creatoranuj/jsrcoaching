@@ -11,6 +11,7 @@
  */
 import { test, expect, type Page } from "@playwright/test";
 import { signIn } from "./helpers/auth";
+import { openFirstLessonList } from "./helpers/course";
 
 const EMAIL = process.env.E2E_EMAIL;
 const PASSWORD = process.env.E2E_PASSWORD;
@@ -22,9 +23,7 @@ async function login(page: Page) {
 }
 
 async function openFirstLesson(page: Page) {
-  await page.goto(`/classes/${COURSE_ID}/lessons`);
-  const items = page.getByTestId("lesson-card");
-  await expect(items.first()).toBeVisible({ timeout: 30_000 });
+  const items = await openFirstLessonList(page, COURSE_ID!);
   await items.first().click();
   await expect(page).toHaveURL(/lessonId=|\/chapter\//, { timeout: 20_000 });
 }

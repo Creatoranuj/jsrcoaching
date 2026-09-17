@@ -259,6 +259,7 @@ const ChapterView = () => {
                 {chapters.map((chapter) => (
                   <button
                     key={chapter.id}
+                    data-testid="chapter-card"
                     onClick={() => goTo(chapter)}
                     className="text-left rounded-xl border border-border bg-card p-3 hover:shadow-md hover:border-primary/40 transition-all"
                   >
@@ -296,6 +297,7 @@ const ChapterView = () => {
                     {chapters.map((chapter) => (
                       <tr
                         key={chapter.id}
+                        data-testid="chapter-card"
                         onClick={() => goTo(chapter)}
                         className="border-t border-border cursor-pointer hover:bg-accent/30"
                       >
@@ -315,8 +317,8 @@ const ChapterView = () => {
           return (
             <div className="space-y-4">
               {chapters.map((chapter) => (
+                <div key={chapter.id} data-testid="chapter-card">
                 <ChapterCard
-                  key={chapter.id}
                   code={chapter.code}
                   title={chapter.title}
                   lectureCount={chapter.lessonCount}
@@ -326,6 +328,7 @@ const ChapterView = () => {
                   showCode={false}
                   onClick={() => goTo(chapter)}
                 />
+                </div>
               ))}
             </div>
           );

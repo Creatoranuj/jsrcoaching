@@ -44,7 +44,8 @@ async function ensureFolder(page: Page, name: string) {
     return;
   }
   await page.getByRole("button", { name: /new folder/i }).first().click();
-  await page.getByPlaceholder(/biology notes/i).fill(name);
+  // Create Folder dialog: a single "Name" field plus colour swatches.
+  await page.getByRole("alertdialog").getByRole("textbox").first().fill(name);
   await page.getByRole("button", { name: /^create$/i }).click();
   await page.getByRole("button", { name: new RegExp(name, "i") }).first().click();
 }

@@ -18,6 +18,7 @@
  */
 import { test, expect, type Page } from "@playwright/test";
 import { signIn } from "./helpers/auth";
+import { openFirstLessonList } from "./helpers/course";
 
 const EMAIL = process.env.E2E_EMAIL;
 const PASSWORD = process.env.E2E_PASSWORD;
@@ -54,21 +55,23 @@ test.describe("student journey", () => {
     await page.goto(`/classes/${PAID_COURSE_ID}/lessons`);
 
     const gate = page.getByText(/enrol|enroll|buy|purchase|subscribe|access denied|not enrolled/i);
-    const bounced = /\/(buy-course|course|courses|dashboard|subscription)/.test(
-      new URL(page.url()).pathname,
-    );
-    expect(bounced || (await gate.count()) > 0).toBe(true);
+    // The gate (or the redirect) appears after the course loads — poll for it.
+    await expect
+      .poll(
+        async () =>
+          /\/(buy-course|course|courses|dashboard|subscription)/.test(
+            new URL(page.url()).pathname,
+          ) || (await gate.count()) > 0,
+        { timeout: 20_000 },
+      )
+      .toBe(true);
   });
 
   test("enrolled course opens a lesson and loads its content", async ({ page }) => {
     test.skip(!COURSE_ID, "E2E_COURSE_ID not set");
     await login(page);
-    await page.goto(`/classes/${COURSE_ID}/lessons`);
-
-    // Lesson shell present (title/list), and no crash boundary.
+    const items = await openFirstLessonList(page, COURSE_ID!);
     await expect(page.locator("body")).not.toContainText(/Lesson failed to load/i);
-    const items = page.getByTestId("lesson-card");
-    await expect(items.first()).toBeVisible({ timeout: 20_000 });
 
     // Opening the first lesson must surface player or reader chrome.
     await items.first().click();
