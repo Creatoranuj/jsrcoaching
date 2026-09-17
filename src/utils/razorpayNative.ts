@@ -54,6 +54,14 @@ export class RazorpayLaunchTimeoutError extends Error {
   }
 }
 
+/** The native SDK returned without the signed fields required by the server. */
+export class RazorpayInvalidResponseError extends Error {
+  constructor() {
+    super("Payment response was incomplete");
+    this.name = "RazorpayInvalidResponseError";
+  }
+}
+
 /** How long we wait for the native sheet before declaring it stuck. */
 export const NATIVE_LAUNCH_TIMEOUT_MS = 5000;
 
@@ -382,21 +390,27 @@ export const openNativeRazorpayCheckout = async (
     try {
       parsed = JSON.parse(parsed);
     } catch {
-      // Some plugin versions return the payment id directly as a string —
-      // surface it as razorpay_payment_id so callers don't crash, but the
-      // signature won't be available. The server-side verifier will reject
-      // it and surface a friendly error.
+      // Legacy bridges can return only the payment id. Preserve the shape here
+      // so the completeness check below raises a dedicated recovery error.
       parsed = { razorpay_payment_id: parsed };
     }
   }
 
-  if (!parsed?.razorpay_payment_id) {
-    throw new RazorpayCancelledError();
+  // A successful order payment must return all three signed fields. Treating a
+  // partial callback as cancellation hides real SDK/bridge failures; forwarding
+  // it to verification only creates a confusing second error. The webhook still
+  // remains the source-of-truth fallback when money was captured.
+  if (
+    !parsed?.razorpay_payment_id ||
+    !parsed?.razorpay_order_id ||
+    !parsed?.razorpay_signature
+  ) {
+    throw new RazorpayInvalidResponseError();
   }
 
   return {
     razorpay_payment_id: parsed.razorpay_payment_id,
-    razorpay_order_id: parsed.razorpay_order_id ?? options.order_id,
+    razorpay_order_id: parsed.razorpay_order_id,
     razorpay_signature: parsed.razorpay_signature,
   };
 };
