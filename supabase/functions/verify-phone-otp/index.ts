@@ -10,17 +10,14 @@
 //   7. Return magic-link `hashed_token` — client calls
 //      `supabase.auth.verifyOtp({ token_hash, type: 'magiclink' })` to get session.
 
+import "../_shared/errorReporting.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { buildCorsHeaders } from "../_shared/cors.ts";
+import { reportError } from "../_shared/errorReporting.ts";
+import { isOtpCode, normalizeIndianPhone, readJson } from "../_shared/validate.ts";
 
 const MAX_ATTEMPTS = 5;
 
-function normalizePhone(input: string): string | null {
-  const digits = String(input || "").replace(/\D/g, "");
-  if (digits.length === 10) return "91" + digits;
-  if (digits.length === 12 && digits.startsWith("91")) return digits;
-  return null;
-}
 
 async function sha256Hex(s: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
@@ -40,11 +37,11 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { phone, code } = await req.json().catch(() => ({}));
-    const normalized = normalizePhone(phone);
-    const codeStr = String(code || "").trim();
+    const { phone, code } = await readJson<{ phone?: unknown; code?: unknown }>(req);
+    const normalized = normalizeIndianPhone(phone);
+    const codeStr = typeof code === "string" ? code.trim() : String(code ?? "").trim();
 
-    if (!normalized || !/^\d{6}$/.test(codeStr)) {
+    if (!normalized || !isOtpCode(codeStr)) {
       return new Response(JSON.stringify({ error: "Invalid phone or code" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -99,18 +96,15 @@ Deno.serve(async (req) => {
       .update({ consumed_at: new Date().toISOString() }).eq("id", otpRow.id);
 
     // Deterministic proxy email so we can reuse Supabase's magic-link flow.
-    // Phone-only users get `<phone>@phone.safarenglishka.local`.
+    // NOTE: the domain below is legacy branding. It is deliberately NOT renamed:
+    // every existing phone-login account is keyed on this exact address, so
+    // changing it would orphan those accounts. Migrate with a backfill, not here.
     const proxyEmail = `${normalized}@phone.safarenglishka.local`;
 
-    // Upsert user by email. If already exists, this is a no-op.
-    const { data: existing } = await supabaseAdmin.auth.admin.listUsers({
-      page: 1, perPage: 1,
-    });
+    // AUDIT 2026-09-17: removed two useless admin round-trips here — a
+    // listUsers(page 1, perPage 1) whose result was never read, and a
+    // getUserById on the all-zero UUID. Both only added latency to every login.
     let userId: string | undefined;
-
-    // listUsers doesn't support server-side filter; use getUserByEmail via admin API.
-    const { data: byEmail } = await supabaseAdmin.auth.admin
-      .getUserById("00000000-0000-0000-0000-000000000000").catch(() => ({ data: null }));
 
     // Use admin.createUser with `email_confirm:true`; if it exists, we catch and
     // fall through to generateLink which works for both new + existing users.
@@ -151,11 +145,8 @@ Deno.serve(async (req) => {
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-
-    // Suppress unused-var warning; kept in case future logic wants pagination cursor.
-    void existing; void byEmail;
   } catch (err) {
-    console.error("verify-phone-otp error:", err);
+    await reportError(err, { surface: "verify-phone-otp" });
     return new Response(JSON.stringify({ error: "Internal error" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
