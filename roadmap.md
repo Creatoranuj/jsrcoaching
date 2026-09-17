@@ -10,3 +10,5 @@
 - [ ] LessonView split phase 2 — attachment/PDF section
 - [ ] Remaining 529 `any` warnings — gradual
 - [ ] Flip migration-drift CI to blocking after first clean run
+
+- [ ] Razorpay checkout blank screen (Capacitor/app WebView) — investigate reported empty payment sheet (video: screen-20260912-174141.mp4)
