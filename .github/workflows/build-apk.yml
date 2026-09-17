@@ -1049,6 +1049,46 @@ jobs:
           cp "JSRCoaching-${{ env.SAFE_VERSION }}.apk" "JSRCoaching.apk"
           echo "APK_FIXED=JSRCoaching.apk" >> $GITHUB_ENV
 
+      # ─────────────────────────────────────────────────────────────────────
+      # BLOCKING GATE — runs on the EXACT files that get uploaded/attached.
+      # Incident 2026-09-17 (release v2026.09.17.1 reported as "package
+      # appears to be invalid"): the pipeline validated bundled web assets and
+      # dex classes but never ran Android's own signature / alignment /
+      # manifest tooling on the distributable, so it could not prove the
+      # published bytes were installable. Never remove this step; never move
+      # it after an upload step.
+      # ─────────────────────────────────────────────────────────────────────
+      - name: 🧰 Set up Android build-tools for release verification
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'build-tools;35.0.0 platform-tools'
+
+      - name: 🔐 Verify final APK (signature, alignment, manifest, ABIs, checksum)
+        env:
+          EXPECTED_PACKAGE: com.jsrcoaching.app
+          # Production certificate fingerprint. Guards against a build that is
+          # signed with a different key — such an APK cannot update existing
+          # installs and shows up to users as an install failure.
+          # Fingerprint of the production upload key (public information —
+          # verified from release v1.7.2 and v2026.09.17.1). Hard default so the
+          # gate is always active; override via the RELEASE_CERT_SHA256 secret
+          # only during a deliberate key rotation.
+          EXPECTED_CERT_SHA256: ${{ secrets.RELEASE_CERT_SHA256 || 'b28be652ff2acf0ebf8e9063c996e3a9efb4e260e20ce9a955d02ac45bae18f5' }}
+        run: |
+          set -eo pipefail
+          chmod +x scripts/verify-apk-release.sh
+          scripts/verify-apk-release.sh "$APK_FILE"
+          # The fixed-name copy is a byte-identical copy; assert that, then
+          # reuse the same checksum file name for the release asset.
+          cmp -s "$APK_FILE" "$APK_FIXED" \
+            || { echo "::error::$APK_FIXED is not byte-identical to $APK_FILE"; exit 1; }
+          cp "${APK_FILE}.sha256" "${APK_FIXED}.sha256"
+          sed -i "s#$(basename "$APK_FILE")#$(basename "$APK_FIXED")#" "${APK_FIXED}.sha256"
+          echo "APK_SHA_FILE=${APK_FILE}.sha256" >> $GITHUB_ENV
+          echo "APK_FIXED_SHA_FILE=${APK_FIXED}.sha256" >> $GITHUB_ENV
+
+
+
 
       - name: 📦 Locate + rename signed AAB (Play Store artifact)
         if: env.HAS_KEYSTORE == 'true'
@@ -1205,8 +1245,11 @@ jobs:
           files: |
             ${{ env.APK_FILE }}
             ${{ env.APK_FIXED }}
+            ${{ env.APK_SHA_FILE }}
+            ${{ env.APK_FIXED_SHA_FILE }}
             ${{ env.AAB_FILE }}
             web-bundle.zip
+
 
           generate_release_notes: true
         env:

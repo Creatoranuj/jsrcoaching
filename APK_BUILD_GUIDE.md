@@ -234,3 +234,67 @@ Aapka latest build (Screenshot 1) already well-optimized hai:
 | `vendor-motion` | 40 KB | framer-motion (lazy) |
 
 Yahi se aage **kuch optimize nahi** karna chahiye unless naya feature add ho — current setup pe `[bundle-size] OK ✓` pass ho raha hai.
+
+---
+
+## 13. Release Verification Gates (MANDATORY — never skip)
+
+**Permanent rule:** an Android release is NEVER "successful" until the *exact
+signed distributable* that users download passes every check below. Bundled-web
+or dex-class checks do not prove installability.
+
+`scripts/verify-apk-release.sh <apk>` runs as a blocking step in
+`.github/workflows/build-apk.yml` on the renamed artifact, before any upload or
+release step, and checks:
+
+| Gate | Tool | Fails when |
+|---|---|---|
+| Signature | `apksigner verify --verbose --print-certs` | v2 scheme missing, bad signature, or cert ≠ `RELEASE_CERT_SHA256` |
+| Alignment | `zipalign -c -P 16 -v 4` | not 4-byte aligned or native libs not 16 KB page-aligned (Android 15+) |
+| Manifest / package | `aapt dump badging` | manifest unparseable, wrong package id, missing versionCode/Name |
+| Archive integrity | python `zipfile.testzip` | any corrupt entry, or missing `AndroidManifest.xml` / `classes.dex` / `resources.arsc` |
+| ABI coverage | zip entry list | `arm64-v8a` or `armeabi-v7a` missing; x86 libs present in production (`ALLOW_X86=1` for emulator builds only) |
+| Checksum | `sha256sum` | — writes `<apk>.sha256`, published as a release asset |
+
+Local run:
+
+```bash
+# needs Android build-tools on PATH (or ANDROID_SDK_ROOT set)
+scripts/verify-apk-release.sh JSRCoaching-v1.2.3.apk
+EXPECTED_CERT_SHA256=<prod-cert-sha256> scripts/verify-apk-release.sh JSRCoaching-v1.2.3.apk
+```
+
+Optional repo secret: `RELEASE_CERT_SHA256` — production certificate SHA-256.
+When set, CI refuses any build signed with a different key (such a build cannot
+update existing installs).
+
+### Debug vs production package id
+
+`android/app/build.gradle` gives debug builds `applicationIdSuffix ".debug"`
+(`com.jsrcoaching.app.debug`) and `versionNameSuffix "-debug"`. A debug-signed
+APK installed under the production package id makes Android refuse the real
+release APK — do not remove these suffixes. `maestro-android.yml` rewrites the
+flow `appId` to the `.debug` id for its nightly emulator run.
+
+### Incident — 2026-09-17, "App not installed as package appears to be invalid"
+
+- Reported on release `v2026.09.17.1` (`JSRCoaching-v2026.09.17.1.apk`,
+  SHA-256 `9117ae920929ae464681e27a4e6cff4cf4cddbfe59cb079885f2bbeb0a698c39`).
+- Forensics on the exact published asset with Android 35 build-tools: V2/V3
+  signatures valid, production certificate
+  `b28be652ff2acf0ebf8e9063c996e3a9efb4e260e20ce9a955d02ac45bae18f5`, package
+  `com.jsrcoaching.app` versionCode 180, both ARM ABIs present, `zipalign -c -P 16`
+  clean — byte-for-byte identical verification result to the last known-good
+  `v1.7.2`. The published binary was **not** malformed.
+- Real gaps found and closed: the pipeline never verified the distributable
+  (fixed above), and the debug APK shared the production package id (fixed above).
+- Remaining likely device-side causes: a truncated/interrupted download, or an
+  older debug-signed install of the same package name.
+
+### If a user reports the "invalid package" dialog
+
+1. Compare the downloaded file against the published `…apk.sha256` release asset
+   (`sha256sum` on desktop, "Verify checksum" apps on Android). Mismatch → re-download.
+2. Uninstall any existing JSR Coaching app (especially a QA/debug build), then install again.
+3. Ensure "Install unknown apps" is allowed for the browser/file manager used.
+4. Free storage — an interrupted write during install produces the same dialog.
