@@ -1,4 +1,4 @@
-import type { CapacitorConfig } from '@capacitor/cli';
+import type { CapacitorConfig } from "@capacitor/cli";
 
 // Production APK ships fully self-contained from dist/. To run a live-reload
 // dev build pointed at a sandbox URL, add a local `server.url` in an untracked
@@ -6,47 +6,55 @@ import type { CapacitorConfig } from '@capacitor/cli';
 // sandbox ID into the repo).
 
 const config: CapacitorConfig = {
-  appId: 'com.jsrcoaching.app',
-  appName: 'JSR COACHING',
-  webDir: 'dist',
+  appId: "com.jsrcoaching.app",
+  appName: "JSR COACHING",
+  webDir: "dist",
   android: {
     allowMixedContent: false,
     // Enable WebView remote debugging (chrome://inspect) ONLY in dev builds.
     // Production APKs ship with this OFF so attackers can't attach a debugger.
     // Toggle locally by setting CAP_DEBUG=1 before `npm run build`.
     // Explicit `=== '1'` keeps the default `false` for every CI invocation.
-    webContentsDebuggingEnabled: process.env.CAP_DEBUG === '1',
+    webContentsDebuggingEnabled: process.env.CAP_DEBUG === "1",
   },
   ios: {
     // Same rule for iOS — Safari Web Inspector available only in dev builds.
-    webContentsDebuggingEnabled: process.env.CAP_DEBUG === '1',
+    webContentsDebuggingEnabled: process.env.CAP_DEBUG === "1",
   },
   server: {
-    androidScheme: 'https',
+    androidScheme: "https",
     // Native document surfaces: allow these hosts to complete their internal
     // redirects when opened in Capacitor browser surfaces. Without this,
     // Drive/Docs/Notion can silently land on a white WebView.
     allowNavigation: [
       // Google Drive / Docs viewers — narrowed from '*.google.com' wildcard
       // which allowed any Google subdomain (including open-redirector targets).
-      'drive.google.com',
-      'docs.google.com',
-      'accounts.google.com',
-      'lh3.googleusercontent.com', // narrowed from '*.googleusercontent.com' — avatars/thumbs only
-      'fonts.gstatic.com',
-      'ssl.gstatic.com',
+      "drive.google.com",
+      "docs.google.com",
+      "accounts.google.com",
+      "lh3.googleusercontent.com", // narrowed from '*.googleusercontent.com' — avatars/thumbs only
+      "fonts.gstatic.com",
+      "ssl.gstatic.com",
       // Notion embeds
-      '*.notion.site',
-      '*.notion.so',
-      '*.notion.com',
+      "*.notion.site",
+      "*.notion.so",
+      "*.notion.com",
       // Bunny CDN (video/PDF assets)
-      '*.b-cdn.net',
-      '*.bunnycdn.com',
+      "*.b-cdn.net",
+      "*.bunnycdn.com",
       // Archive.org (books)
-      'archive.org',
-      '*.archive.org',
+      "archive.org",
+      "*.archive.org",
       // jsDelivr for pdf.js worker
-      'cdn.jsdelivr.net',
+      "cdn.jsdelivr.net",
+      // Razorpay web checkout (the in-app fallback when the native SDK bridge
+      // is unavailable). Checkout.js mounts an iframe from checkout.razorpay.com
+      // and completes bank/UPI hops on api.razorpay.com. Without these hosts the
+      // WebView refused the navigation and the payment sheet rendered BLANK —
+      // exactly the "khali payment gate" bug. Do NOT remove.
+      "checkout.razorpay.com",
+      "api.razorpay.com",
+      "*.razorpay.com",
       // NOTE: Supabase hosts removed — API calls go via fetch(), not WebView
       // navigation. Keeping them here widened the WebView's trust surface.
     ],
@@ -67,8 +75,8 @@ const config: CapacitorConfig = {
       // guarantees the splash never hangs even if React fails to mount.
       launchAutoHide: false,
       launchFadeOutDuration: 200,
-      backgroundColor: '#F7F4EE',
-      androidScaleType: 'CENTER_CROP',
+      backgroundColor: "#F7F4EE",
+      androidScaleType: "CENTER_CROP",
       showSpinner: false,
       splashFullScreen: true,
       splashImmersive: true,
@@ -78,8 +86,8 @@ const config: CapacitorConfig = {
       // Native defaults applied before JS boots so the first frame matches
       // the app theme (warm paper-white). Runtime overrides in nativeChrome.ts
       // re-apply on dark-mode toggle.
-      style: 'LIGHT',
-      backgroundColor: '#F7F4EE',
+      style: "LIGHT",
+      backgroundColor: "#F7F4EE",
       // SA2: WebView flows behind the status bar; CSS env(safe-area-inset-top)
       // provides the visual gutter. Avoids double-padding (status-bar height +
       // safe-area inset) that occurred with `false` on notched devices.
@@ -88,8 +96,8 @@ const config: CapacitorConfig = {
     Keyboard: {
       // `native` lets the WebView shrink so fixed footers stay visible
       // (paired with --nb-keyboard-h CSS var set by installKeyboardInsetTracker).
-      resize: 'native',
-      style: 'DEFAULT',
+      resize: "native",
+      style: "DEFAULT",
       resizeOnFullScreen: true,
       // Hide the iOS "Done" accessory bar above the keyboard — it overlaps
       // our input footers and is redundant with the native return key.
