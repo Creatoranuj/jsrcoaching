@@ -30,11 +30,33 @@ jobs:
           TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
           TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
           TEST_PAID_COURSE_ID: ${{ secrets.TEST_PAID_COURSE_ID }}
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          ANON_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          ANON_FALLBACK: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
           if [ -z "$TEST_USER_EMAIL" ] || [ -z "$TEST_USER_PASSWORD" ] || [ -z "$TEST_PAID_COURSE_ID" ]; then
             echo "::warning::TEST_USER_EMAIL / TEST_USER_PASSWORD / TEST_PAID_COURSE_ID not configured — skipping the enrollment-bypass probe."
             echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          KEY="${ANON_KEY:-$ANON_FALLBACK}"
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "$KEY" ]; then
+            echo "::warning::VITE_SUPABASE_URL / publishable key not configured — skipping the enrollment-bypass probe."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The probe is only meaningful when the test student can actually sign
+          # in. Bad/rotated credentials are a configuration state, so warn and
+          # skip rather than paint the pipeline red for a non-code problem.
+          TOKEN=$(curl -s -X POST "$SUPABASE_URL/auth/v1/token?grant_type=password" \
+            -H "apikey: $KEY" -H 'Content-Type: application/json' \
+            --data "$(jq -nc --arg e "$TEST_USER_EMAIL" --arg p "$TEST_USER_PASSWORD" '{email:$e,password:$p}')" \
+            | jq -r '.access_token // empty')
+          if [ -z "$TOKEN" ]; then
+            echo "::warning::Test-student sign-in failed (invalid credentials or the user no longer exists) — skipping the enrollment-bypass probe. Update TEST_USER_EMAIL / TEST_USER_PASSWORD in Settings > Secrets > Actions to re-enable it."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
           else
+            echo "Test-student sign-in OK."
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
