@@ -150,11 +150,21 @@ test.describe("Authentication Flow", () => {
         });
       }).toPass({ timeout: 90_000, intervals: [500, 1_000, 2_000] });
 
-      await expect(
-        page
-          .getByText(/already registered|already exists|already in use|user already|sign in instead/i)
-          .first(),
-      ).toBeVisible({ timeout: 30_000 });
+      // Supabase may hide duplicates (email-enumeration protection). Then the
+      // app takes the "check your email, then sign in" path back to /login.
+      // Either outcome proves the duplicate signup did not create a session.
+      await expect
+        .poll(
+          async () =>
+            (await page
+              .getByText(
+                /already registered|already exists|already in use|user already|sign in instead|check your email/i,
+              )
+              .count()) > 0 || /\/login/.test(new URL(page.url()).pathname),
+          { timeout: 30_000 },
+        )
+        .toBe(true);
+      await expect(page).not.toHaveURL(/\/(dashboard|my-courses)/);
     });
   });
 });

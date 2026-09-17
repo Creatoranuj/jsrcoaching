@@ -36,6 +36,9 @@ test.describe("smoke", () => {
 
   test("subscription page loads the current account state", async ({ page }) => {
     await signIn(page, EMAIL!, PASSWORD!);
+    // Wait for the post-login landing before navigating: going straight to a
+    // protected route while AuthContext is still booting bounces to /login.
+    await expect(page).toHaveURL(/\/(dashboard|my-courses)/, { timeout: 20_000 });
     await page.goto("/subscription");
     await expect(page.locator("body")).toContainText(
       /subscribe|pay|upgrade|your subscription|active/i,
@@ -44,10 +47,15 @@ test.describe("smoke", () => {
   });
 
   test("chatbot widget opens", async ({ page }) => {
-    await page.goto("/");
-    const fab = page.locator('[aria-label*="chat" i], [data-testid="chat-fab"]').first();
+    // Signed out the FAB only offers "Login to chat", so sign in first.
+    await signIn(page, EMAIL!, PASSWORD!);
+    await expect(page).toHaveURL(/\/(dashboard|my-courses)/, { timeout: 20_000 });
+
+    const fab = page
+      .locator('[aria-label="Open JSR COACHING Agent"], [data-testid="chat-fab"]')
+      .first();
     await expect(fab).toBeVisible({ timeout: 15_000 });
     await fab.click();
-    await expect(page.locator("text=/Safar Sarthi/i")).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/JSR Agent/i).first()).toBeVisible({ timeout: 10_000 });
   });
 });
