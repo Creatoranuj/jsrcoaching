@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useAdminEnrollment } from "../hooks/useAdminEnrollment";
 import { openRazorpayCheckout, formatRazorpayError, buildRazorpayPrefill, UPI_FIRST_CHECKOUT_CONFIG, type RazorpaySuccessResponse } from "../utils/razorpay";
-import { openNativeRazorpayCheckout, RazorpayCancelledError, RazorpayNativeError, RazorpayBridgeMissingError, RazorpayLaunchTimeoutError } from "../utils/razorpayNative";
+import { openNativeRazorpayCheckout, RazorpayCancelledError, RazorpayNativeError, RazorpayBridgeMissingError, RazorpayLaunchTimeoutError, RazorpayInvalidResponseError } from "../utils/razorpayNative";
 import { invokePaymentFunction, recoverEnrollment } from "../utils/paymentApi";
 import { tapMedium, notifySuccess, notifyError } from "../lib/nativeChrome";
 import { LoadingSpinner } from "../components/ui/loading-spinner";
@@ -407,6 +407,11 @@ const BuyCourse = () => {
           return;
         } else if (e instanceof RazorpayCancelledError) {
           toast.info("Payment cancelled. You can try again whenever you're ready.");
+        } else if (e instanceof RazorpayInvalidResponseError) {
+          void notifyError();
+          toast.error(
+            "Payment response complete nahi mili. Agar payment capture hua hai, enrollment webhook se automatically ho jayega — My Courses thodi der mein check karein."
+          );
         } else if (e instanceof RazorpayNativeError) {
           // Structured Razorpay failure — pass fields straight through so the
           // formatter renders the actionable message for payment_authentication
@@ -415,11 +420,11 @@ const BuyCourse = () => {
           toast.error(formatRazorpayError({
             code: e.code, description: e.description, source: e.source,
             step: e.step, reason: e.reason, metadata: e.metadata,
-          }) + " If your money was deducted, enrollment will happen automatically.");
+          }) + " If payment was captured, enrollment will happen automatically via webhook.");
         } else {
           void notifyError();
           toast.error(formatRazorpayError({ description: e?.message })
-            + " If your money was deducted, enrollment will happen automatically.");
+            + " If payment was captured, enrollment will happen automatically via webhook.");
         }
       } finally {
         // Defense-in-depth: never leave the CTA stuck in "Processing…" if any
@@ -444,7 +449,10 @@ const BuyCourse = () => {
           // Surface Razorpay's real reason instead of the generic
           // "Payment failed" toast that hid the underlying bank/OTP error.
           void notifyError();
-          toast.error(formatRazorpayError(err));
+          toast.error(
+            formatRazorpayError(err) +
+              " If payment was captured, enrollment will happen automatically via webhook."
+          );
         },
         modal: {
           ondismiss: () => {
@@ -454,7 +462,10 @@ const BuyCourse = () => {
       });
     } catch (error: any) {
       logger.error("Razorpay open error:", error);
-      toast.error(error?.message || "Failed to open checkout. Please try again.");
+      toast.error(
+        (error?.message || "Failed to open checkout. Please try again.") +
+          " If payment was captured, enrollment will happen automatically via webhook."
+      );
     } finally {
       if (isMountedRef.current) { setIsRazorpayLoading(false); setPayPhase(null); }
     }
@@ -526,7 +537,10 @@ const BuyCourse = () => {
         return;
       }
       void notifyError();
-      toast.error(error.message || "Payment verification failed. Please contact support.");
+      toast.error(
+        (error.message || "Payment verification failed. Please contact support.") +
+          " If payment was captured, enrollment will happen automatically via webhook."
+      );
     }
   };
 
