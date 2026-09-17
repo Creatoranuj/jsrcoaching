@@ -177,12 +177,21 @@ export function useBooks() {
 
   const updatePositions = async (orderedIds: string[]) => {
     try {
-      for (let i = 0; i < orderedIds.length; i++) {
-        await supabase.from('books').update({ position: i }).eq('id', orderedIds[i]);
-      }
+      // AUDIT 2026-09-17: this used to await one UPDATE per book in sequence
+      // (N round-trips), so reordering a long shelf took seconds and silently
+      // swallowed failures. Now fired in parallel with errors surfaced.
+      const results = await Promise.all(
+        orderedIds.map((id, i) =>
+          supabase.from('books').update({ position: i }).eq('id', id)
+        )
+      );
+      const failed = results.find((r) => r.error);
+      if (failed?.error) throw failed.error;
       await fetchBooks();
     } catch (err) {
       logger.error('Error updating positions:', err);
+      toast({ title: 'Could not save the new order', variant: 'destructive' });
+      await fetchBooks();
     }
   };
 

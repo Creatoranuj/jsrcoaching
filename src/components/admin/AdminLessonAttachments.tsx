@@ -78,13 +78,13 @@ export function AdminLessonAttachments({ lessonId }: Props) {
                   <p className="text-xs truncate">{att.title || att.file_name}</p>
                   <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{att.kind}</p>
                 </div>
-                <Button variant="ghost" size="icon" className="h-6 w-6" disabled={idx === 0} onClick={() => moveUp(idx)}>
+                <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-6 sm:w-6" disabled={idx === 0} onClick={() => moveUp(idx)}>
                   <ArrowUp className="h-3 w-3" />
                 </Button>
-                <Button variant="ghost" size="icon" className="h-6 w-6" disabled={idx === attachments.length - 1} onClick={() => moveDown(idx)}>
+                <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-6 sm:w-6" disabled={idx === attachments.length - 1} onClick={() => moveDown(idx)}>
                   <ArrowDown className="h-3 w-3" />
                 </Button>
-                <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => { if (confirm(`Delete "${att.title || att.file_name}"?`)) void deleteAttachment(att.id); }}>
+                <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-6 sm:w-6 text-destructive" onClick={() => { if (confirm(`Delete "${att.title || att.file_name}"?`)) void deleteAttachment(att.id); }}>
                   <Trash2 className="h-3 w-3" />
                 </Button>
               </div>

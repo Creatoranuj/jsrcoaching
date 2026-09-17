@@ -27,9 +27,17 @@ const TimetableManager = () => {
 
   useEffect(() => {
     let cancelled = false;
-    supabase.from("courses").select("id, title").then(({ data }) => {
+    // AUDIT 2026-09-17: a failed load used to leave the course dropdown empty
+    // with no explanation, so the admin thought there were no courses.
+    supabase.from("courses").select("id, title").then(({ data, error }) => {
       if (cancelled) return;
+      if (error) {
+        toast.error("Course list load nahi hui. Page refresh karein.");
+        return;
+      }
       setCourses(data || []);
+    }, () => {
+      if (!cancelled) toast.error("Course list load nahi hui. Page refresh karein.");
     });
     return () => { cancelled = true; };
   }, []);
@@ -40,23 +48,34 @@ const TimetableManager = () => {
       return;
     }
     setCreating(true);
-    const success = await createEntry({
-      courseId: Number(form.courseId),
-      dayOfWeek: Number(form.dayOfWeek),
-      startTime: form.startTime,
-      endTime: form.endTime,
-      room: form.room || undefined,
-    });
-    if (success) {
-      setForm({ courseId: "", dayOfWeek: "1", startTime: "09:00", endTime: "10:00", room: "" });
-      setShowForm(false);
+    // AUDIT 2026-09-17: a throw here used to leave the Save button spinning
+    // forever with no error shown.
+    try {
+      const success = await createEntry({
+        courseId: Number(form.courseId),
+        dayOfWeek: Number(form.dayOfWeek),
+        startTime: form.startTime,
+        endTime: form.endTime,
+        room: form.room || undefined,
+      });
+      if (success) {
+        setForm({ courseId: "", dayOfWeek: "1", startTime: "09:00", endTime: "10:00", room: "" });
+        setShowForm(false);
+      }
+    } catch {
+      toast.error("Timetable save nahi hui. Dobara try karein.");
+    } finally {
+      setCreating(false);
     }
-    setCreating(false);
   };
 
   const handleDelete = async (id: string) => {
     if (!(await confirmAction({ title: "Delete this timetable entry?", variant: "destructive" }))) return;
-    await deleteEntry(id);
+    try {
+      await deleteEntry(id);
+    } catch {
+      toast.error("Entry delete nahi hui. Dobara try karein.");
+    }
   };
 
   // Group by day

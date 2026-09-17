@@ -15,6 +15,9 @@ import { Button } from "../components/ui/button";
 import { format, subDays } from "date-fns";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs";
 import RangePicker, { presetRange, type Range } from "../components/admin/analytics/RangePicker";
+import { fetchAllRows } from "../lib/fetchAllRows";
+import { toast } from "../hooks/use-toast";
+import { logger } from "../lib/logger";
 const UsersSection = lazyWithRetry(() => import("../components/admin/analytics/UsersSection"));
 const PaymentsSection = lazyWithRetry(() => import("../components/admin/analytics/PaymentsSection"));
 
@@ -88,31 +91,47 @@ const AdminAnalytics = () => {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      await Promise.all([fetchDAU(), fetchCourseCompletion(), fetchQuizRates(), fetchTopStudents()]);
+      // AUDIT 2026-09-17: a single failing query used to reject silently and
+      // leave every card on zero with no hint that the data never arrived.
+      const results = await Promise.allSettled([
+        fetchDAU(), fetchCourseCompletion(), fetchQuizRates(), fetchTopStudents(),
+      ]);
+      const failures = results.filter((r) => r.status === "rejected");
+      if (failures.length > 0) {
+        failures.forEach((f) => logger.error("AdminAnalytics fetch failed:", (f as PromiseRejectedResult).reason));
+        toast({
+          title: "Kuch numbers load nahi hue",
+          description: "Refresh dabakar dobara try karein.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setLoading(false);
       setLastRefresh(new Date());
     }
   };
 
-  useEffect(() => { if (isAdmin) fetchAll(); }, [isAdmin]);
+  useEffect(() => { if (isAdmin) void fetchAll(); }, [isAdmin]);
 
   // ── 1. Daily Active Users (last 7 days via quiz_attempts) ──────────────────
   const fetchDAU = async () => {
-    const days: DauPoint[] = [];
-    const promises = Array.from({ length: 7 }, (_, i) => {
+    const promises = Array.from({ length: 7 }, async (_, i) => {
       const day = subDays(new Date(), 6 - i);
       const start = new Date(day); start.setHours(0, 0, 0, 0);
       const end = new Date(day); end.setHours(23, 59, 59, 999);
-      return supabase
-        .from("quiz_attempts")
-        .select("user_id")
-        .gte("created_at", start.toISOString())
-        .lte("created_at", end.toISOString())
-        .then(({ data }) => ({
-          date: format(day, "EEE dd"),
-          users: new Set((data ?? []).map((r) => r.user_id)).size,
-        }));
+      // Paged: a busy day past 1000 attempts used to be silently truncated.
+      const rows = await fetchAllRows<{ user_id: string }>((from, to) =>
+        supabase
+          .from("quiz_attempts")
+          .select("user_id")
+          .gte("created_at", start.toISOString())
+          .lte("created_at", end.toISOString())
+          .range(from, to)
+      );
+      return {
+        date: format(day, "EEE dd"),
+        users: new Set(rows.map((r) => r.user_id)).size,
+      };
     });
     const results = await Promise.all(promises);
     setDauData(results);
@@ -126,17 +145,20 @@ const AdminAnalytics = () => {
 
   // ── 2. Lesson completion rate per course ──────────────────────────────────
   const fetchCourseCompletion = async () => {
-    const [{ data: courses }, { data: progress }] = await Promise.all([
+    const [{ data: courses, error: coursesErr }, progress, lessonCounts] = await Promise.all([
       supabase.from("courses").select("id, title"),
-      supabase.from("user_progress").select("course_id, completed").eq("completed", true),
+      // Paged: completions and lessons both blow past 1000 rows on a live platform.
+      fetchAllRows<{ course_id: number; completed: boolean }>((from, to) =>
+        supabase.from("user_progress").select("course_id, completed").eq("completed", true).range(from, to)
+      ),
+      fetchAllRows<{ course_id: number }>((from, to) =>
+        supabase.from("lessons").select("course_id").not("course_id", "is", null).range(from, to)
+      ),
     ]);
 
-    const { data: lessonCounts } = await supabase
-      .from("lessons")
-      .select("course_id")
-      .not("course_id", "is", null);
-
+    if (coursesErr) throw coursesErr;
     if (!courses) return;
+
 
     const lessonMap: Record<number, number> = {};
     (lessonCounts ?? []).forEach((l) => {
@@ -170,12 +192,17 @@ const AdminAnalytics = () => {
 
   // ── 3. Quiz pass/fail rates ───────────────────────────────────────────────
   const fetchQuizRates = async () => {
-    const [{ data: quizzes }, { data: attempts }] = await Promise.all([
+    const [{ data: quizzes, error: quizErr }, attempts] = await Promise.all([
       supabase.from("quizzes").select("id, title").eq("is_published", true),
-      supabase.from("quiz_attempts").select("quiz_id, passed"),
+      // Paged: total attempts used to cap at 1000, freezing the pass-rate card.
+      fetchAllRows<{ quiz_id: string; passed: boolean }>((from, to) =>
+        supabase.from("quiz_attempts").select("quiz_id, passed").range(from, to)
+      ),
     ]);
 
-    if (!quizzes || !attempts) return;
+    if (quizErr) throw quizErr;
+    if (!quizzes) return;
+
 
     const rateMap: Record<string, { passed: number; failed: number }> = {};
     (attempts ?? []).forEach((a) => {
@@ -208,11 +235,16 @@ const AdminAnalytics = () => {
 
   // ── 4. Top 5 students by total progress ───────────────────────────────────
   const fetchTopStudents = async () => {
-    const { data: progress } = await supabase
-      .from("user_progress")
-      .select("user_id, completed");
+    // Paged: the leaderboard used to rank only the first 1000 progress rows.
+    const progress = await fetchAllRows<{ user_id: string; completed: boolean }>((from, to) =>
+      supabase.from("user_progress").select("user_id, completed").range(from, to)
+    );
 
-    if (!progress) return;
+    if (progress.length === 0) {
+      setTopStudents([]);
+      return;
+    }
+
 
     // Aggregate per user
     const userMap: Record<string, { lessons: number; completed: number }> = {};

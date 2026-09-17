@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { buildCorsHeaders } from '../_shared/cors.ts'
+import { isRateLimitedByKey } from '../_shared/rateLimit.ts'
 
 /**
  * Admin registration — the ONLY path that can create an account with the
@@ -22,6 +23,15 @@ Deno.serve(async (req) => {
   try {
     const adminCodeSecret = Deno.env.get('ADMIN_PASSWORD')
     if (!adminCodeSecret) return json({ success: false, error: 'Admin registration is not configured' }, 503)
+
+    // AUDIT 2026-09-17: no throttle existed here, so the admin code could be
+    // brute-forced at network speed. 5 attempts per IP per 15 minutes.
+    const callerIp = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || 'unknown'
+    if (await isRateLimitedByKey({ bucket: 'admin_register', identifier: callerIp, max: 5, windowSeconds: 900 })) {
+      return json({ success: false, error: 'Too many attempts. Please try again later.' }, 429)
+    }
+
+
 
     let body: Record<string, unknown>
     try {

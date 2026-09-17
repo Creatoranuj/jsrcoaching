@@ -68,24 +68,30 @@ export function isOriginAllowed(origin: string): boolean {
   return !!origin && (isAutoAllowed(origin) || ALLOWED.includes(origin));
 }
 
+// Fallback used when the caller's origin is not recognised. Never echo an
+// unknown origin: that would let any website on the internet read responses
+// from these functions. Prefer the first explicitly configured origin, then
+// the canonical production host.
+const FALLBACK_ORIGIN = ALLOWED[0] ?? "https://jsrcoaching.vercel.app";
+
 export function buildCorsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get("Origin") ?? "";
   const known = isOriginAllowed(origin);
 
-  // Echo the caller's origin. Falling back to a configured origin (previously a
-  // retired domain) made the browser discard the response, which surfaced to
-  // students as "Failed to send a request to the Edge Function" on every doubt.
-  // CORS is not the security boundary here — `_shared/auth.ts` verifies the
-  // caller's JWT before anything sensitive happens.
-  const allowOrigin = origin || "*";
+  // AUDIT 2026-09-17: the previous fallback pointed at a retired domain, so the
+  // browser discarded every response and students saw "Failed to send a request
+  // to the Edge Function" on every doubt. Known origins (live site, preview
+  // deployments, Capacitor WebView, Lovable preview, localhost) are echoed;
+  // unknown origins get FALLBACK_ORIGIN, which the browser rejects by design.
+  // `_shared/auth.ts` still verifies the caller's JWT — CORS is defence in depth.
+  const allowOrigin = known ? origin : FALLBACK_ORIGIN;
 
   return {
     "Access-Control-Allow-Origin": allowOrigin,
     "Access-Control-Allow-Headers": ALLOW_HEADERS,
     "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
     "Vary": "Origin",
-    // Diagnostic only: lets us spot an unexpected origin in logs without
-    // breaking a legitimate deployment.
+    // Diagnostic only: lets us spot an unexpected origin in logs.
     "X-Origin-Known": known ? "1" : "0",
   };
 }

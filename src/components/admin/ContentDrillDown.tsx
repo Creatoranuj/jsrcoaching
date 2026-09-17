@@ -751,8 +751,8 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
                     <div className="flex items-center gap-2">
                       <Input value={editChapterTitle} onChange={e => setEditChapterTitle(e.target.value)} className="h-8 text-base flex-1" placeholder="Title" />
                       <Input value={editChapterCode} onChange={e => setEditChapterCode(e.target.value)} className="h-8 text-base w-24" placeholder="Code" />
-                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleRenameChapter(ch.id, false)}><Check className="h-3.5 w-3.5" /></Button>
-                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingChapterId(null)}><X className="h-3.5 w-3.5" /></Button>
+                      <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-7 sm:w-7" onClick={() => handleRenameChapter(ch.id, false)}><Check className="h-3.5 w-3.5" /></Button>
+                      <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-7 sm:w-7" onClick={() => setEditingChapterId(null)}><X className="h-3.5 w-3.5" /></Button>
                     </div>
                   ) : (
                     <div className="flex items-center justify-between">
@@ -907,8 +907,8 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
                   <div className="flex items-center gap-2">
                     <Input value={editChapterTitle} onChange={e => setEditChapterTitle(e.target.value)} className="h-8 text-base flex-1" placeholder="Title" />
                     <Input value={editChapterCode} onChange={e => setEditChapterCode(e.target.value)} className="h-8 text-base w-24" placeholder="Code" />
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleRenameChapter(sc.id, true)}><Check className="h-3.5 w-3.5" /></Button>
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingChapterId(null)}><X className="h-3.5 w-3.5" /></Button>
+                    <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-7 sm:w-7" onClick={() => handleRenameChapter(sc.id, true)}><Check className="h-3.5 w-3.5" /></Button>
+                    <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-7 sm:w-7" onClick={() => setEditingChapterId(null)}><X className="h-3.5 w-3.5" /></Button>
                   </div>
                 ) : (
                   <div className="flex items-center justify-between">
@@ -1071,7 +1071,7 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
                     <div key={pdf.id} className="flex items-center gap-2 text-xs p-1.5 bg-muted/50 rounded">
                       <FileText className="h-3.5 w-3.5 text-orange-500 shrink-0" />
                       <span className="truncate flex-1">{pdf.file_name}</span>
-                      <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive" onClick={() => deleteEditPdf(pdf.id)}>
+                      <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-6 sm:w-6 text-destructive" onClick={() => deleteEditPdf(pdf.id)}>
                         <X className="h-3 w-3" />
                       </Button>
                     </div>
@@ -1182,13 +1182,13 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
                           <div className="flex items-center justify-end gap-1">
                             {l.video_url && (
                               <a href={l.video_url} target="_blank" rel="noopener noreferrer">
-                                <Button size="icon" variant="ghost" className="h-7 w-7" aria-label={`Open video for ${l.title} in a new tab`}><ExternalLink className="h-3.5 w-3.5" /></Button>
+                                <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-7 sm:w-7" aria-label={`Open video for ${l.title} in a new tab`}><ExternalLink className="h-3.5 w-3.5" /></Button>
                               </a>
                             )}
-                            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleEditLesson(l)} aria-label={`Edit lesson ${l.title}`}>
+                            <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-7 sm:w-7" onClick={() => handleEditLesson(l)} aria-label={`Edit lesson ${l.title}`}>
                               <Edit2 className="h-3.5 w-3.5" />
                             </Button>
-                            <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => handleDeleteLesson(l.id)} aria-label={`Delete lesson ${l.title}`}>
+                            <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-7 sm:w-7 text-destructive" onClick={() => handleDeleteLesson(l.id)} aria-label={`Delete lesson ${l.title}`}>
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
 
@@ -1367,7 +1367,7 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
                     <div key={i} className="flex items-center gap-2 text-xs p-1.5 bg-muted/50 rounded">
                       <FileText className="h-3.5 w-3.5 text-orange-500 shrink-0" />
                       <span className="truncate flex-1">{file.name}</span>
-                      <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive"
+                      <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-6 sm:w-6 text-destructive"
                         onClick={() => setUploadPdfAttachments(prev => prev.filter((_, idx) => idx !== i))}>
                         <X className="h-3 w-3" />
                       </Button>

@@ -28,10 +28,15 @@ const getAvatarColor = (id?: string): string => {
 };
 
 const getInitials = (name?: string | null): string => {
+  // AUDIT 2026-09-17: a whitespace-only or emoji-only name used to crash here
+  // (`parts[0][0]` on an empty array), which blanked the whole screen wherever
+  // an avatar rendered. Every path now falls back to "U".
   if (!name) return "U";
-  const parts = name.trim().split(" ").filter(Boolean);
-  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-  return parts[0][0].toUpperCase();
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const first = parts[0]?.[0] ?? "";
+  const second = parts[1]?.[0] ?? "";
+  const initials = (parts.length >= 2 ? first + second : first).toUpperCase();
+  return initials || "U";
 };
 
 /**
