@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useAdminEnrollment } from "../hooks/useAdminEnrollment";
 import { openRazorpayCheckout, formatRazorpayError, buildRazorpayPrefill, UPI_FIRST_CHECKOUT_CONFIG, type RazorpaySuccessResponse } from "../utils/razorpay";
-import { openNativeRazorpayCheckout, RazorpayCancelledError, RazorpayNativeError, RazorpayBridgeMissingError, RazorpayLaunchTimeoutError, RazorpayInvalidResponseError } from "../utils/razorpayNative";
+import { openNativeRazorpayCheckout, RazorpayCancelledError, RazorpayNativeError, RazorpayBridgeMissingError, RazorpayLaunchTimeoutError, RazorpayInvalidResponseError, RazorpaySheetUnresponsiveError } from "../utils/razorpayNative";
 import { invokePaymentFunction, recoverEnrollment } from "../utils/paymentApi";
 import { tapMedium, notifySuccess, notifyError } from "../lib/nativeChrome";
 import { LoadingSpinner } from "../components/ui/loading-spinner";
@@ -407,6 +407,14 @@ const BuyCourse = () => {
           return;
         } else if (e instanceof RazorpayCancelledError) {
           toast.info("Payment cancelled. You can try again whenever you're ready.");
+        } else if (e instanceof RazorpaySheetUnresponsiveError) {
+          // The native sheet stayed on top for the whole wait ceiling without
+          // a result. Deliberately NO web fallback here — a second checkout
+          // under a possibly-live payment risks a double charge. Reset the CTA
+          // and let webhook/reconciliation own the outcome.
+          logger.warn("Native Razorpay sheet unresponsive past ceiling — no web fallback");
+          void notifyError();
+          toast.error(e.message);
         } else if (e instanceof RazorpayInvalidResponseError) {
           void notifyError();
           toast.error(

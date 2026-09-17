@@ -29,24 +29,34 @@ import org.json.JSONObject;
  * This plugin uses the officially documented Android integration:
  *   Checkout.preload(applicationContext)  -> warms up available methods
  *   checkout.setKeyID(key); checkout.open(activity, options)
- *   Checkout.handleActivityResult(...)    -> success / error / wallet
+ *   MainActivity implements PaymentResultWithDataListener -> success / error
+ *
+ * HOW THE RESULT COMES BACK (this is the part that was broken):
+ * `com.razorpay:checkout` is a thin wrapper around `com.razorpay:standard-core`.
+ * In standard-core 1.7.x `Checkout` is an `android.app.Fragment`: open()
+ * attaches it to the host Activity, the fragment starts CheckoutActivity itself
+ * and receives the Activity result in the fragment's own onActivityResult. It
+ * then hands the outcome to the HOST ACTIVITY through
+ * PaymentResultWithDataListener / PaymentResultListener (interface first,
+ * reflection second). The host Activity's onActivityResult(RZP_REQUEST_CODE)
+ * is never invoked for a fragment-started Activity. So the result MUST be
+ * accepted through {@link #deliverSuccess}/{@link #deliverError} from
+ * MainActivity's listener methods. {@link #handleCheckoutResult} is kept only
+ * for older SDK cores that still start the Activity from the host.
  */
 @CapacitorPlugin(name = "RazorpayNative")
 public class RazorpayNativePlugin extends Plugin {
 
     /**
-     * Razorpay's SDK starts its own activity via `activity.startActivityForResult`,
-     * so the result arrives on MainActivity, not on a Capacitor
-     * ActivityResultLauncher. MainActivity#onActivityResult forwards it here.
-     * Access to the single in-flight checkout is synchronized so double taps,
-     * watchdog cancellation, and late Activity results cannot settle the wrong
-     * JavaScript promise.
+     * The single in-flight checkout. Access is synchronized so double taps,
+     * watchdog cancellation, and late results (from either callback path)
+     * can never settle the wrong JavaScript promise or settle one twice.
      */
     private static final Object PENDING_LOCK = new Object();
     private static PluginCall pendingCall;
 
     /**
-     * True between a successful {@code checkout.open()} and its Activity result.
+     * True between a successful {@code checkout.open()} and its result.
      * Together with {@link #hostResumed} this tells us whether the Razorpay
      * checkout Activity is genuinely still on screen — the JS watchdog must
      * never tear down a live payment sheet.
@@ -66,6 +76,12 @@ public class RazorpayNativePlugin extends Plugin {
         hostResumed = false;
     }
 
+    private static boolean hasPending() {
+        synchronized (PENDING_LOCK) {
+            return pendingCall != null;
+        }
+    }
+
     private static PluginCall takePending() {
         synchronized (PENDING_LOCK) {
             final PluginCall call = pendingCall;
@@ -75,15 +91,19 @@ public class RazorpayNativePlugin extends Plugin {
         }
     }
 
-    private static void rejectPending(String code, String description) {
-        final PluginCall call = takePending();
-        if (call == null) return;
+    private static void rejectCall(PluginCall call, String code, String description) {
         call.setKeepAlive(false);
         call.reject(
             "{\"code\":" + JSONObject.quote(code)
                 + ",\"description\":" + JSONObject.quote(description) + "}",
             code
         );
+    }
+
+    private static void rejectPending(String code, String description) {
+        final PluginCall call = takePending();
+        if (call == null) return;
+        rejectCall(call, code, description);
     }
 
     @PluginMethod
@@ -114,17 +134,14 @@ public class RazorpayNativePlugin extends Plugin {
             call.setKeepAlive(true);
             synchronized (PENDING_LOCK) {
                 if (pendingCall != null) {
-                    call.setKeepAlive(false);
-                    call.reject(
-                        "{\"code\":\"ALREADY_IN_PROGRESS\",\"description\":\"A checkout is already open\"}",
-                        "ALREADY_IN_PROGRESS"
-                    );
+                    rejectCall(call, "ALREADY_IN_PROGRESS", "A checkout is already open");
                     return;
                 }
                 pendingCall = call;
             }
             // Capacitor plugin methods may execute off the Android UI thread.
-            // Razorpay starts an Activity and must always be opened on it.
+            // Razorpay attaches a Fragment / starts an Activity and must always
+            // be opened on it.
             activity.runOnUiThread(() -> {
                 try {
                     checkout.open(activity, payload);
@@ -173,16 +190,103 @@ public class RazorpayNativePlugin extends Plugin {
         }
     }
 
+    // ---------------------------------------------------------------------
+    // Result delivery. Both callback paths (SDK 1.7.x fragment -> Activity
+    // listener, and legacy Activity#onActivityResult) end up here, and
+    // takePending() guarantees exactly one settlement per checkout.
+    // ---------------------------------------------------------------------
+
     /**
-     * Called from MainActivity#onActivityResult.
+     * Success handed over by Razorpay. Validates the three signed fields the
+     * server needs before resolving; an incomplete payload is rejected so the
+     * UI can point the user at webhook-based recovery instead of sending
+     * unsigned data to verification.
+     * @return true when a pending checkout was settled by this call.
+     */
+    public static boolean deliverSuccess(String razorpayPaymentId, PaymentData paymentData) {
+        final PluginCall call = takePending();
+        if (call == null) return false;
+        try {
+            final String orderId = paymentData == null ? null : paymentData.getOrderId();
+            final String signature = paymentData == null ? null : paymentData.getSignature();
+            if (razorpayPaymentId == null || razorpayPaymentId.trim().isEmpty()
+                || orderId == null || orderId.trim().isEmpty()
+                || signature == null || signature.trim().isEmpty()) {
+                rejectCall(call, "INCOMPLETE_RESPONSE", "Payment response was incomplete");
+                return true;
+            }
+            JSObject response = new JSObject();
+            response.put("razorpay_payment_id", razorpayPaymentId);
+            response.put("razorpay_order_id", orderId);
+            response.put("razorpay_signature", signature);
+            JSObject result = new JSObject();
+            result.put("response", response);
+            call.setKeepAlive(false);
+            call.resolve(result);
+        } catch (Throwable t) {
+            String msg = t.getMessage() == null ? "Checkout result handling failed" : t.getMessage();
+            rejectCall(call, "RESULT_FAILED", msg);
+        }
+        return true;
+    }
+
+    /**
+     * Failure / cancellation handed over by Razorpay.
+     * @return true when a pending checkout was settled by this call.
+     */
+    public static boolean deliverError(int code, String description, PaymentData paymentData) {
+        final PluginCall call = takePending();
+        if (call == null) return false;
+        JSONObject err = new JSONObject();
+        try {
+            err.put("code", code);
+            err.put("description", description == null ? "Payment failed" : description);
+            // Razorpay uses code 0 / 2 for user cancellation depending on flow.
+            if (code == Checkout.PAYMENT_CANCELED
+                || (description != null && description.toLowerCase().contains("cancel"))) {
+                err.put("reason", "payment_cancelled");
+            }
+            if (paymentData != null && paymentData.getOrderId() != null) {
+                err.put("order_id", paymentData.getOrderId());
+            }
+        } catch (Exception ignored) {
+        }
+        call.setKeepAlive(false);
+        call.reject(err.toString(), String.valueOf(code));
+        return true;
+    }
+
+    /**
+     * An external wallet (e.g. Paytm redirect) was chosen. We never enable
+     * `external.wallets`, so this is only a safety net: settle the promise
+     * rather than leaving the CTA on "Opening payment…".
+     * @return true when a pending checkout was settled by this call.
+     */
+    public static boolean deliverExternalWallet(String walletName) {
+        final PluginCall call = takePending();
+        if (call == null) return false;
+        JSONObject err = new JSONObject();
+        try {
+            err.put("code", "EXTERNAL_WALLET");
+            err.put("description", "External wallet selected: " + walletName);
+        } catch (Exception ignored) {
+        }
+        call.setKeepAlive(false);
+        call.reject(err.toString(), "EXTERNAL_WALLET");
+        return true;
+    }
+
+    /**
+     * Legacy path — called from MainActivity#onActivityResult. Only older SDK
+     * cores (Activity-started CheckoutActivity) ever reach this; with the
+     * fragment-based core the SDK delivers through the listener methods above.
      * @return true when this plugin consumed the result.
      */
     public static boolean handleCheckoutResult(Activity activity, int requestCode, int resultCode, Intent data) {
         if (requestCode != Checkout.RZP_REQUEST_CODE) {
             return false;
         }
-        final PluginCall call = takePending();
-        if (call == null) {
+        if (!hasPending()) {
             return false;
         }
 
@@ -191,61 +295,27 @@ public class RazorpayNativePlugin extends Plugin {
                 new PaymentResultWithDataListener() {
                     @Override
                     public void onPaymentSuccess(String razorpayPaymentId, PaymentData paymentData) {
-                        final String orderId = paymentData == null ? null : paymentData.getOrderId();
-                        final String signature = paymentData == null ? null : paymentData.getSignature();
-                        if (razorpayPaymentId == null || razorpayPaymentId.trim().isEmpty()
-                            || orderId == null || orderId.trim().isEmpty()
-                            || signature == null || signature.trim().isEmpty()) {
-                            call.setKeepAlive(false);
-                            call.reject(
-                                "{\"code\":\"INCOMPLETE_RESPONSE\",\"description\":\"Payment response was incomplete\"}",
-                                "INCOMPLETE_RESPONSE"
-                            );
-                            return;
-                        }
-                        JSObject response = new JSObject();
-                        response.put("razorpay_payment_id", razorpayPaymentId);
-                        response.put("razorpay_order_id", orderId);
-                        response.put("razorpay_signature", signature);
-                        JSObject result = new JSObject();
-                        result.put("response", response);
-                        call.setKeepAlive(false);
-                        call.resolve(result);
+                        deliverSuccess(razorpayPaymentId, paymentData);
                     }
 
                     @Override
                     public void onPaymentError(int code, String description, PaymentData paymentData) {
-                        JSONObject err = new JSONObject();
-                        try {
-                            err.put("code", code);
-                            err.put("description", description == null ? "Payment failed" : description);
-                            // Razorpay uses code 0 / 2 for user cancellation depending on flow.
-                            if (description != null && description.toLowerCase().contains("cancel")) {
-                                err.put("reason", "payment_cancelled");
-                            }
-                        } catch (Exception ignored) {
-                        }
-                        call.setKeepAlive(false);
-                        call.reject(err.toString(), String.valueOf(code));
+                        deliverError(code, description, paymentData);
                     }
                 },
                 new ExternalWalletListener() {
                     @Override
                     public void onExternalWalletSelected(String walletName, PaymentData paymentData) {
-                        JSONObject err = new JSONObject();
-                        try {
-                            err.put("code", "EXTERNAL_WALLET");
-                            err.put("description", "External wallet selected: " + walletName);
-                        } catch (Exception ignored) {
-                        }
-                        call.setKeepAlive(false);
-                        call.reject(err.toString(), "EXTERNAL_WALLET");
+                        deliverExternalWallet(walletName);
                     }
                 });
         } catch (Throwable t) {
             String msg = t.getMessage() == null ? "Checkout result handling failed" : t.getMessage();
-            call.setKeepAlive(false);
-            call.reject("{\"code\":\"RESULT_FAILED\",\"description\":" + JSONObject.quote(msg) + "}", "RESULT_FAILED");
+            rejectPending("RESULT_FAILED", msg);
+        }
+        // If the SDK invoked no listener at all, never leave JS hanging.
+        if (hasPending()) {
+            rejectPending("RESULT_FAILED", "Checkout returned without a result");
         }
         return true;
     }

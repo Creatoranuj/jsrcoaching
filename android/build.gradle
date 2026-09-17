@@ -53,6 +53,14 @@ allprojects {
             // UPI availability between installs. Pin to the latest known 1.6.x
             // release so Android UPI behavior stays stable.
             force "com.razorpay:checkout:1.6.41"
+            // `com.razorpay:checkout` is only a thin wrapper whose POM depends on
+            // `com.razorpay:standard-core:LATEST` — the SDK code that actually
+            // ships. Left floating, every CI build could pick a different core
+            // (and 1.6.x -> 1.7.x changed how the payment result is delivered:
+            // Fragment + Activity listener instead of onActivityResult), which
+            // is exactly what broke "Opening payment…" on devices. Pin it.
+            // Bump deliberately, together with MainActivity's listener wiring.
+            force "com.razorpay:standard-core:1.7.18"
         }
     }
     // LOG HYGIENE — Suppress `Note: ... uses unchecked/unsafe operations` and
