@@ -45,9 +45,10 @@ test.describe("smoke", () => {
 
   test("chatbot widget opens", async ({ page }) => {
     await page.goto("/");
-    const fab = page.locator('[aria-label*="chat" i], [data-testid="chat-fab"]').first();
+    const fab = page.getByRole("button", { name: /chat with JSR COACHING Agent/i });
     await expect(fab).toBeVisible({ timeout: 15_000 });
-    await fab.click();
-    await expect(page.locator("text=/Safar Sarthi/i")).toBeVisible({ timeout: 5_000 });
+    const loginTip = page.getByText(/Login to chat with your 24×7 English learning agent/i);
+    if (!(await loginTip.isVisible().catch(() => false))) await fab.click();
+    await expect(loginTip).toBeVisible({ timeout: 5_000 });
   });
 });

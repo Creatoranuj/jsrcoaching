@@ -43,8 +43,11 @@ async function ensureFolder(page: Page, name: string) {
     await existing.click();
     return;
   }
-  await page.getByRole("button", { name: /new folder/i }).first().click();
-  await page.getByPlaceholder(/biology notes/i).fill(name);
+  const createFolder = page
+    .getByRole("button", { name: /new folder|create your first folder/i })
+    .first();
+  await createFolder.click();
+  await page.getByRole("textbox", { name: "Name" }).fill(name);
   await page.getByRole("button", { name: /^create$/i }).click();
   await page.getByRole("button", { name: new RegExp(name, "i") }).first().click();
 }

@@ -86,8 +86,9 @@ test.describe("Student purchase screens", () => {
     await page.goto(`/buy-course?id=${encodeURIComponent(PAID_COURSE_ID)}`);
 
     await expect(page.locator("body")).not.toContainText(/Course not found/i, { timeout: 20_000 });
-    const body = (await page.locator("body").textContent()) ?? "";
-    expect(body).toMatch(/[₹]|Rs\.?\s*\d|\bfree\b/i);
+    await expect(page.locator("body")).toContainText(/[₹]|Rs\.?\s*\d|\bfree\b/i, {
+      timeout: 30_000,
+    });
   });
 
   test("student cannot reach the admin panel", async ({ page }) => {

@@ -54,10 +54,14 @@ test.describe("student journey", () => {
     await page.goto(`/classes/${PAID_COURSE_ID}/lessons`);
 
     const gate = page.getByText(/enrol|enroll|buy|purchase|subscribe|access denied|not enrolled/i);
-    const bounced = /\/(buy-course|course|courses|dashboard|subscription)/.test(
-      new URL(page.url()).pathname,
-    );
-    expect(bounced || (await gate.count()) > 0).toBe(true);
+    await expect
+      .poll(async () => {
+        const bounced = /\/(buy-course|course|courses|dashboard|subscription)/.test(
+          new URL(page.url()).pathname,
+        );
+        return bounced || (await gate.count()) > 0;
+      }, { timeout: 30_000 })
+      .toBe(true);
   });
 
   test("enrolled course opens a lesson and loads its content", async ({ page }) => {
@@ -68,11 +72,13 @@ test.describe("student journey", () => {
     // Lesson shell present (title/list), and no crash boundary.
     await expect(page.locator("body")).not.toContainText(/Lesson failed to load/i);
     const items = page.getByTestId("lesson-card");
-    await expect(items.first()).toBeVisible({ timeout: 20_000 });
-
-    // Opening the first lesson must surface player or reader chrome.
-    await items.first().click();
-    await expect(page).toHaveURL(/lessonId=|\/chapter\//, { timeout: 20_000 });
+    // The current course screen auto-opens the first lesson. Older layouts
+    // render cards first, so support both valid entry states.
+    if (!/lessonId=|\/chapter\//.test(page.url())) {
+      await expect(items.first()).toBeVisible({ timeout: 30_000 });
+      await items.first().click();
+      await expect(page).toHaveURL(/lessonId=|\/chapter\//, { timeout: 20_000 });
+    }
     const media = page.locator(
       'video, iframe, canvas, [data-testid="pdf-viewer"], [data-testid="video-player"]',
     );

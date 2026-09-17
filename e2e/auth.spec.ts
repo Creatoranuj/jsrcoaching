@@ -142,8 +142,9 @@ test.describe("Authentication Flow", () => {
       await expect(async () => {
         await fillStableLocator(page.locator('input[id="name"]'), "Existing User");
         await fillStableLocator(page.locator('input[id="email"]'), TEST_USER.email);
-        await fillStableLocator(page.locator('input[id="password"]'), "Password123!");
-        await fillStableLocator(page.locator('input[id="confirmPassword"]'), "Password123!");
+        const probePassword = `E2e-${Date.now()}-Qx7!vN4#`;
+        await fillStableLocator(page.locator('input[id="password"]'), probePassword);
+        await fillStableLocator(page.locator('input[id="confirmPassword"]'), probePassword);
         await page.locator('button[type="submit"]').first().click();
         await expect(page.getByText("Please fill in all fields")).toHaveCount(0, {
           timeout: 1_500,
@@ -195,13 +196,8 @@ test.describe("Authenticated student", () => {
   });
 
   test("dashboard should load within 20 seconds after login", async ({ page }) => {
-    await openLogin(page);
-    await fillStable(page, "login-email", TEST_USER.email);
-    await fillStable(page, "login-password", TEST_USER.password);
-
     const startTime = Date.now();
-    await page.getByTestId("login-submit").click();
-    await page.waitForURL(AFTER_LOGIN, { timeout: 30_000 });
+    await loginAndLand(page, TEST_USER.email, TEST_USER.password);
 
     expect(Date.now() - startTime).toBeLessThan(20_000);
   });

@@ -23,6 +23,7 @@ async function login(page: Page) {
 
 async function openFirstLesson(page: Page) {
   await page.goto(`/classes/${COURSE_ID}/lessons`);
+  if (/lessonId=|\/chapter\//.test(page.url())) return;
   const items = page.getByTestId("lesson-card");
   await expect(items.first()).toBeVisible({ timeout: 30_000 });
   await items.first().click();

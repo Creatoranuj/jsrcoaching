@@ -48,6 +48,24 @@ export async function signIn(page: Page, email: string, password: string) {
     // means the submit actually ran — leave it for the caller to assert.
     await expect(page.getByText(FILL_FIELDS_ERROR)).toHaveCount(0, { timeout: 1_500 });
   }).toPass({ timeout: 90_000, intervals: [500, 1_000, 2_000] });
+
+  // Do not return while authentication is still in flight. Callers often
+  // navigate immediately after signIn(); doing that used to cancel the login
+  // request and made unrelated route tests land back on /login.
+  await expect
+    .poll(
+      async () => {
+        if (!/\/login(?:\?|$)/.test(page.url())) return "landed";
+        const error = await page
+          .locator("p.text-destructive")
+          .first()
+          .textContent()
+          .catch(() => null);
+        return error?.trim() ? "error" : "pending";
+      },
+      { timeout: 30_000, intervals: [250, 500, 1_000] },
+    )
+    .not.toBe("pending");
 }
 
 /** Signs in and waits for the post-login route, reporting the inline error. */
