@@ -28,6 +28,13 @@ describe("friendlyAiError", () => {
     expect(friendlyAiError({ message: "Failed to fetch" })).toBe(AI_ERROR_COPY.OFFLINE);
   });
 
+  it("blames the server, not the student's wifi, when the function was unreachable", () => {
+    // Supabase FunctionsFetchError — CORS / undeployed function.
+    expect(
+      friendlyAiError({ message: "Failed to send a request to the Edge Function" }),
+    ).toBe(AI_ERROR_COPY.BLOCKED);
+  });
+
   it("falls back to a neutral connection message", () => {
     expect(friendlyAiError({})).toBe(AI_ERROR_COPY.GENERIC);
   });

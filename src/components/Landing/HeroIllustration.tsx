@@ -64,7 +64,7 @@ const HeroIllustration = memo(() => (
                    active:scale-[0.97] transition-transform duration-150 ease-out
                    animate-fade-in-up [animation-delay:0.35s]"
       >
-        Ramchandra Sir, board exam<br />mein top kaise karun?
+        Pankaj Sir, board exam<br />mein top kaise karun?
       </button>
 
       <div className="absolute bottom-0 left-[4%] w-[44%] aspect-square animate-fade-in-up [animation-delay:0.2s]">
@@ -93,7 +93,7 @@ const HeroIllustration = memo(() => (
             srcAvif={mentorAvif}
             srcWebp={mentorWebp}
             srcFallback={mentorUrl}
-            alt="Ramchandra Sir — founding faculty, JSR COACHING"
+            alt="Pankaj Sir — founding faculty, JSR COACHING"
             width={768}
             height={768}
             pictureClassName="block h-full w-full"

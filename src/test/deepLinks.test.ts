@@ -8,14 +8,13 @@ import {
 describe("deep links", () => {
   it("accepts the production app-link host", () => {
     expect(APP_LINK_HOSTS).toContain("jsrcoaching.vercel.app");
-    expect(APP_LINK_HOSTS).toContain("safarenglishka.vercel.app");
     expect(toInternalPath("https://jsrcoaching.vercel.app/course/12")).toBe("/course/12");
-    expect(toInternalPath("https://safarenglishka.vercel.app/course/12")).toBe("/course/12");
   });
 
   it("rejects the retired/foreign host", () => {
     // Pre-rebrand project name; it no longer resolves and must not be trusted.
     expect(toInternalPath("https://sadguruclasses.vercel.app/course/12")).toBeNull();
+    expect(toInternalPath("https://safarenglishka.vercel.app/course/12")).toBeNull();
     expect(toInternalPath("https://evil.example.com/dashboard")).toBeNull();
   });
 

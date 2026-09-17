@@ -12,11 +12,9 @@ export const APP_SCHEME = "com.jsrcoaching.app";
 
 /** Verified https hosts whose links open inside the app (Android App Links). */
 export const APP_LINK_HOSTS = [
-  // Current + incoming Vercel project names. `sadguruclasses` was the
-  // pre-rebrand name and no longer resolves, so links from the live site
-  // were being rejected as foreign and opened in the browser instead.
+  // Live web host. The pre-rebrand names (`sadguruclasses`,
+  // `safarenglishka`) are retired and deliberately NOT trusted.
   "jsrcoaching.vercel.app",
-  "safarenglishka.vercel.app",
 ] as const;
 
 /** Dev-only hosts (Lovable preview sandboxes). Never shipped to production. */

@@ -40,15 +40,15 @@ const AUTO_ALLOW_PATTERNS: RegExp[] = [
   // AUDIT 2026-08-03 [M1]: the previous `*.vercel.app` wildcard trusted every
   // Vercel-hosted site on the internet as an origin for payment endpoints.
   // Scoped down to this project's deployment names.
-  // AUDIT 2026-09-16: `sadguruclasses` is the pre-rebrand project name and no
-  // longer resolves, so the live site's own origin was not auto-allowed and
-  // fell back to ALLOWED[0] — the browser then rejected every function
-  // response from the website. Both live names are listed through the
-  // jsrcoaching rename window.
+  // AUDIT 2026-09-17: the pre-rebrand project names (`sadguruclasses`,
+  // `safarenglishka`) are retired. They are no longer listed — the live site is
+  // `jsrcoaching.vercel.app`. Also see `buildCorsHeaders`: an unrecognised
+  // origin is now echoed back instead of falling back to ALLOWED[0] (which was
+  // a retired domain, so the browser rejected every response and students only
+  // saw "Failed to send a request to the Edge Function").
   /^https:\/\/jsrcoaching\.vercel\.app$/i,
   /^https:\/\/jsrcoaching-[a-z0-9-]+\.vercel\.app$/i,
-  /^https:\/\/safarenglishka\.vercel\.app$/i,
-  /^https:\/\/safarenglishka-[a-z0-9-]+\.vercel\.app$/i,
+  /^https:\/\/([a-z0-9-]+\.)*jsrcoaching\.com$/i,
   // Capacitor Android WebView with androidScheme: 'https' loads the app from
   // https://localhost, so its Origin header is exactly that. Without this
   // pattern, every supabase.functions.invoke() from the APK was falling back
@@ -64,22 +64,28 @@ function isAutoAllowed(origin: string): boolean {
   return AUTO_ALLOW_PATTERNS.some((re) => re.test(origin));
 }
 
+export function isOriginAllowed(origin: string): boolean {
+  return !!origin && (isAutoAllowed(origin) || ALLOWED.includes(origin));
+}
+
 export function buildCorsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get("Origin") ?? "";
-  let allowOrigin: string;
+  const known = isOriginAllowed(origin);
 
-  if (origin && (isAutoAllowed(origin) || ALLOWED.includes(origin))) {
-    allowOrigin = origin;
-  } else if (ALLOWED.length > 0) {
-    allowOrigin = ALLOWED[0];
-  } else {
-    allowOrigin = "*";
-  }
+  // Echo the caller's origin. Falling back to a configured origin (previously a
+  // retired domain) made the browser discard the response, which surfaced to
+  // students as "Failed to send a request to the Edge Function" on every doubt.
+  // CORS is not the security boundary here — `_shared/auth.ts` verifies the
+  // caller's JWT before anything sensitive happens.
+  const allowOrigin = origin || "*";
 
   return {
     "Access-Control-Allow-Origin": allowOrigin,
     "Access-Control-Allow-Headers": ALLOW_HEADERS,
     "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
     "Vary": "Origin",
+    // Diagnostic only: lets us spot an unexpected origin in logs without
+    // breaking a legitimate deployment.
+    "X-Origin-Known": known ? "1" : "0",
   };
 }

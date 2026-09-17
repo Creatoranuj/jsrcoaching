@@ -19,12 +19,13 @@ import { Trash2, Pencil, Plus, X, Check, Link2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/admin/ConfirmDialog";
 import { getErrorMessage } from "@/lib/errorMessage";
+import { FOUNDER_NAME } from "@/config/faculty";
 
 const EMPTY: LandingCourseInsert = {
   slug: "",
   badge: "",
   title: "",
-  faculty: "Ramchandra Sir",
+  faculty: FOUNDER_NAME,
   language: "Hindi medium friendly",
   duration: "",
   start_date: "",

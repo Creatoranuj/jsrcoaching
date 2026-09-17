@@ -8,7 +8,7 @@ import mentorImageAvif from "../../assets/landing/mentor-portrait.avif";
 const points = [
   { t: "Hindi-medium friendly", d: "Har lesson Hindi mein samjhaya — jhijhak khatam, seekhna aasan." },
   { t: "Board-focused lessons", d: "Syllabus ke hisaab se chapter-wise videos, notes aur practice papers." },
-  { t: "Daily practice + doubts", d: "Roz ka chota task aur live doubt-clearing Ramchandra Sir ke saath." },
+  { t: "Daily practice + doubts", d: "Roz ka chota task aur live doubt-clearing Pankaj Sir ke saath." },
   { t: "Revision + mock tests", d: "Regular tests aur full-length mocks se exam confidence aur time management dono improve." },
 ];
 
@@ -21,7 +21,7 @@ const WhyChooseUs = memo(() => (
             srcAvif={mentorImageAvif}
             srcWebp={mentorImageWebp}
             srcFallback={mentorImage}
-            alt="Ramchandra Sir class lete hue"
+            alt="Pankaj Sir class lete hue"
             width={768}
             height={768}
             pictureClassName="block h-full w-full"

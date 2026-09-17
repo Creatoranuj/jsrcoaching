@@ -1,18 +1,19 @@
 import { memo } from "react";
 import { Link } from "react-router-dom";
 import { ArrowUpRight } from "lucide-react";
+import { FOUNDER_NAME } from "@/config/faculty";
 
 const featured = [
   {
     tag: "Class 10 · All Subjects",
     title: "Class 10 Board Exam — Complete Prep",
-    instructor: "Ramchandra Sir",
+    instructor: FOUNDER_NAME,
     duration: "Full syllabus · revision + mocks",
   },
   {
     tag: "Class 12 · English",
     title: "Board English — Grammar & Writing",
-    instructor: "Ramchandra Sir",
+    instructor: FOUNDER_NAME,
     duration: "10 weeks · 72 lessons",
   },
   {

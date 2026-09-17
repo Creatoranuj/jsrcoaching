@@ -209,12 +209,10 @@ public class MainActivity extends BridgeActivity {
         return url.startsWith("https://localhost")
             || url.startsWith("capacitor://localhost")
             || url.startsWith("http://localhost")
-            || url.startsWith("https://sadgurucoachingclasses.com")
-            || url.startsWith("https://www.sadgurucoachingclasses.com")
-            || url.startsWith("https://app.sadgurucoachingclasses.com")
-            || url.startsWith("https://safarenglishka.com")
-            || url.startsWith("https://www.safarenglishka.com")
-            || url.startsWith("https://app.safarenglishka.com");
+            || url.startsWith("https://jsrcoaching.vercel.app")
+            || url.startsWith("https://jsrcoaching.com")
+            || url.startsWith("https://www.jsrcoaching.com")
+            || url.startsWith("https://app.jsrcoaching.com");
     }
 
     private boolean isSmokeTestBuild() {

@@ -116,7 +116,7 @@ const Footer = forwardRef<HTMLElement>((_, ref) => {
               </span>
             </div>
             <p className="text-sm text-secondary-foreground/60 leading-relaxed max-w-xs">
-              Roz ek chhota kadam, bada change. Ramchandra Sir ke saath Class 9–12 board exam
+              Roz ek chhota kadam, bada change. Pankaj Sir ke saath Class 9–12 board exam
               preparation — live classes, revision notes, mock tests aur doubt support — sab kuch app ke andar.
             </p>
 

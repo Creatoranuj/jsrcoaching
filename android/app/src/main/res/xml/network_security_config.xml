@@ -18,11 +18,9 @@
     </base-config>
 
     <domain-config cleartextTrafficPermitted="false">
-        <!-- Web hosts this app loads. Both the current Vercel project name
-             and the incoming jsrcoaching one are listed so the rename can
-             happen in Vercel without shipping a new APK first. -->
+        <!-- Web hosts this app loads. Retired pre-rebrand names
+             (sadguruclasses, safarenglishka) removed 2026-09-17. -->
         <domain includeSubdomains="true">jsrcoaching.vercel.app</domain>
-        <domain includeSubdomains="true">safarenglishka.vercel.app</domain>
         <domain includeSubdomains="true">supabase.co</domain>
         <domain includeSubdomains="true">supabase.in</domain>
         <domain includeSubdomains="true">b-cdn.net</domain>
