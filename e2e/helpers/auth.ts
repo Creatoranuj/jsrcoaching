@@ -56,16 +56,26 @@ export async function signIn(page: Page, email: string, password: string) {
     .poll(
       async () => {
         if (!/\/login(?:\?|$)/.test(page.url())) return "landed";
-        const error = await page
-          .locator("p.text-destructive")
-          .first()
-          .textContent()
-          .catch(() => null);
-        return error?.trim() ? "error" : "pending";
+        if (await page.getByText("Logout", { exact: true }).isVisible().catch(() => false)) {
+          return "authenticated";
+        }
+        const error = page.getByText(
+          /invalid email or password|invalid login credentials|please fill in all fields/i,
+        );
+        return (await error.isVisible().catch(() => false)) ? "error" : "pending";
       },
       { timeout: 30_000, intervals: [250, 500, 1_000] },
     )
     .not.toBe("pending");
+
+  // The app can render the authenticated shell one paint before replacing
+  // the login history entry. Normalize that transient state for callers.
+  if (
+    /\/login(?:\?|$)/.test(page.url()) &&
+    (await page.getByText("Logout", { exact: true }).isVisible().catch(() => false))
+  ) {
+    await page.goto("/dashboard", { waitUntil: "domcontentloaded" });
+  }
 }
 
 /** Signs in and waits for the post-login route, reporting the inline error. */
