@@ -1,6 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { buildCorsHeaders } from "../_shared/cors.ts";
 import { razorpayFetchWithRetry, razorpayAuthHeader } from "../_shared/razorpayFetch.ts";
+import { reportError } from "../_shared/errorReporting.ts";
 
 
 // Rate limiting is enforced via Postgres `public.check_rate_limit`
@@ -101,7 +102,16 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, course_id } = await req.json();
+    let body: Record<string, unknown>;
+    try {
+      body = await req.json();
+    } catch {
+      return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, course_id } =
+      body as Record<string, string>;
 
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !course_id) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), {
@@ -255,7 +265,10 @@ Deno.serve(async (req) => {
     );
 
     if (rpcError) {
-      console.error('complete_paid_enrollment failed:', rpcError);
+      await reportError(new Error(`complete_paid_enrollment failed: ${rpcError.message}`), {
+        surface: 'verify-razorpay-payment', stage: 'complete_paid_enrollment',
+        userId: user.id, order_id: razorpay_order_id,
+      });
       return new Response(JSON.stringify({ error: 'Payment verified but enrollment failed. Contact support.' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
@@ -269,7 +282,7 @@ Deno.serve(async (req) => {
     });
 
   } catch (error) {
-    console.error('Error:', error);
+    await reportError(error, { surface: 'verify-razorpay-payment', stage: 'unhandled' });
     return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });

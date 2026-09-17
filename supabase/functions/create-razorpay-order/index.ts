@@ -1,6 +1,8 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { buildCorsHeaders } from "../_shared/cors.ts";
 import { razorpayAuthHeader, razorpayFetchWithRetry } from "../_shared/razorpayFetch.ts";
+import { reportError } from "../_shared/errorReporting.ts";
+import { isIntId } from "../_shared/validate.ts";
 
 // Rate limiting: Postgres-backed via `public.check_rate_limit` so it works
 // across Supabase edge-runtime isolates (in-memory Map didn't — each isolate
@@ -69,9 +71,19 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { course_id, idempotency_key } = await req.json();
-    if (!course_id) {
-      return new Response(JSON.stringify({ error: 'course_id is required' }), {
+    // Malformed bodies used to throw and surface as a confusing 500
+    // ("failed edge function"). Reject them as a plain 400 instead.
+    let body: { course_id?: unknown; idempotency_key?: unknown };
+    try {
+      body = await req.json();
+    } catch {
+      return new Response(JSON.stringify({ error: 'Invalid JSON body', code: 'BAD_REQUEST' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    const { course_id, idempotency_key } = body as { course_id?: unknown; idempotency_key?: unknown };
+    if (!isIntId(course_id)) {
+      return new Response(JSON.stringify({ error: 'course_id is required', code: 'BAD_REQUEST' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
@@ -222,11 +234,12 @@ Deno.serve(async (req) => {
 
     const amountInPaise = Math.round(course.price * 100);
 
-    const credentials = btoa(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`);
-    const razorpayResponse = await fetch('https://api.razorpay.com/v1/orders', {
+    // Order creation now goes through the shared retry helper: a single
+    // transient Razorpay 5xx/timeout used to fail the whole checkout.
+    const razorpayResponse = await razorpayFetchWithRetry('https://api.razorpay.com/v1/orders', {
       method: 'POST',
       headers: {
-        'Authorization': `Basic ${credentials}`,
+        'Authorization': razorpayAuthHeader(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -242,9 +255,11 @@ Deno.serve(async (req) => {
     });
 
     if (!razorpayResponse.ok) {
-      const errText = await razorpayResponse.text();
+      const errText = razorpayResponse.bodyText ?? razorpayResponse.networkError ?? '';
       console.error('[razorpay] api error', {
         status: razorpayResponse.status,
+        attempts: razorpayResponse.attempts,
+        retryable: razorpayResponse.retryable,
         body: errText.slice(0, 500),
         user_id: user.id,
         course_id,
@@ -252,19 +267,44 @@ Deno.serve(async (req) => {
       await supabaseAdmin.from('payment_events').insert({
         user_id: user.id, course_id: Number(course_id),
         event_type: 'order_failed',
-        idempotency_key: idempotency_key ?? null,
-        metadata: { stage: 'razorpay_api', status: razorpayResponse.status, body: errText.slice(0, 500) },
+        idempotency_key: typeof idempotency_key === 'string' ? idempotency_key : null,
+        metadata: {
+          stage: 'razorpay_api',
+          status: razorpayResponse.status ?? null,
+          attempts: razorpayResponse.attempts,
+          retryable: razorpayResponse.retryable,
+          body: errText.slice(0, 500),
+        },
       });
+      await reportError(new Error(`razorpay order create failed (${razorpayResponse.status ?? 'network'})`), {
+        surface: 'create-razorpay-order', stage: 'razorpay_api', userId: user.id, course_id,
+      });
+      if (razorpayResponse.retryable) {
+        return new Response(JSON.stringify({
+          error: 'Payment server is busy. Please try again in a moment.',
+          code: 'RAZORPAY_UNREACHABLE',
+          retryable: true,
+        }), { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
       return new Response(JSON.stringify({
         error: 'Failed to create Razorpay order',
         code: 'RAZORPAY_API_ERROR',
-        status: razorpayResponse.status,
+        status: razorpayResponse.status ?? null,
       }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    const razorpayOrder = await razorpayResponse.json();
+    const razorpayOrder = razorpayResponse.data ?? {};
+    if (!razorpayOrder.id) {
+      await reportError(new Error('razorpay order response missing id'), {
+        surface: 'create-razorpay-order', stage: 'razorpay_api', userId: user.id, course_id,
+      });
+      return new Response(JSON.stringify({
+        error: 'Payment server returned an unexpected response. Please retry.',
+        code: 'RAZORPAY_BAD_RESPONSE',
+      }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
     // supabaseAdmin already created above for rate-limit check.
 
@@ -309,7 +349,7 @@ Deno.serve(async (req) => {
         user_id: user.id, course_id: Number(course_id),
         event_type: 'order_failed',
         razorpay_order_id: razorpayOrder.id,
-        idempotency_key: idempotency_key ?? null,
+        idempotency_key: typeof idempotency_key === 'string' ? idempotency_key : null,
         metadata: { stage: 'db_insert', code: insertErr.code, message: insertErr.message },
       });
       return new Response(JSON.stringify({
@@ -324,7 +364,7 @@ Deno.serve(async (req) => {
       user_id: user.id, course_id: Number(course_id),
       event_type: 'order_created',
       razorpay_order_id: razorpayOrder.id,
-      idempotency_key: idempotency_key ?? null,
+      idempotency_key: typeof idempotency_key === 'string' ? idempotency_key : null,
       metadata: { amount_paise: amountInPaise },
     });
 
@@ -347,6 +387,7 @@ Deno.serve(async (req) => {
       message: err?.message,
       stack: err?.stack?.slice(0, 500),
     });
+    await reportError(error, { surface: 'create-razorpay-order', stage: 'unhandled' });
     return new Response(JSON.stringify({
       error: 'Internal server error',
       code: 'INTERNAL',
