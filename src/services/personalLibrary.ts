@@ -21,8 +21,10 @@ import { cleanNotionUrl, isNotion } from "../lib/pdfViewerUrl";
 import { reportError } from "../lib/sentry";
 
 const ROOT = "personal_library";
-const webDownloadId = (url: string) => url.match(/^web-indexeddb:(\d+)$/i)?.[1] ?? null;
-const personalLibraryId = (url: string) => url.match(/^nb-personal-library:([^?#]+)$/i)?.[1] ?? null;
+const webDownloadId = (url: string) =>
+  url.match(/^web-indexeddb:(\d+)$/i)?.[1] ?? null;
+const personalLibraryId = (url: string) =>
+  url.match(/^nb-personal-library:([^?#]+)$/i)?.[1] ?? null;
 
 /**
  * Broadcast that the personal library changed so every mounted hook
@@ -30,11 +32,16 @@ const personalLibraryId = (url: string) => url.match(/^nb-personal-library:([^?#
  * requiring a pull-to-refresh. Safe on SSR — guarded.
  */
 export function emitLibraryRefresh() {
-  try { window.dispatchEvent(new Event("personalLibrary:refresh")); } catch { /* noop */ }
+  try {
+    window.dispatchEvent(new Event("personalLibrary:refresh"));
+  } catch {
+    /* noop */
+  }
 }
 
 function uuid() {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto)
+    return crypto.randomUUID();
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
@@ -72,9 +79,10 @@ async function ensureFolderDir(folderId: string) {
  *    >2 GB RAM → 200 MB
  *  Computed once at module load so the limit is stable for the session. */
 function pickMaxFileBytes(): number {
-  const dm = typeof navigator !== "undefined"
-    ? (navigator as { deviceMemory?: number }).deviceMemory
-    : undefined;
+  const dm =
+    typeof navigator !== "undefined"
+      ? (navigator as { deviceMemory?: number }).deviceMemory
+      : undefined;
   if (typeof dm === "number" && dm > 0 && dm <= 2) return 100 * 1024 * 1024;
   return 200 * 1024 * 1024;
 }
@@ -92,14 +100,26 @@ export function getMaxFileBytes(): number {
 const BRIDGE_CHUNK_TIMEOUT_MS = 30_000;
 function withTimeout<T>(p: Promise<T>, ms: number, tag: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(`${tag} timed out after ${ms}ms`)), ms);
+    const t = setTimeout(
+      () => reject(new Error(`${tag} timed out after ${ms}ms`)),
+      ms,
+    );
     p.then(
-      (v) => { clearTimeout(t); resolve(v); },
-      (e) => { clearTimeout(t); reject(e); },
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
     );
   });
 }
-async function bridgeWithRetry<T>(fn: () => Promise<T>, tag: string): Promise<T> {
+async function bridgeWithRetry<T>(
+  fn: () => Promise<T>,
+  tag: string,
+): Promise<T> {
   try {
     return await withTimeout(fn(), BRIDGE_CHUNK_TIMEOUT_MS, tag);
   } catch (err) {
@@ -114,7 +134,9 @@ const MIN_BROWSER_HEADROOM_BYTES = 32 * 1024 * 1024;
 function isQuotaError(err: unknown): boolean {
   const name = (err as { name?: string })?.name || "";
   const msg = (err as Error)?.message || String(err || "");
-  return /Quota|NS_ERROR_DOM_QUOTA|storage.*full|disk.*full/i.test(`${name} ${msg}`);
+  return /Quota|NS_ERROR_DOM_QUOTA|storage.*full|disk.*full/i.test(
+    `${name} ${msg}`,
+  );
 }
 
 async function clearRuntimeCaches(): Promise<void> {
@@ -122,7 +144,9 @@ async function clearRuntimeCaches(): Promise<void> {
   try {
     const keys = await caches.keys();
     await Promise.all(keys.map((key) => caches.delete(key).catch(() => false)));
-  } catch { /* cache cleanup is best-effort */ }
+  } catch {
+    /* cache cleanup is best-effort */
+  }
 }
 
 async function ensureBrowserStorageHeadroom(nextBytes: number): Promise<void> {
@@ -137,7 +161,9 @@ async function ensureBrowserStorageHeadroom(nextBytes: number): Promise<void> {
     await clearRuntimeCaches();
     const after = await navigator.storage.estimate?.();
     if (after?.quota && after.quota - (after.usage ?? 0) < needed) {
-      throw new Error("Device storage is almost full. Delete old downloads/cache and try again.");
+      throw new Error(
+        "Device storage is almost full. Delete old downloads/cache and try again.",
+      );
     }
   } catch (err) {
     if ((err as Error)?.message?.includes("Device storage")) throw err;
@@ -185,7 +211,8 @@ function chunkToBase64(slice: Blob): Promise<string> {
  *  native Filesystem-relative paths. */
 const WEB_LOCAL_PATH_SCHEME = "web-indexeddb://";
 export const webLocalPath = (id: string) => `${WEB_LOCAL_PATH_SCHEME}${id}`;
-export const isWebLocalPath = (p: string) => p.startsWith(WEB_LOCAL_PATH_SCHEME);
+export const isWebLocalPath = (p: string) =>
+  p.startsWith(WEB_LOCAL_PATH_SCHEME);
 
 /** Adaptive chunk size — bigger on capable devices to slash bridge round
  *  trips. A 100 MB import goes from ~400 chunks (256 KB) to ~100 chunks
@@ -208,13 +235,15 @@ async function streamBlobToFolder(
   folder_id: string,
   blob: Blob,
   ext: string,
-  webId?: string
+  webId?: string,
 ): Promise<string> {
   const fs = await getFS();
   if (!fs) {
     // Hole B fix: explicit sentinel scheme instead of a fake fs path that
     // pointed nowhere and tripped up offline-mirror / export code paths.
-    return webId ? webLocalPath(webId) : `${ROOT}/${folder_id}/${uuid()}.${ext}`;
+    return webId
+      ? webLocalPath(webId)
+      : `${ROOT}/${folder_id}/${uuid()}.${ext}`;
   }
   await ensureFolderDir(folder_id);
   const path = `${ROOT}/${folder_id}/${uuid()}.${ext}`;
@@ -233,7 +262,13 @@ async function streamBlobToFolder(
     if (first) {
       try {
         await bridgeWithRetry(
-          () => fs.Filesystem.writeFile({ path, directory: fs.Directory.Data, data: b64, recursive: true }),
+          () =>
+            fs.Filesystem.writeFile({
+              path,
+              directory: fs.Directory.Data,
+              data: b64,
+              recursive: true,
+            }),
           "Filesystem.writeFile",
         );
       } catch (err) {
@@ -242,10 +277,24 @@ async function streamBlobToFolder(
         // errors) and retrying once with recursive:true.
         const msg = (err as Error)?.message || String(err);
         if (/0010|Directory.*(does not exist|not exist)/i.test(msg)) {
-          await fs.Filesystem.mkdir({ path: ROOT, directory: fs.Directory.Data, recursive: true }).catch(() => {});
-          await fs.Filesystem.mkdir({ path: `${ROOT}/${folder_id}`, directory: fs.Directory.Data, recursive: true }).catch(() => {});
+          await fs.Filesystem.mkdir({
+            path: ROOT,
+            directory: fs.Directory.Data,
+            recursive: true,
+          }).catch(() => {});
+          await fs.Filesystem.mkdir({
+            path: `${ROOT}/${folder_id}`,
+            directory: fs.Directory.Data,
+            recursive: true,
+          }).catch(() => {});
           await bridgeWithRetry(
-            () => fs.Filesystem.writeFile({ path, directory: fs.Directory.Data, data: b64, recursive: true }),
+            () =>
+              fs.Filesystem.writeFile({
+                path,
+                directory: fs.Directory.Data,
+                data: b64,
+                recursive: true,
+              }),
             "Filesystem.writeFile(retry)",
           );
         } else {
@@ -255,7 +304,12 @@ async function streamBlobToFolder(
       first = false;
     } else {
       await bridgeWithRetry(
-        () => fs.Filesystem.appendFile({ path, directory: fs.Directory.Data, data: b64 }),
+        () =>
+          fs.Filesystem.appendFile({
+            path,
+            directory: fs.Directory.Data,
+            data: b64,
+          }),
         "Filesystem.appendFile",
       );
     }
@@ -271,8 +325,6 @@ async function streamBlobToFolder(
   return path;
 }
 
-
-
 /** Single-slot write queue (MAX=1) that pauses while the player is busy. */
 const writeQueue: Array<() => Promise<unknown>> = [];
 let writing = false;
@@ -281,9 +333,15 @@ let writing = false;
  *  canAdd() considers (used + pendingBytes + nextSize) to close the race
  *  where two rapid imports each saw "enough space" and together blew the cap. */
 let pendingBytes = 0;
-const reserve = (n: number) => { pendingBytes += n; };
-const release = (n: number) => { pendingBytes = Math.max(0, pendingBytes - n); };
-export function getPendingBytes(): number { return pendingBytes; }
+const reserve = (n: number) => {
+  pendingBytes += n;
+};
+const release = (n: number) => {
+  pendingBytes = Math.max(0, pendingBytes - n);
+};
+export function getPendingBytes(): number {
+  return pendingBytes;
+}
 
 async function pumpWrite() {
   if (writing) return;
@@ -324,25 +382,33 @@ function singleFlight<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const existing = inflight.get(key) as Promise<T> | undefined;
   if (existing) return existing;
   const p = (async () => {
-    try { return await fn(); }
-    finally { inflight.delete(key); }
+    try {
+      return await fn();
+    } finally {
+      inflight.delete(key);
+    }
   })();
   inflight.set(key, p);
   return p;
 }
 
 /** Device-space check that accounts for in-flight writes. Use inside enqueueWrite. */
-async function canAddAware(size: number): Promise<{ ok: boolean; used: number; free: number | null }> {
+async function canAddAware(
+  size: number,
+): Promise<{ ok: boolean; used: number; free: number | null }> {
   const { used, free } = await canAdd(size + pendingBytes);
   return { ok: free === null ? true : free >= size + pendingBytes, used, free };
 }
 
-
 // ----- Folders -----
 
-export async function listFolders(parent_id: string | null = null): Promise<PersonalFolder[]> {
+export async function listFolders(
+  parent_id: string | null = null,
+): Promise<PersonalFolder[]> {
   const children = await folderDB.children(parent_id);
-  return children.sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
+  return children.sort(
+    (a, b) => a.position - b.position || a.name.localeCompare(b.name),
+  );
 }
 
 export async function listAllFolders(): Promise<PersonalFolder[]> {
@@ -353,7 +419,7 @@ export async function listAllFolders(): Promise<PersonalFolder[]> {
 export async function createFolder(
   name: string,
   parent_id: string | null = null,
-  color?: string | null
+  color?: string | null,
 ): Promise<PersonalFolder> {
   const siblings = await folderDB.children(parent_id);
   const rec: PersonalFolder = {
@@ -371,9 +437,12 @@ export async function createFolder(
   return rec;
 }
 
-export async function getOrCreateFolder(name: string, parent_id: string | null = null): Promise<PersonalFolder> {
+export async function getOrCreateFolder(
+  name: string,
+  parent_id: string | null = null,
+): Promise<PersonalFolder> {
   const existing = (await folderDB.children(parent_id)).find(
-    (f) => f.name.trim().toLowerCase() === name.trim().toLowerCase()
+    (f) => f.name.trim().toLowerCase() === name.trim().toLowerCase(),
   );
   if (existing) return existing;
   return createFolder(name, parent_id);
@@ -422,8 +491,8 @@ export async function replaceItem(id: string, file: File): Promise<void> {
   if (file.size > MAX_FILE_BYTES) {
     throw new Error(
       `File too large (${Math.round(file.size / 1024 / 1024)} MB). Maximum is ${Math.round(
-        MAX_FILE_BYTES / 1024 / 1024
-      )} MB per file.`
+        MAX_FILE_BYTES / 1024 / 1024,
+      )} MB per file.`,
     );
   }
   return enqueueWrite(async () => {
@@ -431,12 +500,21 @@ export async function replaceItem(id: string, file: File): Promise<void> {
     // delete old file
     if (fs) {
       try {
-        await fs.Filesystem.deleteFile({ path: rec.local_path, directory: fs.Directory.Data });
-      } catch { /* ignore */ }
+        await fs.Filesystem.deleteFile({
+          path: rec.local_path,
+          directory: fs.Directory.Data,
+        });
+      } catch {
+        /* ignore */
+      }
     } else {
       const old = sessionStorage.getItem(`nb_pl_blob_${id}`);
       if (old) URL.revokeObjectURL(old);
-      try { await fileDB.delete(id); } catch { /* ignore */ }
+      try {
+        await fileDB.delete(id);
+      } catch {
+        /* ignore */
+      }
       webBlobUrlCache.delete(id);
     }
     const ext = extOf(file.name, file.type);
@@ -453,8 +531,13 @@ export async function replaceItem(id: string, file: File): Promise<void> {
       } catch (err) {
         if (isQuotaError(err)) {
           await clearRuntimeCaches();
-          try { await fileDB.put(id, file); }
-          catch { throw new Error("Browser storage is full. Delete some files/cache and try again."); }
+          try {
+            await fileDB.put(id, file);
+          } catch {
+            throw new Error(
+              "Browser storage is full. Delete some files/cache and try again.",
+            );
+          }
         } else {
           throw err;
         }
@@ -463,7 +546,10 @@ export async function replaceItem(id: string, file: File): Promise<void> {
   });
 }
 
-export async function duplicateItem(id: string, target_folder_id?: string): Promise<void> {
+export async function duplicateItem(
+  id: string,
+  target_folder_id?: string,
+): Promise<void> {
   const rec = await itemDB.get(id);
   if (!rec) return;
   return enqueueWrite(async () => {
@@ -515,7 +601,9 @@ export async function reorderItem(id: string, direction: "up" | "down") {
     const rec = await itemDB.get(id);
     if (!rec) return;
     const siblings = (await itemDB.byFolder(rec.folder_id)).sort(
-      (a, b) => (a.sort_index ?? 0) - (b.sort_index ?? 0) || a.added_at.localeCompare(b.added_at)
+      (a, b) =>
+        (a.sort_index ?? 0) - (b.sort_index ?? 0) ||
+        a.added_at.localeCompare(b.added_at),
     );
     const idx = siblings.findIndex((s) => s.id === id);
     const swapWith = direction === "up" ? siblings[idx - 1] : siblings[idx + 1];
@@ -534,7 +622,7 @@ export async function reorderFolder(id: string, direction: "up" | "down") {
     const rec = await folderDB.get(id);
     if (!rec) return;
     const siblings = (await folderDB.children(rec.parent_id ?? null)).sort(
-      (a, b) => a.position - b.position || a.name.localeCompare(b.name)
+      (a, b) => a.position - b.position || a.name.localeCompare(b.name),
     );
     const idx = siblings.findIndex((s) => s.id === id);
     const swapWith = direction === "up" ? siblings[idx - 1] : siblings[idx + 1];
@@ -585,13 +673,23 @@ export async function deleteFolder(id: string) {
 
 export type ItemSort = "manual" | "name" | "newest" | "largest";
 
-export async function listItems(folder_id: string, sort: ItemSort = "manual"): Promise<PersonalItem[]> {
+export async function listItems(
+  folder_id: string,
+  sort: ItemSort = "manual",
+): Promise<PersonalItem[]> {
   const items = await itemDB.byFolder(folder_id);
   const sorted = [...items];
   if (sort === "name") sorted.sort((a, b) => a.title.localeCompare(b.title));
-  else if (sort === "newest") sorted.sort((a, b) => b.added_at.localeCompare(a.added_at));
-  else if (sort === "largest") sorted.sort((a, b) => b.size_bytes - a.size_bytes);
-  else sorted.sort((a, b) => (a.sort_index ?? 0) - (b.sort_index ?? 0) || a.added_at.localeCompare(b.added_at));
+  else if (sort === "newest")
+    sorted.sort((a, b) => b.added_at.localeCompare(a.added_at));
+  else if (sort === "largest")
+    sorted.sort((a, b) => b.size_bytes - a.size_bytes);
+  else
+    sorted.sort(
+      (a, b) =>
+        (a.sort_index ?? 0) - (b.sort_index ?? 0) ||
+        a.added_at.localeCompare(b.added_at),
+    );
   return sorted;
 }
 
@@ -610,11 +708,21 @@ export async function deleteItem(id: string) {
         /* ignore */
       }
     } else {
-      try { await fileDB.delete(id); } catch { /* ignore */ }
+      try {
+        await fileDB.delete(id);
+      } catch {
+        /* ignore */
+      }
       const cached = webBlobUrlCache.get(id);
-      if (cached) { URL.revokeObjectURL(cached); webBlobUrlCache.delete(id); }
+      if (cached) {
+        URL.revokeObjectURL(cached);
+        webBlobUrlCache.delete(id);
+      }
       const legacy = sessionStorage.getItem(`nb_pl_blob_${id}`);
-      if (legacy) { URL.revokeObjectURL(legacy); sessionStorage.removeItem(`nb_pl_blob_${id}`); }
+      if (legacy) {
+        URL.revokeObjectURL(legacy);
+        sessionStorage.removeItem(`nb_pl_blob_${id}`);
+      }
     }
     await itemDB.delete(id);
   });
@@ -632,18 +740,27 @@ export async function getItemUri(id: string): Promise<string | null> {
   if (/^https?:\/\//i.test(rec.local_path)) return rec.local_path;
   const fs = await getFS();
   if (!fs) {
-
     // Web: hand the stable item id to the PDF source hook. It loads the Blob
     // bytes directly from IndexedDB, avoiding fragile blob: URL re-fetches in
     // mobile Firefox / Android WebView.
-    if (/pdf|markdown|text/i.test(rec.mime_type) || /\.(pdf|md|markdown|txt)$/i.test(rec.file_name)) {
+    if (
+      /pdf|markdown|text/i.test(rec.mime_type) ||
+      /\.(pdf|md|markdown|txt)$/i.test(rec.file_name)
+    ) {
       const row = await fileDB.get(id).catch(() => undefined);
       if (row?.blob) return `nb-personal-library:${id}`;
-      const cached = webBlobUrlCache.get(id) || sessionStorage.getItem(`nb_pl_blob_${id}`);
+      const cached =
+        webBlobUrlCache.get(id) || sessionStorage.getItem(`nb_pl_blob_${id}`);
       if (cached) {
-        const ok = await fetch(cached, { method: "GET" }).then((r) => r.ok).catch(() => false);
+        const ok = await fetch(cached, { method: "GET" })
+          .then((r) => r.ok)
+          .catch(() => false);
         if (ok) return cached;
-        try { URL.revokeObjectURL(cached); } catch { /* ignore */ }
+        try {
+          URL.revokeObjectURL(cached);
+        } catch {
+          /* ignore */
+        }
         webBlobUrlCache.delete(id);
         sessionStorage.removeItem(`nb_pl_blob_${id}`);
       }
@@ -653,9 +770,13 @@ export async function getItemUri(id: string): Promise<string | null> {
     if (cached) {
       try {
         // Quick liveness probe — HEAD on a blob: URL fails if revoked.
-        const ok = await fetch(cached, { method: "GET" }).then((r) => r.ok).catch(() => false);
+        const ok = await fetch(cached, { method: "GET" })
+          .then((r) => r.ok)
+          .catch(() => false);
         if (ok) return cached;
-      } catch { /* fall through and rebuild */ }
+      } catch {
+        /* fall through and rebuild */
+      }
       URL.revokeObjectURL(cached);
       webBlobUrlCache.delete(id);
     }
@@ -681,7 +802,6 @@ export async function getItemUri(id: string): Promise<string | null> {
   }
 }
 
-
 function extOf(name: string, mime: string) {
   const m = name.match(/\.([a-z0-9]+)$/i);
   if (m) return m[1].toLowerCase();
@@ -702,15 +822,20 @@ function mimeForExt(ext: string, fallback = "application/octet-stream") {
  *  starts, the next big File reference + base64 chunks WILL OOM-kill the
  *  WebView. Refuse early with a clear message instead of crashing. */
 function assertHeapHeadroom(fileBytes: number) {
-  const mem = (performance as Performance & { memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number } }).memory;
+  const mem = (
+    performance as Performance & {
+      memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number };
+    }
+  ).memory;
   if (!mem || !mem.jsHeapSizeLimit) return;
   const limit = mem.jsHeapSizeLimit;
   const used = mem.usedJSHeapSize;
   // Need at least the file size + 32 MB working buffer free.
-  const headroomNeeded = Math.min(fileBytes, 96 * 1024 * 1024) + 32 * 1024 * 1024;
+  const headroomNeeded =
+    Math.min(fileBytes, 96 * 1024 * 1024) + 32 * 1024 * 1024;
   if (limit - used < headroomNeeded) {
     throw new Error(
-      "Phone is low on memory right now. Close other apps/tabs and try again."
+      "Phone is low on memory right now. Close other apps/tabs and try again.",
     );
   }
 }
@@ -719,13 +844,13 @@ function assertHeapHeadroom(fileBytes: number) {
 export async function addFileToFolder(
   folder_id: string,
   file: File,
-  source: "device" | "lesson" = "device"
+  source: "device" | "lesson" = "device",
 ): Promise<PersonalItem> {
   if (file.size > MAX_FILE_BYTES) {
     throw new Error(
       `File too large (${Math.round(file.size / 1024 / 1024)} MB). Maximum is ${Math.round(
-        MAX_FILE_BYTES / 1024 / 1024
-      )} MB per file.`
+        MAX_FILE_BYTES / 1024 / 1024,
+      )} MB per file.`,
     );
   }
   assertHeapHeadroom(file.size);
@@ -740,8 +865,10 @@ export async function addFileToFolder(
       if (!quota.ok) {
         throw new Error(
           `Device is out of storage. Free up space on your phone and try again${
-            quota.free !== null ? ` (about ${Math.round(quota.free / 1024 / 1024)} MB free)` : ""
-          }.`
+            quota.free !== null
+              ? ` (about ${Math.round(quota.free / 1024 / 1024)} MB free)`
+              : ""
+          }.`,
         );
       }
 
@@ -779,15 +906,30 @@ export async function addFileToFolder(
             try {
               await fileDB.put(rec.id, file);
             } catch {
-              try { await itemDB.delete(rec.id); } catch { /* ignore */ }
-              throw new Error("Browser storage is full. Delete some files/cache and try again.");
+              try {
+                await itemDB.delete(rec.id);
+              } catch {
+                /* ignore */
+              }
+              throw new Error(
+                "Browser storage is full. Delete some files/cache and try again.",
+              );
             }
           } else {
-            try { await itemDB.delete(rec.id); } catch { /* ignore */ }
+            try {
+              await itemDB.delete(rec.id);
+            } catch {
+              /* ignore */
+            }
             throw err;
           }
         }
       }
+      // Tell every mounted library view a row just landed. Without this the
+      // FAB "+" inside an open folder saved the file (toast said "Added …")
+      // but FolderView kept showing an empty folder until a hard reload,
+      // because useFolderItems only re-reads on this event.
+      emitLibraryRefresh();
       return rec;
     } finally {
       release(file.size);
@@ -811,7 +953,7 @@ export async function addFilesToFolder(
   folder_id: string,
   files: File[] | FileList,
   source: "device" | "lesson" = "device",
-  onProgress?: (done: number, total: number, currentName: string) => void
+  onProgress?: (done: number, total: number, currentName: string) => void,
 ): Promise<BatchImportResult> {
   const list = Array.from(files);
   const result: BatchImportResult = { added: [], skipped: [], failed: [] };
@@ -819,7 +961,9 @@ export async function addFilesToFolder(
 
   // Build a dedup key set from what's already in the folder.
   const existing = await itemDB.byFolder(folder_id);
-  const seen = new Set(existing.map((it) => `${it.file_name}::${it.size_bytes}`));
+  const seen = new Set(
+    existing.map((it) => `${it.file_name}::${it.size_bytes}`),
+  );
 
   let done = 0;
   for (const file of list) {
@@ -872,7 +1016,9 @@ export async function addLinkToFolder(
 ): Promise<PersonalItem> {
   return enqueueWrite(async () => {
     const url = isNotion(link.url) ? cleanNotionUrl(link.url) : link.url;
-    const existing = (await itemDB.byFolder(folder_id)).find((it) => it.local_path === url);
+    const existing = (await itemDB.byFolder(folder_id)).find(
+      (it) => it.local_path === url,
+    );
     if (existing) return existing;
     const title = (link.title || "Link").replace(/\.[^.]+$/, "");
     const ext = (link.kind || "LINK").toLowerCase();
@@ -880,7 +1026,9 @@ export async function addLinkToFolder(
       id: uuid(),
       folder_id,
       title,
-      file_name: /^(pdf|docx?|pptx?|xlsx?|csv|md|txt)$/i.test(ext) ? `${title}.${ext}` : `${title}.link`,
+      file_name: /^(pdf|docx?|pptx?|xlsx?|csv|md|txt)$/i.test(ext)
+        ? `${title}.${ext}`
+        : `${title}.link`,
       mime_type: "text/uri-list",
       size_bytes: 0,
       local_path: url,
@@ -906,13 +1054,12 @@ export async function clearLinkMarkers(id: string) {
   await itemDB.put(rec);
 }
 
-
 /** Add by fetching a remote URL (used by "Save to My Library" from a lesson PDF). */
 export async function addUrlToFolder(
   folder_id: string,
   url: string,
   title: string,
-  filename?: string
+  filename?: string,
 ): Promise<PersonalItem> {
   return enqueueWrite(async () => {
     if (isNotion(url)) {
@@ -941,10 +1088,10 @@ export async function addUrlToFolder(
       ? (await downloadFileDB.get(Number(dlId)))?.blob
       : plId
         ? (await fileDB.get(plId))?.blob
-        // Same reach as the reader: storage resolution, pdf-proxy with the
-        // caller's token, and native HTTP on the APK. A bare fetch() here
-        // died with "Failed to fetch" on proxy-only / CORS-closed sources.
-        : await fetchDocumentBlob(url);
+        : // Same reach as the reader: storage resolution, pdf-proxy with the
+          // caller's token, and native HTTP on the APK. A bare fetch() here
+          // died with "Failed to fetch" on proxy-only / CORS-closed sources.
+          await fetchDocumentBlob(url);
 
     if (!blob) throw new Error("Could not find saved PDF bytes");
     const sourceName = filename || title;
@@ -952,21 +1099,27 @@ export async function addUrlToFolder(
     // Preserve the original extension when present; if unknown, fall back to
     // the mime-detected ext (or "bin") instead of forcing ".pdf" — saving a
     // .docx/.xlsx/.md/etc. as .pdf would break opening it later.
-    const safeName = /\.[a-z0-9]+$/i.test(sourceName) ? sourceName : `${sourceName}.${ext}`;
-    const file = new File([blob], safeName, { type: blob.type || mimeForExt(ext, "application/pdf") });
+    const safeName = /\.[a-z0-9]+$/i.test(sourceName)
+      ? sourceName
+      : `${sourceName}.${ext}`;
+    const file = new File([blob], safeName, {
+      type: blob.type || mimeForExt(ext, "application/pdf"),
+    });
     // Pending-aware quota check — accounts for concurrent in-flight imports.
     reserve(file.size);
     const quota = await canAddAware(0);
     if (!quota.ok) {
       release(file.size);
-      throw new Error("Device is out of storage. Free up space on your phone and try again.");
+      throw new Error(
+        "Device is out of storage. Free up space on your phone and try again.",
+      );
     }
     try {
       if (file.size > MAX_FILE_BYTES) {
         throw new Error(
           `File too large (${Math.round(file.size / 1024 / 1024)} MB). Maximum is ${Math.round(
-            MAX_FILE_BYTES / 1024 / 1024
-          )} MB per file.`
+            MAX_FILE_BYTES / 1024 / 1024,
+          )} MB per file.`,
         );
       }
       const fileExt = extOf(file.name, file.type);
@@ -998,11 +1151,21 @@ export async function addUrlToFolder(
             try {
               await fileDB.put(rec.id, file);
             } catch {
-              try { await itemDB.delete(rec.id); } catch { /* ignore */ }
-              throw new Error("Browser storage is full. Delete some files/cache and try again.");
+              try {
+                await itemDB.delete(rec.id);
+              } catch {
+                /* ignore */
+              }
+              throw new Error(
+                "Browser storage is full. Delete some files/cache and try again.",
+              );
             }
           } else {
-            try { await itemDB.delete(rec.id); } catch { /* ignore */ }
+            try {
+              await itemDB.delete(rec.id);
+            } catch {
+              /* ignore */
+            }
             throw err;
           }
         }
@@ -1014,8 +1177,11 @@ export async function addUrlToFolder(
   });
 }
 
-
-export async function addUrlToDefaultLibrary(url: string, title: string, filename?: string): Promise<PersonalItem> {
+export async function addUrlToDefaultLibrary(
+  url: string,
+  title: string,
+  filename?: string,
+): Promise<PersonalItem> {
   const folder = await getOrCreateFolder("Saved PDFs");
   return addUrlToFolder(folder.id, url, title, filename);
 }
@@ -1024,14 +1190,16 @@ export async function addUrlToDefaultLibrary(url: string, title: string, filenam
 export async function addBlobToDefaultLibrary(
   blob: Blob,
   title: string,
-  filename: string
+  filename: string,
 ): Promise<PersonalItem> {
   const folder = await getOrCreateFolder("Saved PDFs");
   const safeName = /\.[a-z0-9]+$/i.test(filename)
     ? filename
     : `${filename}.${extOf(filename, blob.type || "")}`;
   const file = new File([blob], safeName, {
-    type: blob.type || mimeForExt(extOf(safeName, blob.type || ""), "application/pdf"),
+    type:
+      blob.type ||
+      mimeForExt(extOf(safeName, blob.type || ""), "application/pdf"),
   });
   const rec = await addFileToFolder(folder.id, file, "lesson");
   rec.title = title.replace(/\.[^.]+$/, "");
