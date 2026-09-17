@@ -1,18 +1,49 @@
-// Shared CORS helper.
+// Shared CORS helper — single source of truth for which websites may talk to
+// these functions.
 //
 // Behaviour:
-// - Auto-allow Lovable preview/prod origins (*.lovable.app, *.lovableproject.com)
-//   and localhost, so preview + published apps work without extra config.
-// - If ALLOWED_ORIGINS secret is set (comma-separated), those are also honored.
-// - If neither the pattern nor ALLOWED_ORIGINS matches, fall back to the first
-//   allowed origin (never `*` in production) — or `*` when nothing is configured.
+// - `SITE_ORIGINS` below is the ONE place to add/remove a site origin.
+// - Extra origins can be appended at runtime via the `ALLOWED_ORIGINS` secret
+//   (comma-separated). It can only ADD origins; it can never redirect or
+//   override the canonical list.
+// - Unknown origin => NO `Access-Control-Allow-Origin` header at all. The
+//   browser then blocks the response, which is the intended, explicit answer.
+//   We never echo an unknown origin (that would let any site read responses)
+//   and we never fall back to some other configured origin (that silently broke
+//   the live site when the fallback pointed at a retired domain — the root
+//   cause of the "Failed to send a request to the Edge Function" outage,
+//   AUDIT 2026-09-17).
 // - Always sets `Vary: Origin` so CDNs don't cross-cache responses.
 //
 // Usage:
 //   const corsHeaders = buildCorsHeaders(req);
 //   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
-const ALLOWED = (Deno.env.get("ALLOWED_ORIGINS") ?? "")
+/**
+ * SINGLE SOURCE OF TRUTH for allowed site origins.
+ * Add a new domain here (and nowhere else) when the website moves.
+ * Retired: sadguruclasses.*, safarenglishka.* (pre-rebrand names).
+ */
+export const SITE_ORIGINS: RegExp[] = [
+  // Live website (Vercel) + this project's preview deployments only.
+  /^https:\/\/jsrcoaching\.vercel\.app$/i,
+  /^https:\/\/jsrcoaching-[a-z0-9-]+\.vercel\.app$/i,
+  /^https:\/\/([a-z0-9-]+\.)*jsrcoaching\.com$/i,
+  // Lovable preview / published hosts.
+  /^https:\/\/([a-z0-9-]+\.)*lovable\.app$/i,
+  /^https:\/\/([a-z0-9-]+\.)*lovableproject\.com$/i,
+  /^https:\/\/([a-z0-9-]+\.)*lovable\.dev$/i,
+  // Local development.
+  /^http:\/\/localhost(:\d+)?$/i,
+  /^http:\/\/127\.0\.0\.1(:\d+)?$/i,
+  // Capacitor Android WebView (androidScheme: 'https' loads from https://localhost).
+  /^https:\/\/localhost(:\d+)?$/i,
+  /^capacitor:\/\/localhost$/i,
+  /^ionic:\/\/localhost$/i,
+];
+
+// Optional additive allow-list from the environment. Additive only.
+const EXTRA_ALLOWED = (Deno.env.get("ALLOWED_ORIGINS") ?? "")
   .split(",")
   .map((o) => o.trim())
   .filter(Boolean);
@@ -26,72 +57,26 @@ const ALLOW_HEADERS =
   "x-supabase-client-runtime, x-supabase-client-runtime-version, " +
   "range";
 
-const AUTO_ALLOW_PATTERNS: RegExp[] = [
-  /^https:\/\/([a-z0-9-]+\.)*lovable\.app$/i,
-  /^https:\/\/([a-z0-9-]+\.)*lovableproject\.com$/i,
-  /^https:\/\/([a-z0-9-]+\.)*lovable\.dev$/i,
-  /^http:\/\/localhost(:\d+)?$/i,
-  /^http:\/\/127\.0\.0\.1(:\d+)?$/i,
-  // Production web host (Vercel) + this project's preview deployments only.
-  // Without this the helper falls back to ALLOWED[0] as soon as
-  // ALLOWED_ORIGINS is set, which would break every payment call from the
-  // live website.
-  //
-  // AUDIT 2026-08-03 [M1]: the previous `*.vercel.app` wildcard trusted every
-  // Vercel-hosted site on the internet as an origin for payment endpoints.
-  // Scoped down to this project's deployment names.
-  // AUDIT 2026-09-17: the pre-rebrand project names (`sadguruclasses`,
-  // `safarenglishka`) are retired. They are no longer listed — the live site is
-  // `jsrcoaching.vercel.app`. Also see `buildCorsHeaders`: an unrecognised
-  // origin is now echoed back instead of falling back to ALLOWED[0] (which was
-  // a retired domain, so the browser rejected every response and students only
-  // saw "Failed to send a request to the Edge Function").
-  /^https:\/\/jsrcoaching\.vercel\.app$/i,
-  /^https:\/\/jsrcoaching-[a-z0-9-]+\.vercel\.app$/i,
-  /^https:\/\/([a-z0-9-]+\.)*jsrcoaching\.com$/i,
-  // Capacitor Android WebView with androidScheme: 'https' loads the app from
-  // https://localhost, so its Origin header is exactly that. Without this
-  // pattern, every supabase.functions.invoke() from the APK was falling back
-  // to ALLOWED[0] and the browser rejected the response → user saw the
-  // generic "Failed to send a request to the Edge Function" toast on every
-  // lesson / PDF / DPP open.
-  /^https:\/\/localhost(:\d+)?$/i,
-  /^capacitor:\/\/localhost$/i,
-  /^ionic:\/\/localhost$/i,
-];
-
-function isAutoAllowed(origin: string): boolean {
-  return AUTO_ALLOW_PATTERNS.some((re) => re.test(origin));
-}
-
 export function isOriginAllowed(origin: string): boolean {
-  return !!origin && (isAutoAllowed(origin) || ALLOWED.includes(origin));
+  if (!origin) return false;
+  return SITE_ORIGINS.some((re) => re.test(origin)) ||
+    EXTRA_ALLOWED.includes(origin);
 }
-
-// Fallback used when the caller's origin is not recognised. Never echo an
-// unknown origin: that would let any website on the internet read responses
-// from these functions. Prefer the first explicitly configured origin, then
-// the canonical production host.
-const FALLBACK_ORIGIN = ALLOWED[0] ?? "https://jsrcoaching.vercel.app";
 
 export function buildCorsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get("Origin") ?? "";
   const known = isOriginAllowed(origin);
 
-  // AUDIT 2026-09-17: the previous fallback pointed at a retired domain, so the
-  // browser discarded every response and students saw "Failed to send a request
-  // to the Edge Function" on every doubt. Known origins (live site, preview
-  // deployments, Capacitor WebView, Lovable preview, localhost) are echoed;
-  // unknown origins get FALLBACK_ORIGIN, which the browser rejects by design.
-  // `_shared/auth.ts` still verifies the caller's JWT — CORS is defence in depth.
-  const allowOrigin = known ? origin : FALLBACK_ORIGIN;
-
-  return {
-    "Access-Control-Allow-Origin": allowOrigin,
+  const headers: Record<string, string> = {
     "Access-Control-Allow-Headers": ALLOW_HEADERS,
     "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
     "Vary": "Origin",
     // Diagnostic only: lets us spot an unexpected origin in logs.
     "X-Origin-Known": known ? "1" : "0",
   };
+
+  // Only a recognised origin gets an allow header. No fallback, no wildcard.
+  if (known) headers["Access-Control-Allow-Origin"] = origin;
+
+  return headers;
 }
