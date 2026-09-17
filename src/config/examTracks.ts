@@ -33,7 +33,7 @@ export const examTracks: ExamTrack[] = [
     route: "/up-board-english",
     badge: "UP Board",
     title: "UP Board English — Class 9 to 12",
-    faculty: "Ramchandra Sir",
+    faculty: "Pankaj Sir",
     language: "Hindi medium friendly",
     duration: "9 months · 220+ lessons",
     startDate: "Naya batch: 5 Aug 2026",
@@ -44,8 +44,8 @@ export const examTracks: ExamTrack[] = [
     hero: {
       h1: "UP Board English (Class 9–12) — Hindi Medium Prep",
       subtitle:
-        "Ramchandra Sir ke saath UP Board English ki puri taiyari — prose, poetry, grammar, translation aur writing skills. Chapter-wise videos, PDF notes aur weekly tests.",
-      metaTitle: "UP Board English (Class 9–12) — JSR COACHING by Ramchandra Sir",
+        "Pankaj Sir ke saath UP Board English ki puri taiyari — prose, poetry, grammar, translation aur writing skills. Chapter-wise videos, PDF notes aur weekly tests.",
+      metaTitle: "UP Board English (Class 9–12) — JSR COACHING by Pankaj Sir",
       metaDescription:
         "UP Board English Class 9 se 12 tak — Hindi medium ke liye chapter-wise video lessons, PDF notes, weekly tests aur doubt support. Free demo aaj shuru karein.",
     },
@@ -76,7 +76,7 @@ export const examTracks: ExamTrack[] = [
     route: "/cbse-english",
     badge: "CBSE",
     title: "CBSE English — Grammar & Writing",
-    faculty: "Ramchandra Sir",
+    faculty: "Pankaj Sir",
     language: "Hindi + English",
     duration: "10 weeks · 72 lessons",
     startDate: "Naya batch: 12 Aug 2026",
@@ -107,7 +107,7 @@ export const examTracks: ExamTrack[] = [
     ],
     faqs: [
       { q: "Kya ye Class 10 aur 12 dono ke liye hai?", a: "Haan — grammar aur writing sab classes ke liye common hai, literature chapter-wise organize hai." },
-      { q: "Writing tasks pe feedback kaun deta hai?", a: "Ramchandra Sir aur team weekly writing pe personal feedback dete hain." },
+      { q: "Writing tasks pe feedback kaun deta hai?", a: "Pankaj Sir aur team weekly writing pe personal feedback dete hain." },
       { q: "Kya CBSE sample papers milte hain?", a: "Haan, latest sample papers + last 5 years ka solved paper included hai." },
       { q: "Language kya hai?", a: "Explanation Hindi mein, examples aur answers English mein — bilingual approach." },
       { q: "Free demo kaise le?", a: "Signup karke Grammar ka first chapter free access kar sakte ho." },
@@ -118,7 +118,7 @@ export const examTracks: ExamTrack[] = [
     route: "/cg-lecturer-english",
     badge: "CG Lecturer",
     title: "CG Lecturer English — Full Prep",
-    faculty: "Ramchandra Sir",
+    faculty: "Pankaj Sir",
     language: "Hindi + English",
     duration: "16 weeks · 120+ lessons",
     startDate: "Naya batch: 20 Aug 2026",
@@ -132,7 +132,7 @@ export const examTracks: ExamTrack[] = [
         "Chhattisgarh Lecturer English paper ki poori tayyari — literature history, linguistics, teaching methodology aur last 10 years ke previous year questions.",
       metaTitle: "CG Lecturer English — Full Prep + PYQ | JSR COACHING",
       metaDescription:
-        "CG Lecturer English paper ke liye complete course — literature, linguistics, methodology, aur 10 years ke PYQ. Weekly mock + doubt sessions Ramchandra Sir ke saath.",
+        "CG Lecturer English paper ke liye complete course — literature, linguistics, methodology, aur 10 years ke PYQ. Weekly mock + doubt sessions Pankaj Sir ke saath.",
     },
     syllabus: [
       { chapter: "English Literature", topics: ["Chaucer to Modern Age", "Major poets & novelists", "Shakespeare"] },
@@ -160,7 +160,7 @@ export const examTracks: ExamTrack[] = [
     slug: "spoken-english",
     badge: "Spoken",
     title: "Spoken English & Interview Prep",
-    faculty: "Ramchandra Sir",
+    faculty: "Pankaj Sir",
     language: "Hindi medium friendly",
     duration: "8 weeks · 60 lessons",
     startDate: "Rolling admission",

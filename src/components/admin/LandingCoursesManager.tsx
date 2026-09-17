@@ -24,7 +24,7 @@ const EMPTY: LandingCourseInsert = {
   slug: "",
   badge: "",
   title: "",
-  faculty: "Ramchandra Sir",
+  faculty: "Pankaj Sir",
   language: "Hindi medium friendly",
   duration: "",
   start_date: "",

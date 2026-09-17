@@ -9,7 +9,7 @@ export interface MentorInfo {
 }
 
 export const PERSONAL_MENTORS: MentorInfo[] = [
-  { name: "Ramchandra Sir", role: "Founder & Lead Mentor", phone: "+91 73884 59249", email: "jsrcoachinginstitute@gmail.com", initials: "RV" },
+  { name: "Pankaj Sir", role: "Founder & Lead Mentor", phone: "+91 73884 59249", email: "jsrcoachinginstitute@gmail.com", initials: "PS" },
   { name: "Priya Ma'am", role: "Spoken English Mentor", phone: "+91 73884 59249", email: "jsrcoachinginstitute@gmail.com", initials: "PM" },
   { name: "Rahul Sir", role: "Grammar Mentor", phone: "+91 73884 59249", email: "jsrcoachinginstitute@gmail.com", initials: "RS" },
   { name: "Anjali Ma'am", role: "CG Lecturer Prep Mentor", phone: "+91 73884 59249", email: "jsrcoachinginstitute@gmail.com", initials: "AM" },

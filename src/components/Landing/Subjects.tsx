@@ -6,13 +6,13 @@ const featured = [
   {
     tag: "Class 10 · All Subjects",
     title: "Class 10 Board Exam — Complete Prep",
-    instructor: "Ramchandra Sir",
+    instructor: "Pankaj Sir",
     duration: "Full syllabus · revision + mocks",
   },
   {
     tag: "Class 12 · English",
     title: "Board English — Grammar & Writing",
-    instructor: "Ramchandra Sir",
+    instructor: "Pankaj Sir",
     duration: "10 weeks · 72 lessons",
   },
   {

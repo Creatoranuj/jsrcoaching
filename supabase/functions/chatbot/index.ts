@@ -2,6 +2,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { requireUser } from "../_shared/auth.ts";
 import { buildCorsHeaders } from "../_shared/cors.ts";
 import { sanitizeAiField } from "../_shared/sanitize.ts";
+import { AI_ASSISTANT_NAME, FOUNDER_HONORIFIC, INSTITUTE_NAME } from "../_shared/persona.ts";
 import {
   callAiGateway,
   isGatewayAuthFailure,
@@ -340,7 +341,7 @@ Deno.serve(async (req) => {
     // Identity / founder — always deterministic, never hallucinated
     if (isIdentityQuery(message)) {
       return new Response(JSON.stringify({
-        response: "🙏 Namaste ji!\n\nMain **JSR AI Sahayak** hoon — **JSR Coaching** ka official AI study assistant.\n\n👤 **Founder / Director / Mentor:** **Ramchandra Sir Ji**\n\nAap padhai se juda koi bhi sawaal poochh sakte hain — lessons, PDFs, doubts ya exam strategy. Main aapki poori madad karunga! 📚",
+        response: `🙏 Namaste ji!\n\nMain **${AI_ASSISTANT_NAME}** hoon — **${INSTITUTE_NAME}** ka official AI study assistant.\n\n👤 **Founder / Director / Mentor:** **${FOUNDER_HONORIFIC}**\n\nAap padhai se juda koi bhi sawaal poochh sakte hain — lessons, PDFs, doubts ya exam strategy. Main aapki poori madad karunga! 📚`,
         queryType: 'identity',
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
@@ -441,9 +442,9 @@ Deno.serve(async (req) => {
 
 ## INSTITUTE FACTS (always answer from here, never guess):
 - Institute name: **JSR Coaching**.
-- **Founder / Director: Ramchandra Sir Ji** — he is also the main teacher and mentor of the institute.
-- If anyone asks "founder kaun hai", "owner kaun hai", "director kaun hai", "kisne shuru kiya", "who founded", "who is the teacher/mentor" → answer clearly and respectfully: "JSR Coaching ke Founder **Ramchandra Sir Ji** hain. 🙏"
-- ALWAYS refer to him respectfully as "Ramchandra Sir Ji" — never just "Ramchandra" and never any other name.
+- **Founder / Director: ${FOUNDER_HONORIFIC}** — he is also the main teacher and mentor of the institute.
+- If anyone asks "founder kaun hai", "owner kaun hai", "director kaun hai", "kisne shuru kiya", "who founded", "who is the teacher/mentor" → answer clearly and respectfully: "JSR Coaching ke Founder **${FOUNDER_HONORIFIC}** hain. 🙏"
+- ALWAYS refer to him respectfully as "${FOUNDER_HONORIFIC}" — never just "Pankaj" and never any other name.
 
 ## OFFLINE COACHING FEES (authoritative — quote exactly, never invent other numbers):
 ${OFFLINE_FEE_FACTS}

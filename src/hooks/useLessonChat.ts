@@ -2,11 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { friendlyAiError, isAiKeyFailure } from "@/lib/aiErrorMessage";
+import { ASK_TEACHERS } from "@/config/faculty";
 
 
 export type ChatMsg = { role: "user" | "assistant"; content: string; ts: number; error?: boolean };
-
-const ASK_TEACHERS = ["Ramchandra Sir", "JSR AI Sahayak", "Sahayak"];
 
 const pickTeacher = () => ASK_TEACHERS[Math.floor(Math.random() * ASK_TEACHERS.length)];
 

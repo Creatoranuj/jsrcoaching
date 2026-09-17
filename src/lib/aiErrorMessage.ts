@@ -27,6 +27,15 @@ const SLOW = "⏳ AI ने जवाब देने में ज़्या�
 const SESSION = "🔒 Session expire हो गया — page refresh करें।";
 const SERVER = "🛠️ Server पर दिक़्क़त है — थोड़ी देर बाद try करें।";
 const OFFLINE = "📶 Internet connection check करें और फिर try करें।";
+/**
+ * supabase-js throws FunctionsFetchError ("Failed to send a request to the Edge
+ * Function") when the browser never got a usable response — the request was
+ * blocked before the function could answer (CORS/allow-origin mismatch, function
+ * not deployed, DNS). This is a server-side configuration fault, not the
+ * student's internet, so it must not be reported as "check your connection".
+ */
+const BLOCKED =
+  "🚧 AI server तक request पहुँच नहीं पाई (server configuration issue). Retry दबाएँ — फिर भी न चले तो admin को बताएँ।";
 const GENERIC = "🔧 Connection में problem है। थोड़ी देर बाद try करें। 🙏";
 
 /** Only these codes mean the gateway credential itself is broken. */
@@ -52,9 +61,11 @@ export function friendlyAiError(input: AiErrorInput): string {
   // 401 from Supabase means the *user's* JWT was rejected, not the AI key.
   if (status === 401) return SESSION;
   if (typeof navigator !== "undefined" && navigator.onLine === false) return OFFLINE;
+  // Request never reached the function (CORS / not deployed) — server-side fault.
+  if (/failed to send a request|failed to send request/.test(msg)) return BLOCKED;
   if (/failed to fetch|networkerror|load failed/.test(msg)) return OFFLINE;
   if (status !== undefined && status >= 500) return SERVER;
   return GENERIC;
 }
 
-export const AI_ERROR_COPY = { KEY_ISSUE, CREDITS, RATE, SLOW, SESSION, SERVER, OFFLINE, GENERIC };
+export const AI_ERROR_COPY = { KEY_ISSUE, CREDITS, RATE, SLOW, SESSION, SERVER, OFFLINE, BLOCKED, GENERIC };

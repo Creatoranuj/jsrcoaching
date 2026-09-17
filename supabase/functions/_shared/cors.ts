@@ -64,22 +64,37 @@ function isAutoAllowed(origin: string): boolean {
   return AUTO_ALLOW_PATTERNS.some((re) => re.test(origin));
 }
 
+export function isOriginAllowed(origin: string): boolean {
+  return !!origin && (isAutoAllowed(origin) || ALLOWED.includes(origin));
+}
+
+/**
+ * AUDIT 2026-09-17: the old fallback returned `ALLOWED[0]` for any origin that
+ * did not match a pattern. After the safarenglishka → jsrcoaching rename the
+ * deployed functions answered every request from the live site with
+ * `Access-Control-Allow-Origin: https://safarenglishka.vercel.app`, so the
+ * browser discarded the response and every AI/PDF/payment call surfaced as the
+ * useless toast "Failed to send a request to the Edge Function".
+ *
+ * A mismatched allow-origin header is never useful: it cannot authorize the
+ * caller and it destroys the error message. CORS is not this backend's security
+ * boundary either — every function verifies the Supabase JWT (see
+ * `_shared/auth.ts`) before doing any work. So echo the caller's origin and let
+ * authentication decide, instead of silently breaking a whole domain whenever a
+ * hostname changes.
+ */
 export function buildCorsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get("Origin") ?? "";
-  let allowOrigin: string;
+  const allowOrigin = origin || "*";
 
-  if (origin && (isAutoAllowed(origin) || ALLOWED.includes(origin))) {
-    allowOrigin = origin;
-  } else if (ALLOWED.length > 0) {
-    allowOrigin = ALLOWED[0];
-  } else {
-    allowOrigin = "*";
-  }
-
-  return {
+  const headers: Record<string, string> = {
     "Access-Control-Allow-Origin": allowOrigin,
     "Access-Control-Allow-Headers": ALLOW_HEADERS,
     "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
     "Vary": "Origin",
   };
+  // Diagnostic only — lets us see an unexpected origin in logs/devtools without
+  // breaking the response.
+  if (origin && !isOriginAllowed(origin)) headers["X-Origin-Known"] = "false";
+  return headers;
 }
