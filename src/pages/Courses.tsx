@@ -30,7 +30,8 @@ const Courses = () => {
   const { user } = useAuth();
 
   // Cached course lesson stats — was the #1 slow query (20.5s total across 636 calls).
-  // 5min staleTime dedupes across every Courses mount / tab return.
+  // 15min staleTime dedupes across every Courses mount / tab return
+  // (raised from 5min in the 2026-09-17 audit: 793 calls, slowest at 37ms).
   const { data: lessonCounts = {} } = useQuery({
     queryKey: ["course-lesson-stats"],
     queryFn: async () => {
@@ -46,7 +47,7 @@ const Courses = () => {
       });
       return counts;
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
   });
 
