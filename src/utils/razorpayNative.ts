@@ -62,6 +62,22 @@ export class RazorpayInvalidResponseError extends Error {
   }
 }
 
+/**
+ * The bridge kept reporting the native sheet as alive but it never produced a
+ * result within {@link MAX_LIVE_SHEET_WAITS} rounds. This is NOT a launch
+ * failure: a second (web) checkout must not be opened underneath a sheet that
+ * may still be processing a payment. Callers reset the CTA and point the user
+ * at webhook-based enrollment recovery.
+ */
+export class RazorpaySheetUnresponsiveError extends Error {
+  constructor() {
+    super(
+      "Payment sheet ne jawab nahi diya. Agar paisa kat gaya hai to enrollment webhook se apne aap ho jayega — My Courses thodi der mein check karein.",
+    );
+    this.name = "RazorpaySheetUnresponsiveError";
+  }
+}
+
 /** How long we wait for the native sheet before declaring it stuck. */
 export const NATIVE_LAUNCH_TIMEOUT_MS = 5000;
 
@@ -215,7 +231,10 @@ export const normalizeNativeError = (input: unknown): NormalizedRazorpayError =>
     }
 
     // Recurse into nested containers where plugins wrap the real error.
-    for (const nestedKey of ["error", "response", "data", "details", "payload", "cause", "body", "result", "message", "errorMessage"]) {
+    // `description` is included because the Android SDK hands the merchant
+    // its raw `{"error":{...}}` JSON *as the description string* — the real
+    // step / reason live one level inside it.
+    for (const nestedKey of ["error", "response", "data", "details", "payload", "cause", "body", "result", "message", "errorMessage", "description"]) {
       const nested = (obj as Record<string, unknown>)[nestedKey];
       if (nested && (typeof nested === "object" || typeof nested === "string")) {
         visit(nested, depth + 1);
@@ -297,10 +316,15 @@ export const buildNativeCheckoutPayload = (
 
 /**
  * Upper bound on "the sheet is still alive, keep waiting" rounds. Each round is
- * {@link NATIVE_RESUME_TIMEOUT_MS}, so this caps the wait at a few minutes —
- * enough for a slow UPI app round trip, while never waiting forever.
+ * {@link NATIVE_RESUME_TIMEOUT_MS} (6 s), so 100 rounds ≈ 10 minutes — longer
+ * than Razorpay's own UPI collect/intent expiry, so a genuine payment is never
+ * cut short, while still guaranteeing the promise settles eventually.
+ *
+ * Reaching the ceiling raises {@link RazorpaySheetUnresponsiveError}, NOT the
+ * launch timeout: the bridge says the Razorpay Activity is still on top, so a
+ * web fallback would open a second checkout underneath a live payment.
  */
-export const MAX_LIVE_SHEET_WAITS = 30;
+export const MAX_LIVE_SHEET_WAITS = 100;
 
 /** Internal marker for "our watchdog fired", kept off the public error path. */
 const WATCHDOG = Symbol("razorpay-watchdog");
@@ -365,8 +389,16 @@ export const awaitNativeCheckoutResult = async (
     } catch {
       // Older APKs have no cancel(): treat as dead and fall back to web.
     }
-    if (dismissed || attempt >= MAX_LIVE_SHEET_WAITS) {
+    if (dismissed) {
       throw new RazorpayLaunchTimeoutError();
+    }
+    if (attempt >= MAX_LIVE_SHEET_WAITS) {
+      // Still alive after the ceiling: give up on this promise but never open
+      // a second checkout under it. Webhook/reconciliation own the outcome.
+      addBreadcrumb("payment", "razorpay:native-sheet-unresponsive", {
+        rounds: attempt + 1,
+      });
+      throw new RazorpaySheetUnresponsiveError();
     }
   }
 };
@@ -414,6 +446,7 @@ export const openNativeRazorpayCheckout = async (
     // (fall back to web / show the "didn't open" message).
     if (e instanceof RazorpayLaunchTimeoutError) throw e;
     if (e instanceof RazorpayBridgeMissingError) throw e;
+    if (e instanceof RazorpaySheetUnresponsiveError) throw e;
     const msg = e?.message || e?.errorMessage || String(e ?? "");
     if (looksLikeCancel(msg)) throw new RazorpayCancelledError();
     // Preserve Razorpay's structured error (step / reason / code) so the

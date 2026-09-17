@@ -18,9 +18,22 @@ import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebView;
 import androidx.core.view.WindowCompat;
+import com.razorpay.ExternalWalletListener;
+import com.razorpay.PaymentData;
+import com.razorpay.PaymentResultWithDataListener;
 import org.json.JSONObject;
 
-public class MainActivity extends BridgeActivity {
+/**
+ * Implements Razorpay's PaymentResultWithDataListener + ExternalWalletListener
+ * ON PURPOSE. With standard-core 1.7.x `Checkout` is a Fragment that starts
+ * CheckoutActivity itself and reports the outcome to the HOST ACTIVITY via
+ * these interfaces — the host's onActivityResult never sees RZP_REQUEST_CODE.
+ * Without these methods the payment result vanished and the WebView stayed on
+ * "Opening payment…" forever. Do NOT also implement PaymentResultListener: the
+ * SDK prefers it and it carries no order id / signature.
+ */
+public class MainActivity extends BridgeActivity
+        implements PaymentResultWithDataListener, ExternalWalletListener {
     /** Pending callback for an in-flight `<input type="file">` picker. */
     private ValueCallback<Uri[]> filePathCallback;
     private static final int FILE_CHOOSER_REQUEST = 51426;
@@ -119,7 +132,10 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        // Razorpay's SDK starts its own activity, so its result lands here.
+        // Legacy Razorpay cores start CheckoutActivity from the host Activity,
+        // so their result lands here. The current fragment-based core reports
+        // through onPaymentSuccess/onPaymentError below instead; the plugin
+        // settles each checkout exactly once whichever path fires.
         if (requestCode == com.razorpay.Checkout.RZP_REQUEST_CODE) {
             if (RazorpayNativePlugin.handleCheckoutResult(this, requestCode, resultCode, data)) {
                 return;
@@ -138,6 +154,39 @@ public class MainActivity extends BridgeActivity {
         }
         super.onActivityResult(requestCode, resultCode, data);
     }
+
+    // ---- Razorpay result handover (standard-core 1.7.x fragment flow) ----
+    // The SDK toasts "method is throwing an error" and drops the result if a
+    // listener throws, so every handler is fully guarded.
+
+    @Override
+    public void onPaymentSuccess(String razorpayPaymentId, PaymentData paymentData) {
+        try {
+            RazorpayNativePlugin.deliverSuccess(razorpayPaymentId, paymentData);
+        } catch (Throwable ignored) {
+            // deliverSuccess already rejects the pending call on internal failure.
+        }
+    }
+
+    @Override
+    public void onPaymentError(int code, String description, PaymentData paymentData) {
+        try {
+            RazorpayNativePlugin.deliverError(code, description, paymentData);
+        } catch (Throwable ignored) {
+            // never propagate into the SDK's callback dispatcher
+        }
+    }
+
+    @Override
+    public void onExternalWalletSelected(String walletName, PaymentData paymentData) {
+        try {
+            RazorpayNativePlugin.deliverExternalWallet(walletName);
+        } catch (Throwable ignored) {
+            // never propagate into the SDK's callback dispatcher
+        }
+    }
+
+
 
 
 

@@ -18,11 +18,16 @@ vi.mock("@capacitor/core", () => ({
 
 import {
   openNativeRazorpayCheckout,
+  awaitNativeCheckoutResult,
   RazorpayBridgeMissingError,
   RazorpayLaunchTimeoutError,
   RazorpayInvalidResponseError,
+  RazorpaySheetUnresponsiveError,
+  RazorpayCancelledError,
+  RazorpayNativeError,
   NATIVE_LAUNCH_TIMEOUT_MS,
   NATIVE_RESUME_TIMEOUT_MS,
+  MAX_LIVE_SHEET_WAITS,
   onWebViewBackgrounded,
   type NativeRazorpayOptions,
 } from "@/utils/razorpayNative";
@@ -150,6 +155,63 @@ describe("native checkout launch guards", () => {
     await vi.advanceTimersByTimeAsync(NATIVE_LAUNCH_TIMEOUT_MS + NATIVE_RESUME_TIMEOUT_MS + 50);
     await assertion;
     expect(cancelMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("never opens a web fallback under a sheet that stays alive past the ceiling", async () => {
+    vi.useFakeTimers();
+    // The bridge insists the Razorpay Activity is still on top, every time.
+    cancelMock.mockResolvedValue({ dismissed: false });
+    const openPromise = new Promise(() => {});
+    const promise = awaitNativeCheckoutResult({ cancel: cancelMock }, openPromise);
+    // Must NOT be the launch timeout (that triggers the caller's web fallback).
+    const assertion = expect(promise).rejects.toBeInstanceOf(RazorpaySheetUnresponsiveError);
+    await vi.advanceTimersByTimeAsync(
+      NATIVE_LAUNCH_TIMEOUT_MS + NATIVE_RESUME_TIMEOUT_MS * (MAX_LIVE_SHEET_WAITS + 1) + 500,
+    );
+    await assertion;
+    expect(cancelMock).toHaveBeenCalledTimes(MAX_LIVE_SHEET_WAITS + 1);
+  });
+
+  it("re-throws the unresponsive-sheet error untouched to the caller", async () => {
+    vi.useFakeTimers();
+    cancelMock.mockResolvedValue({ dismissed: false });
+    openMock.mockImplementation(() => new Promise(() => {}));
+    const promise = openNativeRazorpayCheckout(opts);
+    const assertion = expect(promise).rejects.toBeInstanceOf(RazorpaySheetUnresponsiveError);
+    await vi.advanceTimersByTimeAsync(
+      NATIVE_LAUNCH_TIMEOUT_MS + NATIVE_RESUME_TIMEOUT_MS * (MAX_LIVE_SHEET_WAITS + 1) + 500,
+    );
+    await assertion;
+  });
+
+  it("maps the Activity-listener cancel payload (code 2, reason) to a cancellation", async () => {
+    // Shape produced by RazorpayNativePlugin.deliverError() when Razorpay's
+    // fragment hands MainActivity.onPaymentError(PAYMENT_CANCELED, ...).
+    openMock.mockRejectedValue({
+      code: "2",
+      message: JSON.stringify({
+        code: 2,
+        description: '{"error":{"code":"BAD_REQUEST_ERROR","description":"Payment processing cancelled by user"}}',
+        reason: "payment_cancelled",
+        order_id: opts.order_id,
+      }),
+    });
+    await expect(openNativeRazorpayCheckout(opts)).rejects.toBeInstanceOf(RazorpayCancelledError);
+  });
+
+  it("keeps structured fields from an Activity-listener failure payload", async () => {
+    openMock.mockRejectedValue({
+      code: "1",
+      message: JSON.stringify({
+        code: 1,
+        description: '{"error":{"code":"BAD_REQUEST_ERROR","description":"Payment failed","step":"payment_authorization","reason":"payment_failed"}}',
+        order_id: opts.order_id,
+      }),
+    });
+    const err = await openNativeRazorpayCheckout(opts).catch((e) => e);
+    expect(err).toBeInstanceOf(RazorpayNativeError);
+    expect((err as RazorpayNativeError).step).toBe("payment_authorization");
+    expect((err as RazorpayNativeError).reason).toBe("payment_failed");
   });
 
   it("rejects a partial success callback instead of sending unsigned data to verification", async () => {
