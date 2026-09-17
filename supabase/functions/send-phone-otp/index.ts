@@ -12,20 +12,17 @@
 //   MSG91_TEMPLATE_ID     — dashboard → OTP → Template ID (24-char hex)
 //   MSG91_SENDER_ID       — 6-char DLT-approved header (e.g. NAVBHT)
 
+import "../_shared/errorReporting.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { buildCorsHeaders } from "../_shared/cors.ts";
+import { reportError } from "../_shared/errorReporting.ts";
+import { isRateLimitedByKey, rateLimitedResponse } from "../_shared/rateLimit.ts";
+import { normalizeIndianPhone, readJson } from "../_shared/validate.ts";
 
 const OTP_EXPIRY_SECONDS = 300; // 5 minutes
 const RATE_LIMIT_WINDOW = 900;  // 15 minutes
 const RATE_LIMIT_MAX = 3;
 
-function normalizePhone(input: string): string | null {
-  const digits = String(input || "").replace(/\D/g, "");
-  // Accept: 10-digit (91XXXXXXXXXX -> strip 91), 91XXXXXXXXXX, +91XXXXXXXXXX
-  if (digits.length === 10) return "91" + digits;
-  if (digits.length === 12 && digits.startsWith("91")) return digits;
-  return null;
-}
 
 async function sha256Hex(s: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
@@ -38,8 +35,8 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { phone } = await req.json().catch(() => ({}));
-    const normalized = normalizePhone(phone);
+    const { phone } = await readJson<{ phone?: unknown }>(req);
+    const normalized = normalizeIndianPhone(phone);
     if (!normalized) {
       return new Response(JSON.stringify({ error: "Invalid Indian mobile number" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -62,19 +59,18 @@ Deno.serve(async (req) => {
     );
 
     // Rate limit by phone (attackers can rotate anon JWTs; phone is the real key).
-    // Reuse existing check_rate_limit — its `_user_id` accepts any UUID-shaped
-    // discriminator; we synthesize one from the phone number.
-    const phoneKey = "00000000-0000-0000-0000-" + normalized.padStart(12, "0");
-    const { data: allowed } = await supabaseAdmin.rpc("check_rate_limit", {
-      _bucket: "send-phone-otp",
-      _user_id: phoneKey,
-      _max: RATE_LIMIT_MAX,
-      _window_seconds: RATE_LIMIT_WINDOW,
-    });
-    if (allowed === false) {
-      return new Response(JSON.stringify({ error: "Too many OTP requests. Wait 15 minutes." }), {
-        status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    // AUDIT 2026-09-17: this used the RPC directly and treated any error as
+    // "allowed", i.e. an unlimited SMS bill. Now it goes through the shared
+    // fail-closed limiter keyed on the phone number itself.
+    if (
+      await isRateLimitedByKey({
+        bucket: "send-phone-otp",
+        identifier: normalized,
+        max: RATE_LIMIT_MAX,
+        windowSeconds: RATE_LIMIT_WINDOW,
+      })
+    ) {
+      return rateLimitedResponse(corsHeaders, RATE_LIMIT_WINDOW);
     }
 
     // Generate 6-digit OTP (crypto-random, uniform).
@@ -123,7 +119,7 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
-    console.error("send-phone-otp error:", err);
+    await reportError(err, { surface: "send-phone-otp" });
     return new Response(JSON.stringify({ error: "Internal error" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

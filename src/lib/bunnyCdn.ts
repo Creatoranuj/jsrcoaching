@@ -63,14 +63,29 @@ export const listBunnyFiles = async (folder: string = ""): Promise<BunnyVideoInf
 };
 
 /**
- * Get the CDN playback URL for a Bunny.net file.
+ * Get a short-lived playback URL for a Bunny.net file.
+ *
+ * Pass `lessonId` for anything a student watches: the edge function checks the
+ * lesson's enrollment before signing, and the returned link expires (~4h).
+ * Staff (admin/teacher) may omit it for admin-panel previews. Because the link
+ * expires, don't cache it — call this again when playback starts.
  */
-export const getBunnyCdnUrl = async (fileName: string): Promise<string | null> => {
+export const getBunnyCdnUrl = async (
+  fileName: string,
+  lessonId?: string
+): Promise<string | null> => {
   const { data, error } = await supabase.functions.invoke("bunny-cdn", {
-    body: { action: "stream-url", fileName },
+    body: { action: "stream-url", fileName, lesson_id: lessonId },
   });
 
-  if (error || !data?.cdnUrl) return null;
+  if (error || !data?.cdnUrl) {
+    reportError(error ?? new Error("BunnyCDN stream-url returned no cdnUrl"), {
+      surface: "bunnyCdn",
+      stage: "stream-url",
+      message: error?.message ?? "No CDN URL returned",
+    });
+    return null;
+  }
   return data.cdnUrl;
 };
 
