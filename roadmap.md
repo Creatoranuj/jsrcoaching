@@ -14,3 +14,4 @@
 - [x] Razorpay checkout blank screen (Capacitor/app WebView) — native SDK callback lifecycle hardened; Android build #195 passed
 - [x] Verify `Creatoranuj's Project` backend connection after workspace move
 - [x] Harden native Razorpay callback validation and produce a verified Android APK (GitHub Android build #195 passed)
+- [x] "Opening payment" stuck fix — native cancel() now reports whether the Razorpay sheet is still open; JS watchdog keeps waiting instead of orphaning a live payment

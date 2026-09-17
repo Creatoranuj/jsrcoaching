@@ -39,7 +39,8 @@ const opts: NativeRazorpayOptions = {
 
 beforeEach(() => {
   openMock.mockReset();
-  cancelMock.mockReset().mockResolvedValue(undefined);
+  // Default: the bridge confirms the native sheet is really gone.
+  cancelMock.mockReset().mockResolvedValue({ dismissed: true });
   isPluginAvailable.mockReset().mockReturnValue(true);
 });
 
@@ -114,6 +115,41 @@ describe("native checkout launch guards", () => {
     setVisibility("visible");
     await vi.advanceTimersByTimeAsync(NATIVE_RESUME_TIMEOUT_MS + 10);
     await assertion;
+  });
+
+  it("keeps waiting while the bridge reports the native sheet is still open", async () => {
+    vi.useFakeTimers();
+    let settle: (v: unknown) => void = () => {};
+    openMock.mockImplementation(() => new Promise((resolve) => { settle = resolve; }));
+    // The Razorpay Activity is alive: cancel() must not tear it down.
+    cancelMock.mockResolvedValue({ dismissed: false });
+
+    const promise = openNativeRazorpayCheckout(opts);
+    // Several watchdog windows pass with no native callback at all.
+    await vi.advanceTimersByTimeAsync(NATIVE_LAUNCH_TIMEOUT_MS + NATIVE_RESUME_TIMEOUT_MS * 3 + 50);
+    // The user finally completes payment on the still-open sheet.
+    settle({
+      response: {
+        razorpay_payment_id: "pay_live",
+        razorpay_order_id: opts.order_id,
+        razorpay_signature: "sig_live",
+      },
+    });
+    await expect(promise).resolves.toMatchObject({ razorpay_payment_id: "pay_live" });
+  });
+
+  it("gives up only once the bridge confirms the sheet was dismissed", async () => {
+    vi.useFakeTimers();
+    openMock.mockImplementation(() => new Promise(() => {}));
+    cancelMock
+      .mockResolvedValueOnce({ dismissed: false })
+      .mockResolvedValue({ dismissed: true });
+
+    const promise = openNativeRazorpayCheckout(opts);
+    const assertion = expect(promise).rejects.toBeInstanceOf(RazorpayLaunchTimeoutError);
+    await vi.advanceTimersByTimeAsync(NATIVE_LAUNCH_TIMEOUT_MS + NATIVE_RESUME_TIMEOUT_MS + 50);
+    await assertion;
+    expect(cancelMock).toHaveBeenCalledTimes(2);
   });
 
   it("rejects a partial success callback instead of sending unsigned data to verification", async () => {

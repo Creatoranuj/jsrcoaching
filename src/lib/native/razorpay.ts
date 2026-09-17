@@ -9,9 +9,18 @@ export interface RazorpayNativeSuccess {
   response?: unknown;
 }
 
+/**
+ * `dismissed: false` means the native checkout Activity is still alive, so the
+ * caller must keep waiting instead of opening a second (web) checkout on top of
+ * a real payment sheet. Older APKs resolve with nothing.
+ */
+export interface RazorpayNativeCancelResult {
+  dismissed?: boolean;
+}
+
 export interface RazorpayNativePlugin {
   open(options: Record<string, unknown>): Promise<RazorpayNativeSuccess>;
-  cancel(): Promise<void>;
+  cancel(): Promise<RazorpayNativeCancelResult | void>;
 }
 
 let cached: RazorpayNativePlugin | null = null;
