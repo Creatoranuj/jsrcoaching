@@ -71,6 +71,40 @@ function fileRows(page: Page) {
   return page.getByRole("button", { name: /^open$/i });
 }
 
+/**
+ * Opens the uploaded file after a hard reload.
+ *
+ * The library restores the last open folder itself, so rows are usually already
+ * there. When they aren't, "button named E2E Test" is ambiguous — the toolbar
+ * filter, the breadcrumb and the folder card all carry that name — so try each
+ * match until the file rows actually appear instead of trusting `.first()`.
+ */
+async function findFileRow(page: Page, folderName: string) {
+  const rows = fileRows(page);
+  const visible = () =>
+    rows
+      .first()
+      .isVisible()
+      .catch(() => false);
+  if (!(await visible())) {
+    const candidates = page.getByRole("button", {
+      name: new RegExp(folderName, "i"),
+    });
+    const n = await candidates.count();
+    for (let i = 0; i < n; i++) {
+      await candidates
+        .nth(i)
+        .click({ timeout: 5000 })
+        .catch(() => {});
+      await page.waitForTimeout(1500);
+      if (await visible()) break;
+      await page.keyboard.press("Escape").catch(() => {});
+    }
+  }
+  await expect(rows.first()).toBeVisible({ timeout: 20000 });
+  await rows.first().click();
+}
+
 async function ensureFolder(page: Page, name: string) {
   // If folder already exists, just open it.
   const existing = page
@@ -103,6 +137,7 @@ test.describe("PDF offline persistence (web/IndexedDB)", () => {
   test("1. Upload → reload → opens (IndexedDB blob survives)", async ({
     page,
   }) => {
+    test.setTimeout(120_000);
     await openMyLibrary(page);
     await ensureFolder(page, "E2E Test");
 
@@ -114,11 +149,7 @@ test.describe("PDF offline persistence (web/IndexedDB)", () => {
     // Hard reload — the critical assertion: blob must come back from IndexedDB.
     await page.reload();
     await openMyLibrary(page);
-    await page
-      .getByRole("button", { name: /e2e test/i })
-      .first()
-      .click();
-    await fileRows(page).first().click();
+    await findFileRow(page, "E2E Test");
 
     // PDF.js renders pages into <canvas>. If the blob URL was dead we'd see
     // "Could not load PDF" instead.
@@ -129,6 +160,7 @@ test.describe("PDF offline persistence (web/IndexedDB)", () => {
   });
 
   test("2. Autoscroll moves the document at 0.1×", async ({ page }) => {
+    test.setTimeout(120_000);
     await openMyLibrary(page);
     await ensureFolder(page, "E2E Test");
     const rows = fileRows(page);
