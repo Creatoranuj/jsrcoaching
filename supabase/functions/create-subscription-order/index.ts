@@ -1,5 +1,7 @@
 import { buildCorsHeaders } from "../_shared/cors.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { razorpayAuthHeader, razorpayFetchWithRetry } from "../_shared/razorpayFetch.ts";
+import { reportError } from "../_shared/errorReporting.ts";
 
 
 // AUDIT 2026-08-03 [H3]: this used to be an in-memory Map, which is per-isolate
@@ -64,7 +66,15 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { plan_slug } = await req.json();
+    let subBody: { plan_slug?: unknown };
+    try {
+      subBody = await req.json();
+    } catch {
+      return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    const { plan_slug } = subBody as { plan_slug?: string };
     if (!plan_slug || typeof plan_slug !== 'string') {
       return new Response(JSON.stringify({ error: 'plan_slug is required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -92,10 +102,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    const credentials = btoa(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`);
-    const rzpRes = await fetch('https://api.razorpay.com/v1/orders', {
+    const rzpRes = await razorpayFetchWithRetry('https://api.razorpay.com/v1/orders', {
       method: 'POST',
-      headers: { 'Authorization': `Basic ${credentials}`, 'Content-Type': 'application/json' },
+      headers: {
+        'Authorization': razorpayAuthHeader(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET),
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify({
         amount: plan.amount_paise,
         currency: plan.currency || 'INR',
@@ -105,13 +117,31 @@ Deno.serve(async (req) => {
     });
 
     if (!rzpRes.ok) {
-      console.error('Razorpay order error:', await rzpRes.text());
+      await reportError(new Error(`razorpay subscription order failed (${rzpRes.status ?? 'network'})`), {
+        surface: 'create-subscription-order', stage: 'razorpay_api',
+        userId: user.id, plan_slug: plan.slug, body: rzpRes.bodyText ?? rzpRes.networkError ?? null,
+      });
+      if (rzpRes.retryable) {
+        return new Response(JSON.stringify({
+          error: 'Payment server is busy. Please try again in a moment.',
+          code: 'RAZORPAY_UNREACHABLE', retryable: true,
+        }), { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
       return new Response(JSON.stringify({ error: 'Failed to create Razorpay order' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    const order = await rzpRes.json();
+    const order = rzpRes.data ?? {};
+    if (!order.id) {
+      await reportError(new Error('razorpay subscription order response missing id'), {
+        surface: 'create-subscription-order', stage: 'razorpay_api', userId: user.id,
+      });
+      return new Response(JSON.stringify({
+        error: 'Payment server returned an unexpected response. Please retry.',
+        code: 'RAZORPAY_BAD_RESPONSE',
+      }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
     return new Response(JSON.stringify({
       order_id: order.id,
@@ -124,7 +154,7 @@ Deno.serve(async (req) => {
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error) {
-    console.error('Error:', error);
+    await reportError(error, { surface: 'create-subscription-order', stage: 'unhandled' });
     return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
