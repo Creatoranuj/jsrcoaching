@@ -1069,7 +1069,11 @@ jobs:
           # Production certificate fingerprint. Guards against a build that is
           # signed with a different key — such an APK cannot update existing
           # installs and shows up to users as an install failure.
-          EXPECTED_CERT_SHA256: ${{ secrets.RELEASE_CERT_SHA256 }}
+          # Fingerprint of the production upload key (public information —
+          # verified from release v1.7.2 and v2026.09.17.1). Hard default so the
+          # gate is always active; override via the RELEASE_CERT_SHA256 secret
+          # only during a deliberate key rotation.
+          EXPECTED_CERT_SHA256: ${{ secrets.RELEASE_CERT_SHA256 || 'b28be652ff2acf0ebf8e9063c996e3a9efb4e260e20ce9a955d02ac45bae18f5' }}
         run: |
           set -eo pipefail
           chmod +x scripts/verify-apk-release.sh
