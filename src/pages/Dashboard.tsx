@@ -42,6 +42,11 @@ const studentQuickActions = [
   { Icon: BarChart3, label: "Performance", path: "/reports", bg: "bg-green-50 dark:bg-green-950/30", fg: "text-green-600 dark:text-green-300" },
 ];
 
+// Cold-start cache for the dashboard snapshot. Keyed per user so switching
+// accounts never shows the previous student's courses.
+const SNAPSHOT_CACHE_PREFIX = "nb_dash_snap_v1_";
+const SNAPSHOT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
 // ── Static outside component — recreated on every render otherwise ─────────
 const teacherFeatures = [
   { icon: ClipboardCheck, label: "Attendance", color: "text-blue-600 bg-blue-100", path: "/attendance" },
@@ -167,54 +172,84 @@ const Dashboard = () => {
     let alive = true;
     const ac = new AbortController();
 
+    // Snapshot → view-model. Shared by the cached (instant) render and the
+    // fresh network render so both paths can never drift apart.
+    const applySnapshot = (snap: DashboardSnapshot) => {
+      const enrollments = snap.enrollments ?? [];
+      const allLessons = snap.course_lessons ?? [];
+      const progressData = snap.user_progress ?? [];
+
+      if (enrollments.length > 0) {
+        const seenIds = new Set<number>();
+        const enrolled = enrollments
+          .filter((e) => {
+            const cid = e.course?.id;
+            if (!cid || seenIds.has(cid)) return false;
+            seenIds.add(cid);
+            return true;
+          })
+          .map((e) => {
+            const courseId = e.course?.id;
+            const courseLessons = allLessons.filter((l) => l.course_id === courseId);
+            const courseLessonIds = new Set(courseLessons.map((l) => l.id));
+            const completedCount = progressData.filter(
+              (p) => p.completed && (p.course_id === courseId || courseLessonIds.has(p.lesson_id))
+            ).length;
+            const total = courseLessons.length;
+            const pct = total > 0 ? Math.round((completedCount / total) * 100) : 0;
+            return {
+              id: courseId,
+              title: e.course?.title,
+              description: e.course?.description,
+              grade: e.course?.grade,
+              imageUrl: e.course?.image_url,
+              thumbnailUrl: e.course?.thumbnail_url,
+              progressPercent: pct,
+            };
+          });
+        setMyCourses(enrolled);
+        setProgressPercent(enrolled[0]?.progressPercent || 0);
+      }
+
+      if (snap.recent_quiz_attempts) {
+        setQuizAttempts(snap.recent_quiz_attempts as QuizAttemptRow[]);
+      }
+      if (snap.upcoming_doubts) {
+        setUpcomingDoubts(snap.upcoming_doubts);
+      }
+    };
+
+    // Last session's snapshot renders the dashboard immediately on a cold
+    // start; the network copy then refreshes it in the background. Without
+    // this the whole screen stays on the loader for as long as the RPC takes.
+    const cacheKey = `${SNAPSHOT_CACHE_PREFIX}${user.id}`;
+    let servedFromCache = false;
+    try {
+      const raw = safeGet(cacheKey);
+      if (raw) {
+        const cached = JSON.parse(raw) as { at: number; snap: DashboardSnapshot };
+        if (cached?.snap && Date.now() - cached.at < SNAPSHOT_CACHE_TTL_MS) {
+          applySnapshot(cached.snap);
+          setLoading(false);
+          servedFromCache = true;
+        }
+      }
+    } catch {
+      // Corrupt or unavailable storage — just fall through to the network.
+    }
+
     const fetchDashboardData = async () => {
       try {
-        setLoading(true);
+        if (!servedFromCache) setLoading(true);
 
         const snap = await fetchDashboardSnapshot(ac.signal);
         if (!alive) return;
 
-        const enrollments = snap.enrollments ?? [];
-        const allLessons = snap.course_lessons ?? [];
-        const progressData = snap.user_progress ?? [];
-
-        if (enrollments.length > 0) {
-          const seenIds = new Set<number>();
-          const enrolled = enrollments
-            .filter((e) => {
-              const cid = e.course?.id;
-              if (!cid || seenIds.has(cid)) return false;
-              seenIds.add(cid);
-              return true;
-            })
-            .map((e) => {
-              const courseId = e.course?.id;
-              const courseLessons = allLessons.filter((l) => l.course_id === courseId);
-              const courseLessonIds = new Set(courseLessons.map((l) => l.id));
-              const completedCount = progressData.filter(
-                (p) => p.completed && (p.course_id === courseId || courseLessonIds.has(p.lesson_id))
-              ).length;
-              const total = courseLessons.length;
-              const pct = total > 0 ? Math.round((completedCount / total) * 100) : 0;
-              return {
-                id: courseId,
-                title: e.course?.title,
-                description: e.course?.description,
-                grade: e.course?.grade,
-                imageUrl: e.course?.image_url,
-                thumbnailUrl: e.course?.thumbnail_url,
-                progressPercent: pct,
-              };
-            });
-          setMyCourses(enrolled);
-          setProgressPercent(enrolled[0]?.progressPercent || 0);
-        }
-
-        if (snap.recent_quiz_attempts) {
-          setQuizAttempts(snap.recent_quiz_attempts as QuizAttemptRow[]);
-        }
-        if (snap.upcoming_doubts) {
-          setUpcomingDoubts(snap.upcoming_doubts);
+        applySnapshot(snap);
+        try {
+          safeSet(cacheKey, JSON.stringify({ at: Date.now(), snap }));
+        } catch {
+          // Quota or private mode — caching is best-effort only.
         }
       } catch (error: any) {
         if (error?.name === "AbortError" || !alive) return;
