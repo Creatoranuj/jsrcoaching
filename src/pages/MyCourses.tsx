@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback, useMemo, memo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, memo } from "react";
 import { reportError } from "@/lib/sentry";
 import { useNavigate } from "react-router-dom";
 import { tapHaptic, selectionHaptic } from "@/lib/native/haptics";
 import { BackButton } from "../components/ui/BackButton";
 import { supabase } from "../integrations/supabase/client";
+import { safeGetJSON, safeSetJSON } from "@/lib/storage";
 import { useAuth } from "../contexts/AuthContext";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
@@ -274,6 +275,23 @@ const CourseCard = memo(({ course, onNavigate, onDelete }: {
 });
 CourseCard.displayName = "CourseCard";
 
+const CACHE_PREFIX = "nb_mycourses_v1_";
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const FOCUS_REFETCH_MS = 60_000;
+
+type CachedSnapshot = { ts: number; courses: EnrolledCourse[] };
+
+function readCourseCache(uid: string): EnrolledCourse[] | null {
+  const hit = safeGetJSON<CachedSnapshot | null>(`${CACHE_PREFIX}${uid}`, null);
+  if (!hit || !Array.isArray(hit.courses)) return null;
+  if (Date.now() - (hit.ts ?? 0) > CACHE_TTL_MS) return null;
+  return hit.courses;
+}
+
+function writeCourseCache(uid: string, courses: EnrolledCourse[]) {
+  safeSetJSON(`${CACHE_PREFIX}${uid}`, { ts: Date.now(), courses } satisfies CachedSnapshot);
+}
+
 const MyCourses = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -299,10 +317,59 @@ const MyCourses = () => {
   // provider re-render, which re-created this callback and re-fired both
   // effects below — the purchased-courses read was the #1 query (10,677 calls).
   const userId = user?.id;
+  const lastFetchRef = useRef(0);
   const fetchEnrolledCourses = useCallback(async () => {
     if (!userId) { setLoading(false); return; }
+    lastFetchRef.current = Date.now();
     try {
       setFetchError(null);
+
+      // FAST PATH: one RPC returns enrollments + lesson totals + completed
+      // counts. Replaces 3 round-trips (enrollments -> progress + lessons)
+      // that kept My Courses on skeletons for 20-30s on slow networks.
+      const rpc = await supabase.rpc("get_my_courses_snapshot" as never);
+      if (!rpc.error && Array.isArray(rpc.data)) {
+        const rows = rpc.data as Array<Record<string, any>>;
+        const counts: Record<number, number> = {};
+        rows.forEach((r) => { counts[r.course_id] = (counts[r.course_id] || 0) + 1; });
+        const seen: Record<number, number> = {};
+        const raw: EnrolledCourse[] = rows.map((r) => {
+          seen[r.course_id] = (seen[r.course_id] || 0) + 1;
+          const total = Number(r.total_lessons) || 0;
+          const done = Number(r.completed_lessons) || 0;
+          return {
+            enrollmentId: r.enrollment_id,
+            id: r.course_id,
+            title: r.title,
+            description: r.description,
+            grade: r.grade,
+            imageUrl: r.image_url,
+            thumbnailUrl: r.thumbnail_url,
+            price: r.price,
+            startDate: r.start_date ?? null,
+            endDate: r.end_date ?? null,
+            purchased_at: r.purchased_at || new Date().toISOString(),
+            totalLessons: total,
+            completedLessons: done,
+            progressPercent: total > 0 ? Math.round((done / total) * 100) : 0,
+            isDuplicate: counts[r.course_id] > 1 && seen[r.course_id] > 1,
+          } as EnrolledCourse;
+        });
+
+        // Paint immediately, then swap in signed thumbnails when they arrive.
+        setCourses(raw);
+        setLoading(false);
+        const signedFast = await resolveContentUrls(raw.flatMap((c) => [c.imageUrl, c.thumbnailUrl]));
+        const withImages = raw.map((c, i) => ({
+          ...c,
+          imageUrl: signedFast[i * 2],
+          thumbnailUrl: signedFast[i * 2 + 1],
+        }));
+        setCourses(withImages);
+        writeCourseCache(userId, withImages);
+        return;
+      }
+
       // ── 3 queries → 2 parallel groups (enrollments → then progress+lessons) ─
       // Bandwidth: trim enrollments + courses(*) — this was ~5.7k calls/day,
       // #3 offender in slow_queries. Only fields the card renders below.
@@ -388,6 +455,7 @@ const MyCourses = () => {
       }));
 
       setCourses(enrolledCourses);
+      writeCourseCache(userId, enrolledCourses);
 
     } catch (error) {
       reportError(error, { surface: "MyCourses.fetch" });
@@ -397,13 +465,27 @@ const MyCourses = () => {
     }
   }, [userId]);
 
+  // Cache-first paint: show last known list instantly, refresh in background.
+  useEffect(() => {
+    if (!userId) return;
+    const cached = readCourseCache(userId);
+    if (cached && cached.length > 0) {
+      setCourses(cached);
+      setLoading(false);
+    }
+  }, [userId]);
+
   useEffect(() => {
     fetchEnrolledCourses();
   }, [fetchEnrolledCourses]);
 
-  // Refetch when window regains focus (e.g., returning from MyCourseDetail)
+  // Refetch when window regains focus — throttled. Android WebView fires focus
+  // on every resume/keyboard close, which re-ran the whole chain each time.
   useEffect(() => {
-    const handleFocus = () => fetchEnrolledCourses();
+    const handleFocus = () => {
+      if (Date.now() - lastFetchRef.current < FOCUS_REFETCH_MS) return;
+      fetchEnrolledCourses();
+    };
     window.addEventListener("focus", handleFocus);
     return () => window.removeEventListener("focus", handleFocus);
   }, [fetchEnrolledCourses]);

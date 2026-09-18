@@ -243,6 +243,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     });
 
+    // Bounded restore: if getSession() never settles (slow/offline cold start
+    // in the Android WebView) the whole app stayed on a loading screen forever.
+    const restoreTimer = setTimeout(() => {
+      if (isMounted.current) setIsLoading(false);
+    }, 6000);
+
     // 2. Then get current session — sets isLoading=false
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (isMounted.current) {
@@ -265,6 +271,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     return () => {
       isMounted.current = false;
+      clearTimeout(restoreTimer);
       subscription.unsubscribe();
     };
   }, [loadUser, applyUser]);
