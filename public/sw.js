@@ -1,12 +1,13 @@
 const CACHE_NAME = 'naveen-bharat-__NB_BUILD_SHA__';
-// Precache only assets that are ACTUALLY used on first paint. The previously
-// listed /branding/logo_primary_web.webp (53 KB) is orphaned in code; the
-// real brand mark used by the app shell + <head> preload is /brand/nb-mark.webp.
+// Precache only assets that are ACTUALLY used on first paint. The real brand
+// mark used by the app shell + <head> preload is /brand/jsr-mark.webp — the old
+// /brand/nb-mark.webp precache entry pointed at a pre-rebrand file that no code
+// referenced any more, so every install fetched 31 KB nobody rendered.
 const STATIC_ASSETS = [
   '/',
   '/icons/icon-192x192.png',
   '/icons/icon-512x512.png',
-  '/brand/nb-mark.webp',
+  '/brand/jsr-mark.webp',
 ];
 
 // Install — precache static shell only

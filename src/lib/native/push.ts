@@ -73,7 +73,7 @@ export async function initPushNotifications(userId: string): Promise<void> {
     });
 
     PushNotifications.addListener("pushNotificationActionPerformed", (action) => {
-      const path = (action.notification.data as any)?.path;
+      const path = (action.notification.data as Record<string, unknown> | undefined)?.path;
       if (typeof path === "string" && path.startsWith("/")) {
         // Route through React Router (see usePushNav) instead of reloading the WebView.
         window.dispatchEvent(new CustomEvent("nb:push-nav", { detail: { path } }));

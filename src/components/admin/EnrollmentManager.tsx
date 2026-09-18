@@ -18,6 +18,12 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "../ui/select";
 import { useConfirm } from "./ConfirmDialog";
+import type { Tables } from "../../integrations/supabase/types";
+
+type EnrollmentWithJoins = Tables<"enrollments"> & {
+  courses: { title: string } | null;
+  profiles: { id: string; full_name: string | null; email: string | null } | null;
+};
 
 interface UserWithRole {
   id: string;
@@ -29,13 +35,13 @@ interface UserWithRole {
 }
 
 interface Props {
-  coursesList: any[];
+  coursesList: Tables<"courses">[];
   usersList: UserWithRole[];
 }
 
 const EnrollmentManagerImpl = ({ coursesList, usersList }: Props) => {
   const confirmAction = useConfirm();
-  const [enrollments, setEnrollments] = useState<any[]>([]);
+  const [enrollments, setEnrollments] = useState<EnrollmentWithJoins[]>([]);
   const [enrollLoading, setEnrollLoading] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [selectedCourseId, setSelectedCourseId] = useState("");
@@ -51,7 +57,7 @@ const EnrollmentManagerImpl = ({ coursesList, usersList }: Props) => {
       .order("purchased_at", { ascending: false })
       .limit(200);
     const userIds = Array.from(new Set((data || []).map((e) => e.user_id).filter(Boolean)));
-    const profileMap = new Map<string, any>();
+    const profileMap = new Map<string, { id: string; full_name: string | null; email: string | null }>();
     if (userIds.length) {
       const { data: profs } = await supabase
         .from("profiles")
@@ -167,7 +173,7 @@ const EnrollmentManagerImpl = ({ coursesList, usersList }: Props) => {
 };
 
 type EnrollmentRowProps = {
-  enrollments: any[];
+  enrollments: EnrollmentWithJoins[];
   onRevoke: (id: number) => void;
 };
 

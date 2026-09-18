@@ -122,7 +122,7 @@ export const ForceUpdateGate = ({ children }: { children: ReactNode }) => {
   }, [fetchedCfg, currentVersion, isNative]);
 
   const openStore = async () => {
-    const { Capacitor } = await import("@capacitor/core").catch(() => ({ Capacitor: null as any }));
+    const { Capacitor } = await import("@capacitor/core").catch(() => ({ Capacitor: null as typeof import("@capacitor/core").Capacitor | null }));
     const platform = Capacitor?.getPlatform?.() ?? (/iPad|iPhone|iPod/.test(navigator.userAgent) ? "ios" : "android");
     const url =
       platform === "ios"

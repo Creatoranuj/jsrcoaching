@@ -95,7 +95,7 @@ serve(async (req) => {
         .select("student_id, teacher_id")
         .eq("id", sessionId)
         .single();
-      session = data as any;
+      session = data as { student_id: string; teacher_id: string | null } | null;
       if (!session?.student_id) {
         return new Response(
           JSON.stringify({ error: "Session not found" }),
@@ -132,7 +132,7 @@ serve(async (req) => {
         const orFilters = words.slice(0, 6).map((w: string) => `content.ilike.%${w}%,title.ilike.%${w}%`).join(",");
         const { data: kbData } = await supabaseAdmin.from("knowledge_base").select("title, content").eq("is_active", true).or(orFilters).limit(3);
         if (kbData && kbData.length > 0) {
-          ragContext = "\n\nRelevant platform knowledge:\n" + kbData.map((d: any) => `- ${d.title}: ${d.content.slice(0, 300)}`).join("\n");
+          ragContext = "\n\nRelevant platform knowledge:\n" + (kbData as { title: string; content: string }[]).map((d) => `- ${d.title}: ${d.content.slice(0, 300)}`).join("\n");
         }
       }
     }

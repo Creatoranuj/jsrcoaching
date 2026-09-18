@@ -73,6 +73,22 @@ function writeCachedApk(info: ApkInfo) {
   } catch { /* noop */ }
 }
 
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+}
+
+interface GithubReleaseAsset {
+  browser_download_url?: string;
+  name?: string;
+  size?: number;
+}
+
+interface GithubReleaseResponse {
+  tag_name?: string;
+  assets?: GithubReleaseAsset[];
+}
+
 async function fetchLatestApk(signal: AbortSignal): Promise<ApkInfo | null> {
   try {
     const res = await fetch(GITHUB_LATEST_API, {
@@ -82,9 +98,9 @@ async function fetchLatestApk(signal: AbortSignal): Promise<ApkInfo | null> {
     // 403 = unauthenticated rate limit (60/hr/IP), 404 = repo/release missing.
     // Both fall through to the cached/fallback URL already held in state.
     if (!res.ok) return null;
-    const json: any = await res.json();
-    const assets: any[] = Array.isArray(json?.assets) ? json.assets : [];
-    const isApk = (a) =>
+    const json: GithubReleaseResponse = await res.json();
+    const assets: GithubReleaseAsset[] = Array.isArray(json?.assets) ? json.assets : [];
+    const isApk = (a: GithubReleaseAsset) =>
       typeof a?.browser_download_url === "string" && /\.apk$/i.test(a?.name || "");
     // Prefer the fixed-name canonical asset; fall back to any versioned
     // JSRCoaching*/legacy-named .apk, and only then to whatever .apk the release carries.
@@ -117,7 +133,7 @@ function detectPlatform(): Platform {
 function isStandalone(): boolean {
   return (
     window.matchMedia("(display-mode: standalone)").matches ||
-    (window.navigator as any).standalone === true
+    (window.navigator as Navigator & { standalone?: boolean }).standalone === true
   );
 }
 
@@ -153,7 +169,7 @@ function StepCard({
 
 const Install = () => {
   const [platform, setPlatform] = useState<Platform>("desktop");
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(false);
   const [promptUsed, setPromptUsed] = useState(false);
   const [copiedApk, setCopiedApk] = useState(false);
@@ -184,7 +200,7 @@ const Install = () => {
 
     const handler = (e: Event) => {
       e.preventDefault();
-      setDeferredPrompt(e);
+      setDeferredPrompt(e as BeforeInstallPromptEvent);
     };
     const onAppInstalled = () => {
       setInstalled(true);

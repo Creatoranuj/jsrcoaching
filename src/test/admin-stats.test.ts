@@ -67,6 +67,6 @@ describe("paymentTotals", () => {
   });
 
   it("tolerates undefined inputs", () => {
-    expect(paymentTotals(undefined as any, undefined as any, NOW).todayCount).toBe(0);
+    expect(paymentTotals(undefined as unknown as never[], undefined as unknown as never[], NOW).todayCount).toBe(0);
   });
 });

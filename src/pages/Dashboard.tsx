@@ -69,15 +69,36 @@ interface QuizAttemptRow {
   } | null;
 }
 
+interface SnapshotEnrollmentCourse {
+  id: number;
+  title: string | null;
+  description: string | null;
+  grade: string | null;
+  image_url: string | null;
+  thumbnail_url: string | null;
+}
+
+interface SnapshotEnrollment {
+  course?: SnapshotEnrollmentCourse | null;
+}
+
+interface SnapshotUpcomingDoubt {
+  id: string;
+  subject: string | null;
+  scheduled_at: string | null;
+  zoom_join_url: string | null;
+  status: string;
+}
+
 interface DashboardSnapshot {
-  enrollments?: any[];
+  enrollments?: SnapshotEnrollment[];
   course_lessons?: { id: string; course_id: number }[];
   user_progress?: { lesson_id: string; course_id: number | null; completed: boolean }[];
   recent_quiz_attempts?: QuizAttemptRow[];
-  upcoming_doubts?: any[];
+  upcoming_doubts?: SnapshotUpcomingDoubt[];
 }
 
-const isPermissionDenied = (error) =>
+const isPermissionDenied = (error: { code?: string; message?: string } | null | undefined) =>
   error?.code === "42501" ||
   String(error?.message ?? "").toLowerCase().includes("permission denied");
 
@@ -118,7 +139,17 @@ const Dashboard = () => {
   const isOnline = useOnlineStatus();
   const { selectedBatch } = useBatch();
 
-  const [myCourses, setMyCourses] = useState<any[]>([]);
+  interface MyCourse {
+    id?: number;
+    title: string | null | undefined;
+    description: string | null | undefined;
+    grade: string | null | undefined;
+    imageUrl: string | null | undefined;
+    thumbnailUrl: string | null | undefined;
+    progressPercent: number;
+  }
+
+  const [myCourses, setMyCourses] = useState<MyCourse[]>([]);
   const [progressPercent, setProgressPercent] = useState(0);
   const [loading, setLoading] = useState(true);
   const [quizAttempts, setQuizAttempts] = useState<QuizAttemptRow[]>([]);
@@ -251,14 +282,14 @@ const Dashboard = () => {
         } catch {
           // Quota or private mode — caching is best-effort only.
         }
-      } catch (error: any) {
-        if (error?.name === "AbortError" || !alive) return;
+      } catch (error: unknown) {
+        if ((error instanceof DOMException && error.name === "AbortError") || !alive) return;
         // `TypeError: Failed to fetch` is what Chromium raises when the
         // underlying fetch is torn down by an unmount / route change /
         // HMR reload — treat it as an abort, not a real failure, so we
         // don't spam Sentry via the console-error forwarder on every
         // cold session.
-        const msg = typeof error?.message === "string" ? error.message : "";
+        const msg = error instanceof Error ? error.message : "";
         if (msg.includes("Failed to fetch")) {
           // Genuine network unavailability (or a tear-down that raised
           // TypeError instead of AbortError). Log as warn — visible in

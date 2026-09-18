@@ -314,7 +314,7 @@ export function useAutoScroll({ targetRef, iframeRef, docKey }: AutoScrollOption
    * autoscroll looked dead on those two surfaces: the loop measured
    * `scrollHeight - clientHeight === 0` and stopped on frame one.
    */
-  const resolveTarget = (): HTMLElement | null => {
+  const resolveTarget = useCallback((): HTMLElement | null => {
     if (typeof document === "undefined") return null;
     const rawEl = targetRef?.current ?? null;
     if (canScroll(rawEl)) return rawEl;
@@ -338,7 +338,7 @@ export function useAutoScroll({ targetRef, iframeRef, docKey }: AutoScrollOption
     const doc = (document.scrollingElement ?? document.documentElement) as HTMLElement | null;
     if (doc && canScroll(doc)) return doc;
     return null;
-  };
+  }, [targetRef]);
 
 
   /** Jump the reader back to the very top (page 1). Keeps autoscroll running. */
@@ -365,7 +365,7 @@ export function useAutoScroll({ targetRef, iframeRef, docKey }: AutoScrollOption
       return;
     }
     if (ifr) postToBridge(ifr, { type: ToBridge.top });
-  }, [targetRef, iframeRef]);
+  }, [iframeRef, resolveTarget]);
 
 
 
@@ -720,7 +720,7 @@ export function useAutoScroll({ targetRef, iframeRef, docKey }: AutoScrollOption
 
       }, 1500);
     }
-  }, [stop, deactivate, targetRef, iframeRef, pushDwellToIframe, noteShuffleVisit, closeShuffleVisit]);
+  }, [stop, deactivate, iframeRef, pushDwellToIframe, noteShuffleVisit, closeShuffleVisit, resolveTarget]);
 
 
   const toggle = useCallback(() => {
@@ -800,7 +800,7 @@ export function useAutoScroll({ targetRef, iframeRef, docKey }: AutoScrollOption
       start();
     }, 200);
     return () => window.clearInterval(id);
-  }, [docKey, targetRef, iframeRef, start]);
+  }, [docKey, targetRef, iframeRef, start, resolveTarget]);
 
 
   // ── Hold-on-content pause ──────────────────────────────────────────────

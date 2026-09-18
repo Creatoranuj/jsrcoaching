@@ -6,13 +6,18 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 
+export interface RefundPaymentInfo {
+  _amount: number;
+  _course: string;
+}
+
 // Refund confirmation dialog, lifted verbatim out of Admin.tsx.
 // The irreversible-action safety flow is preserved exactly: optional partial
 // amount, partial-refund warning, and an exact uppercase "REFUND" confirmation
 // before the destructive button unlocks. The actual refund call stays in the page.
 
 interface AdminRefundDialogProps {
-  payment: any | null;
+  payment: RefundPaymentInfo | null;
   confirmText: string;
   onConfirmTextChange: (value: string) => void;
   amountText: string;

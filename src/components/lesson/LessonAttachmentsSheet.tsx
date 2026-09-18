@@ -211,7 +211,7 @@ export function LessonAttachmentsSheet({ open, onOpenChange, lessonId, lessonTit
                   >
                     <div className="flex-1 min-w-0">
                       <AttachmentRow
-                        attachment={note as any}
+                        attachment={note}
                         onOpenPdf={(url, fileName) => void handleOpenPdf(url, fileName, note)}
                         resolveUrl={() => getResolvedUrl(note)}
                         variant="compact"

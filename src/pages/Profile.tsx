@@ -34,7 +34,7 @@ const Profile = () => {
       }
     : null;
   const [isEditing, setIsEditing] = useState(false);
-  const [profile, setProfile] = useState<any>(initialProfile);
+  const [profile, setProfile] = useState<typeof initialProfile>(initialProfile);
   const [nameInput, setNameInput] = useState(initialProfile?.full_name ?? "");
   const [mobileInput, setMobileInput] = useState(initialProfile?.mobile ?? "");
   const [avatarModalOpen, setAvatarModalOpen] = useState(false);

@@ -55,7 +55,13 @@ const Students = () => {
       }
 
       const userIds = Array.from(new Set((enrollments || []).map((e) => e.user_id).filter(Boolean)));
-      let profileMap = new Map<string, any>();
+      interface StudentBasicProfile {
+        id: string;
+        full_name: string | null;
+        email: string | null;
+        mobile: string | null;
+      }
+      let profileMap = new Map<string, StudentBasicProfile>();
       if (userIds.length) {
         const { data: profs, error: profErr } = await supabase
           .from("profiles")
@@ -68,7 +74,7 @@ const Students = () => {
       // Group by user
       const userMap = new Map<string, StudentProfile>();
       for (const e of (enrollments || [])) {
-        const userId = (e as any).user_id as string;
+        const userId = e.user_id;
         if (!userId) continue;
         const p = profileMap.get(userId);
         if (!userMap.has(userId)) {
@@ -80,7 +86,7 @@ const Students = () => {
             courseTitles: [],
           });
         }
-        const courseTitle = (e.courses as any)?.title;
+        const courseTitle = e.courses?.title;
         if (courseTitle) userMap.get(userId)!.courseTitles.push(courseTitle);
       }
 

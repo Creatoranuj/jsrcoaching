@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
       .from("user_roles")
       .select("role")
       .eq("user_id", userId);
-    const roles = new Set((roleRows ?? []).map((r: any) => r.role));
+    const roles = new Set((roleRows ?? []).map((r: { role: string }) => r.role));
     const isStaff = roles.has("admin") || roles.has("teacher");
     const isOwner = quiz.created_by === userId;
     let isEnrolled = false;
@@ -114,10 +114,11 @@ Deno.serve(async (req) => {
     for (const q of questions) {
       const userAnswer = answers[q.id];
       if (userAnswer === undefined || userAnswer === null || userAnswer === "") continue;
-      const opts = Array.isArray((q as any).options)
-        ? (q as any).options
-        : ((q as any).options ? Object.values((q as any).options) : []);
-      if (isAnswerCorrect(userAnswer, q.correct_answer, (q as any).question_type, opts as string[])) {
+      const question = q as { options: unknown; question_type: string; correct_answer: string; marks?: number; negative_marks?: number };
+      const opts = Array.isArray(question.options)
+        ? question.options
+        : (question.options ? Object.values(question.options) : []);
+      if (isAnswerCorrect(userAnswer, q.correct_answer, question.question_type, opts as string[])) {
         score += q.marks ?? 4;
       } else {
         score -= q.negative_marks ?? 0;
@@ -125,7 +126,7 @@ Deno.serve(async (req) => {
     }
 
     // 8. Calculate totals, clamp score minimum to 0
-    const totalMarks = quiz.total_marks || questions.reduce((s: number, q: any) => s + (q.marks ?? 4), 0);
+    const totalMarks = quiz.total_marks || questions.reduce((s: number, q: { marks?: number }) => s + (q.marks ?? 4), 0);
     score = Math.max(0, score);
     const percentage = totalMarks > 0 ? Math.round((score / totalMarks) * 100 * 100) / 100 : 0;
     const passed = percentage >= (quiz.pass_percentage ?? 40);
@@ -168,7 +169,7 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );
-  } catch (err: any) {
+  } catch (err) {
     console.error("Unhandled error:", err);
     return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,

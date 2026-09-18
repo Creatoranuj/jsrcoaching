@@ -3,6 +3,7 @@ import { reportError } from "@/lib/sentry";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../integrations/supabase/client";
+import type { Tables } from "../integrations/supabase/types";
 import { useAuth } from "../contexts/AuthContext";
 import Header from "../components/Layout/Header";
 import Sidebar from "../components/Layout/Sidebar";
@@ -225,7 +226,7 @@ const MyCourseDetail = () => {
       if (courseRes.error) throw courseRes.error;
       if (lessonsRes.error) throw lessonsRes.error;
 
-      const cd: any = courseRes.data;
+      const cd = courseRes.data as Tables<"courses">;
       const courseObj: Course = {
         id: cd.id, title: cd.title, description: cd.description,
         grade: cd.grade, imageUrl: cd.image_url, thumbnailUrl: cd.thumbnail_url,
@@ -760,7 +761,7 @@ const MyCourseDetail = () => {
     if (
       courseQuery.isFetching ||
       !courseQuery.isSuccess ||
-      !!(courseQuery.data as any)?.course
+      !!(courseQuery.data as { course?: Course } | undefined)?.course
     ) {
       return (
         <div className="min-h-dvh bg-background flex flex-col">

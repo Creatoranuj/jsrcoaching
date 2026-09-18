@@ -27,7 +27,7 @@ async function hasLiveSession(): Promise<boolean> {
 function getDeviceType(): string {
   try {
     // Lazy — avoid pulling Capacitor into initial bundle for pure web.
-    const cap = (globalThis as any).Capacitor;
+    const cap = (globalThis as unknown as { Capacitor?: { getPlatform?: () => string } }).Capacitor;
     if (cap?.getPlatform) return cap.getPlatform(); // "ios" | "android" | "web"
   } catch { /* noop */ }
   return "web";

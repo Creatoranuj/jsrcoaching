@@ -52,6 +52,11 @@ import { ThumbnailUploadBlock } from "../features/admin-upload/components/Thumbn
 import { VideoUploadBlock } from "../features/admin-upload/components/VideoUploadBlock";
 import { ContentSourceBlock } from "../features/admin-upload/components/ContentSourceBlock";
 import { getErrorMessage } from "@/lib/errorMessage";
+import type { Tables } from "@/integrations/supabase/types";
+
+type CourseRow = Tables<"courses">;
+type ChapterRow = Tables<"chapters">;
+type LessonRow = Tables<"lessons">;
 
 type UploadType = "VIDEO" | "PDF" | "DPP" | "DPP_ATTEMPT" | "NOTES" | "NCERT" | "TEST" | "LIVE";
 
@@ -84,12 +89,12 @@ const SortableItem = ({ id, children }: { id: string; children: (handle: React.R
 const AdminUpload = () => {
   const confirmAction = useConfirm();
   const navigate = useNavigate();
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<{ id: string; email?: string; full_name: string } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Breadcrumb drill-down state
-  const [courses, setCourses] = useState<any[]>([]);
-  const [chapters, setChapters] = useState<any[]>([]);
+  const [courses, setCourses] = useState<CourseRow[]>([]);
+  const [chapters, setChapters] = useState<ChapterRow[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
   const [chaptersLoading, setChaptersLoading] = useState(false);
@@ -118,7 +123,7 @@ const AdminUpload = () => {
   const [savingChapterEdit, setSavingChapterEdit] = useState(false);
 
   // Sub-chapters for current chapter
-  const [subChapters, setSubChapters] = useState<any[]>([]);
+  const [subChapters, setSubChapters] = useState<ChapterRow[]>([]);
 
   // Upload form states
   const [uploadType, setUploadType] = useState<UploadType>("VIDEO");
@@ -162,7 +167,7 @@ const AdminUpload = () => {
   const [uploadingAttachments, setUploadingAttachments] = useState(false);
 
   // Edit lesson state
-  const [editingLesson, setEditingLesson] = useState<any | null>(null);
+  const [editingLesson, setEditingLesson] = useState<LessonRow | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editVideoUrl, setEditVideoUrl] = useState("");
   const [editDescription, setEditDescription] = useState("");
@@ -178,7 +183,7 @@ const AdminUpload = () => {
   const [editUploadingPdfs, setEditUploadingPdfs] = useState(false);
 
   // Recent lessons for selected chapter
-  const [lessons, setLessons] = useState<any[]>([]);
+  const [lessons, setLessons] = useState<LessonRow[]>([]);
 
   const selectedCourse = courses.find(c => c.id === selectedCourseId);
   const selectedChapter = chapters.find(c => c.id === selectedChapterId) ||
@@ -233,7 +238,7 @@ const AdminUpload = () => {
       setThumbnailUrl(`https://img.youtube.com/vi/${ytId}/maxresdefault.jpg`);
       setThumbnailInputMode("url");
     }
-  }, [videoUrl]);
+  }, [videoUrl, thumbnailUrl, setThumbnailInputMode]);
 
   // Auto-set thumbnail when editVideoUrl changes
   useEffect(() => {
@@ -242,7 +247,7 @@ const AdminUpload = () => {
     if (ytId && !editThumbnailUrl) {
       setEditThumbnailUrl(`https://img.youtube.com/vi/${ytId}/maxresdefault.jpg`);
     }
-  }, [editVideoUrl]);
+  }, [editVideoUrl, editThumbnailUrl]);
 
   // Fetch courses on mount
   useEffect(() => {
@@ -593,7 +598,7 @@ const AdminUpload = () => {
       if (error) throw error;
       toast.success("Chapter updated!");
       // Refresh chapters
-      const updateList = (list: any[]) => list.map(c => c.id === editingChapterId
+      const updateList = (list: ChapterRow[]) => list.map(c => c.id === editingChapterId
         ? { ...c, title: editChapterTitle.trim(), code: editChapterCode.trim(), thumbnail_url: editChapterThumbnailUrl.trim() || null }
         : c
       );

@@ -6,14 +6,16 @@ import React, { useState } from "react";
 import { Badge } from "../ui/badge";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
+import type { Lesson } from "../../features/lesson/types";
+
 interface ChapterGroupedSidebarProps {
   chapterMap: Map<
     string,
-    { chapter: { id: string; code: string; title: string } | null; lessons: any[] }
+    { chapter: { id: string; code: string; title: string } | null; lessons: Lesson[] }
   >;
-  uncategorized: any[];
-  lessons: any[];
-  renderLesson: (lesson, globalIndex: number) => React.ReactNode;
+  uncategorized: Lesson[];
+  lessons: Lesson[];
+  renderLesson: (lesson: Lesson, globalIndex: number) => React.ReactNode;
   currentLessonChapterId?: string | null;
 }
 

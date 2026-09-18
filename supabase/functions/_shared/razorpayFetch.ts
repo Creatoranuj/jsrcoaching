@@ -12,7 +12,7 @@ export interface RazorpayFetchResult {
   /** Present when a response was received (even a non-2xx one). */
   status?: number;
   /** Parsed JSON body when ok. */
-  data?: any;
+  data?: unknown;
   /** Raw body text for non-ok responses (truncated). */
   bodyText?: string;
   /** Set when every attempt failed at the network level. */
@@ -62,7 +62,7 @@ export async function razorpayFetchWithRetry(
       });
 
       if (res.ok) {
-        let data: any = null;
+        let data: unknown = null;
         try {
           data = await res.json();
         } catch {

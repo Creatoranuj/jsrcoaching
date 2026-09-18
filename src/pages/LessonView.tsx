@@ -128,7 +128,7 @@ const LessonView = () => {
 
   // State
   const [loading, setLoading] = useState(true);
-  const [course, setCourse] = useState<any>(null);
+  const [course, setCourse] = useState<{ id: number; title: string; [key: string]: unknown } | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [currentLesson, setCurrentLesson] = useState<Lesson | null>(null);
@@ -301,7 +301,7 @@ const LessonView = () => {
         .eq("lesson_id", currentLesson.id);
       if (cancelled || !all) return;
       const count = all.length;
-      const avg = count > 0 ? all.reduce((s: number, r: any) => s + r.rating, 0) / count : 0;
+      const avg = count > 0 ? all.reduce((s: number, r: { rating: number }) => s + r.rating, 0) / count : 0;
       setRatingCount(count);
       setRatingAvg(avg);
       if (user) {
@@ -336,14 +336,14 @@ const LessonView = () => {
         .from("lesson_ratings").select("rating").eq("lesson_id", currentLesson.id);
       if (all) {
         setRatingCount(all.length);
-        setRatingAvg(all.length ? all.reduce((s: number, r: any) => s + r.rating, 0) / all.length : 0);
+        setRatingAvg(all.length ? all.reduce((s: number, r: { rating: number }) => s + r.rating, 0) / all.length : 0);
       }
     } catch (e: unknown) {
       toast.error(getErrorMessage(e) || "Could not save rating");
     } finally {
       setRatingSaving(false);
     }
-  }, [user, currentLesson?.id, ratingValue, ratingComment]);
+  }, [user, currentLesson, ratingValue, ratingComment]);
 
   // Ask-Doubt AI chat — extracted to `useLessonChat` (Phase 2 split).
   const {
@@ -500,7 +500,7 @@ const LessonView = () => {
     setActiveChip("attachment");
     setSelectedPdf({ ...pdf, file_url: url });
     return "reader";
-  }, [currentLesson?.id, redactPdfDebugUrl, shouldUsePdfReader]);
+  }, [currentLesson?.id, shouldUsePdfReader]);
 
   const pdfHistorySentinelActiveRef = useRef(false);
   const closeSelectedPdf = useCallback(() => {
@@ -677,7 +677,7 @@ const LessonView = () => {
       },
     });
 
-  }, [selectedPdf, lessonPdfs, redactPdfDebugUrl]);
+  }, [selectedPdf, lessonPdfs]);
 
   // When a PDF opens, show chrome briefly then auto-hide for distraction-free reading.
   useEffect(() => {
@@ -722,7 +722,7 @@ const LessonView = () => {
       }
       pdfHistorySentinelActiveRef.current = false;
     };
-  }, [selectedPdf?.id]);
+  }, [selectedPdf]);
 
   // Progress tracking state
   const [completedLessonIds, setCompletedLessonIds] = useState<Set<string>>(new Set());
@@ -793,7 +793,7 @@ const LessonView = () => {
     };
     fetchDpps();
     return () => { cancelled = true; };
-  }, [currentLesson?.id, currentLesson?.chapter_id, currentLesson?.course_id]);
+  }, [currentLesson]);
 
 
   // Reset saved ref and close PDF viewer when lesson changes
@@ -950,6 +950,8 @@ const LessonView = () => {
     currentLesson?.id,
     currentLesson?.class_pdf_url,
     currentLesson?.title,
+    currentLesson?.lecture_type,
+    currentLesson?.video_url,
     pdfsLoading,
     attachmentsLoading,
     lessonPdfs,
@@ -995,7 +997,7 @@ const LessonView = () => {
       window.removeEventListener('pagehide', flush);
       flush();
     };
-  }, [user, currentLesson?.id, courseId]);
+  }, [user, currentLesson, courseId]);
 
   // Handle video time update → save progress at 80%
   const handleVideoTimeUpdate = useCallback(async (currentTime: number, duration: number) => {
@@ -1025,7 +1027,7 @@ const LessonView = () => {
         logger.error('Progress save error:', err);
       }
     }
-  }, [user, currentLesson?.id, courseId]);
+  }, [user, currentLesson?.id, courseId, reportLessonProgress]);
 
   // Wire lesson_progress: interval-based unique-watch tracking + resume.
   const { report: reportLessonProgress, flush: flushLessonProgress } =
@@ -1254,9 +1256,9 @@ const LessonView = () => {
         if (bundleErr) throw bundleErr;
 
         const b = (bundle ?? {}) as {
-          course: any;
-          chapters: any[];
-          lessons: any[];
+          course: { id: number; title: string; [key: string]: unknown } | null;
+          chapters: Chapter[];
+          lessons: Lesson[];
           is_enrolled: boolean;
         };
 
@@ -1339,7 +1341,7 @@ const LessonView = () => {
 
     initPage();
     return () => { cancelled = true; controller.abort(); };
-  }, [courseId]);
+  }, [courseId, isMountedRef, lessonIdParam, tokenParam]);
 
   // Enrollment guard: redirect unenrolled non-admin users
   useEffect(() => {

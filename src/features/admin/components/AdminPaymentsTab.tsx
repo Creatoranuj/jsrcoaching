@@ -90,7 +90,7 @@ function AdminPaymentsTabImpl({
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input placeholder="Search name, UTR, course..." value={search} onChange={(e) => onSearchChange(e.target.value)} className="pl-9" />
               </div>
-              <Select value={statusFilter} onValueChange={(v: any) => onStatusFilterChange(v)}>
+              <Select value={statusFilter} onValueChange={(v: PaymentStatusFilter) => onStatusFilterChange(v)}>
                 <SelectTrigger className="w-[130px]"><Filter className="h-4 w-4 mr-2" /><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Status</SelectItem>
@@ -111,7 +111,7 @@ function AdminPaymentsTabImpl({
           <ScrollArea className="h-[500px] max-h-[calc(100dvh-260px)]">
             {payments.length === 0 ? (
               <div className="text-center py-12">
-                <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-3 opacity-20" />
+                <CheckCircle className="h-12 w-12 text-success mx-auto mb-3 opacity-20" />
                 <p className="text-muted-foreground">No payments found.</p>
               </div>
             ) : (
@@ -156,7 +156,7 @@ function AdminPaymentsTabImpl({
                         )}
                         {req._status === "pending" && (
                           <div className="flex gap-2">
-                            <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700 text-white" onClick={() => onApprove(req)}>
+                            <Button size="sm" className="flex-1 bg-success hover:bg-success/90 text-success-foreground" onClick={() => onApprove(req)}>
                               <CheckCircle className="h-4 w-4 mr-1" />Approve
                             </Button>
                             <Button size="sm" variant="destructive" className="flex-1" onClick={() => onReject(req.id)}>

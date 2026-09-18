@@ -7,6 +7,34 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [v1.8.0] — 2026-09-18
+
+Release after a full end-to-end audit (engineering + design + crash/memory)
+and the type-safety cleanup that removed every ESLint problem from the tree.
+
+### Changed
+- Type-safety cleanup across ~125 files: every `any` replaced with precise
+  Supabase row / narrowed `unknown` types; hook dependency arrays corrected
+  without behaviour changes. ESLint: 318 problems → 0.
+- Design tokens: hardcoded `green-*`/`amber-*`/raw HSL swapped for semantic
+  `success` / `gold` tokens on admin surfaces.
+- Service worker precache now points at `/brand/jsr-mark.webp`; the stale
+  pre-rebrand `/brand/nb-mark.webp` entry fetched 31 KB nothing rendered.
+- Boot-time debug console shim is typed (no `as any`, no eslint-disable).
+
+### Removed
+- 8 unreferenced image assets (~196 KB): pre-rebrand `nb-mark` copies,
+  orphaned `jsr-mark.png`, `sarthi-avatar.webp`, `sadguru-mascot.webp`,
+  `student-3d.webp`, `home-3d.webp`.
+
+### Fixed
+- Sub-44px icon-only dismiss control in the library manager upload row.
+- Course thumbnails: missing storage bucket is now probed once per session, so
+  cards paint the branded placeholder immediately instead of firing broken
+  image requests.
+
+---
+
 ## [Unreleased]
 
 ### Added

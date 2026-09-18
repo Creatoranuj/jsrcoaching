@@ -56,8 +56,10 @@ export function isSafeRelPath(v: unknown, maxLen = 512): v is string {
   if (!s || s.length > maxLen) return false;
   if (s.startsWith("/") || s.startsWith("\\")) return false;
   if (s.includes("..") || s.includes("://")) return false;
-  // deno-lint-ignore no-control-regex
-  if (/[\u0000-\u001f\u007f]/.test(s)) return false;
+  for (let i = 0; i < s.length; i++) {
+    const code = s.charCodeAt(i);
+    if (code <= 0x1f || code === 0x7f) return false;
+  }
   return true;
 }
 

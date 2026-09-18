@@ -2,6 +2,8 @@
 // src/pages/Admin.tsx. Kept side-effect free (and with an injectable `now`)
 // so the revenue rules can be unit-tested without mounting the page.
 
+import type { ManualPaymentRow, RazorpayPaymentRow } from "./adminFilters";
+
 export interface PaymentTotals {
   todayAmount: number;
   todayCount: number;
@@ -13,7 +15,8 @@ export interface PaymentTotals {
   razorpayCount: number;
 }
 
-const sum = (rows: any[]) => rows.reduce((s: number, p: any) => s + (p.amount || 0), 0);
+const sum = (rows: Array<{ amount: number | null }>) =>
+  rows.reduce((s: number, p) => s + (p.amount || 0), 0);
 
 /**
  * Revenue rules are a 1:1 port of the previous inline block:
@@ -22,8 +25,8 @@ const sum = (rows: any[]) => rows.reduce((s: number, p: any) => s + (p.amount ||
  * local month start converted to ISO, exactly as before.
  */
 export function paymentTotals(
-  manualPayments: any[] = [],
-  razorpayPayments: any[] = [],
+  manualPayments: ManualPaymentRow[] = [],
+  razorpayPayments: RazorpayPaymentRow[] = [],
   now: Date = new Date(),
 ): PaymentTotals {
   const todayStr = now.toISOString().split("T")[0];

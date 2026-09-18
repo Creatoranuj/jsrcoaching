@@ -44,10 +44,10 @@ interface Props {
  * - Falls back to "Open in Browser" card on any failure
  */
 /** Blocks that count as "the page has its own content worth reading". */
-function textBlockCount(recordMap: any): number {
+function textBlockCount(recordMap: { block?: Record<string, unknown> } | null | undefined): number {
   let n = 0;
   for (const entry of Object.values(recordMap?.block ?? {})) {
-    const raw = (entry as any)?.value;
+    const raw = (entry as { value?: unknown })?.value;
     const value = raw?.value ?? raw;
     const type = value?.type;
     if (!type || type === "page" || type === "external_object_instance" || type === "embed") continue;
@@ -86,7 +86,7 @@ export default function NotionPageRenderer({ url, title, onClose, onReady, onDoc
   useEffect(() => { setStack([url]); }, [url]);
   const activeUrl = stack[stack.length - 1];
   const pageId = extractNotionPageId(activeUrl);
-  const [recordMap, setRecordMap] = useState<any>(null);
+  const [recordMap, setRecordMap] = useState<{ block?: Record<string, unknown> } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const popOrClose = useCallback(() => {
@@ -114,7 +114,12 @@ export default function NotionPageRenderer({ url, title, onClose, onReady, onDoc
     setExporting(true);
     try {
       const mod = await import("html2pdf.js");
-      const html2pdf = (mod as unknown as { default: any }).default;
+      type Html2PdfChain = {
+        from: (element: HTMLElement) => Html2PdfChain;
+        set: (options: Record<string, unknown>) => Html2PdfChain;
+        outputPdf: (type: string) => Promise<Blob>;
+      };
+      const html2pdf = (mod as unknown as { default: () => Html2PdfChain }).default;
       const safeName = (title || "Notion Page").replace(/[/\\?%*:|"<>]/g, "_").slice(0, 80);
       const clone = target.cloneNode(true) as HTMLElement;
       clone.querySelectorAll(".notion-export-ignore").forEach((el) => el.remove());
@@ -280,7 +285,7 @@ export default function NotionPageRenderer({ url, title, onClose, onReady, onDoc
       controller.abort();
       window.clearTimeout(timeout);
     };
-  }, [pageId]);
+  }, [pageId, url]);
 
   useEffect(() => {
     if (!recordMap) return;
@@ -428,7 +433,7 @@ export default function NotionPageRenderer({ url, title, onClose, onReady, onDoc
             // Subpage links inside a Notion page → navigate in-app by
             // swapping the active URL so we refetch a new recordMap.
             // Never open externally — that breaks the back stack.
-            PageLink: ({ href, children, ...rest }: any) => (
+            PageLink: ({ href, children, ...rest }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
               <a
                 {...rest}
                 href={href}

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock fetch for auth API calls
 const mockFetch = vi.fn();
-(globalThis as any).fetch = mockFetch;
+(globalThis as unknown as { fetch: typeof mockFetch }).fetch = mockFetch;
 
 describe("Authentication", () => {
   beforeEach(() => {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { reportError } from "@/lib/sentry";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../integrations/supabase/client";
@@ -38,15 +38,22 @@ import {
 import { SortableQuestion } from "../components/admin/quiz/SortableQuestion";
 import { defaultQuestion, type Quiz, type QuestionForm } from "../components/admin/quiz/types";
 import { getErrorMessage } from "@/lib/errorMessage";
+import type { Tables } from "@/integrations/supabase/types";
+
+type CourseOption = Pick<Tables<"courses">, "id" | "title">;
+type LessonOption = Pick<Tables<"lessons">, "id" | "title" | "lecture_type">;
+type ChapterOption = Pick<Tables<"chapters">, "id" | "title" | "position">;
+type QuestionRow = Tables<"questions">;
+type QuizAttemptRow = Tables<"quiz_attempts"> & { student_name?: string };
 
 const AdminQuizManager = () => {
   const confirmAction = useConfirm();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
-  const [courses, setCourses] = useState<any[]>([]);
-  const [lessons, setLessons] = useState<any[]>([]);
-  const [chapters, setChapters] = useState<any[]>([]);
+  const [courses, setCourses] = useState<CourseOption[]>([]);
+  const [lessons, setLessons] = useState<LessonOption[]>([]);
+  const [chapters, setChapters] = useState<ChapterOption[]>([]);
 
   // UI state
   const [view, setView] = useState<"list" | "create" | "edit-questions">("list");
@@ -58,7 +65,7 @@ const AdminQuizManager = () => {
   // Attempts sheet
   const [attemptsQuizId, setAttemptsQuizId] = useState<string | null>(null);
   const [attemptsQuizTitle, setAttemptsQuizTitle] = useState("");
-  const [attempts, setAttempts] = useState<any[]>([]);
+  const [attempts, setAttempts] = useState<QuizAttemptRow[]>([]);
   const [loadingAttempts, setLoadingAttempts] = useState(false);
 
   // Collapsible questions
@@ -110,7 +117,7 @@ const AdminQuizManager = () => {
       setLoading(false);
     };
     init();
-  }, []);
+  }, [fetchQuizzes, fetchCourses, navigate]);
 
   useEffect(() => () => {
     Object.values(questionImagePreviewsRef.current).forEach((url) => {
@@ -119,12 +126,12 @@ const AdminQuizManager = () => {
     questionImagePreviewsRef.current = {};
   }, []);
 
-  const fetchQuizzes = async () => {
+  const fetchQuizzes = useCallback(async () => {
     const { data, error } = await supabase.from("quizzes").select("*, lessons(title)").order("created_at", { ascending: false });
     if (error) { toast.error(error.message); }
     setQuizzes((data || []) as Quiz[]);
     fetchCounts();
-  };
+  }, []);
 
   // Per-quiz question & attempt tallies for the list cards
   const fetchCounts = async () => {
@@ -133,17 +140,17 @@ const AdminQuizManager = () => {
       supabase.from("quiz_attempts").select("quiz_id").not("submitted_at", "is", null),
     ]);
     const qCount: Record<string, number> = {};
-    (qs || []).forEach((r: any) => { qCount[r.quiz_id] = (qCount[r.quiz_id] || 0) + 1; });
+    (qs || []).forEach((r: { quiz_id: string }) => { qCount[r.quiz_id] = (qCount[r.quiz_id] || 0) + 1; });
     const aCount: Record<string, number> = {};
-    (as || []).forEach((r: any) => { aCount[r.quiz_id] = (aCount[r.quiz_id] || 0) + 1; });
+    (as || []).forEach((r: { quiz_id: string }) => { aCount[r.quiz_id] = (aCount[r.quiz_id] || 0) + 1; });
     setQuestionCounts(qCount);
     setAttemptCounts(aCount);
   };
 
-  const fetchCourses = async () => {
+  const fetchCourses = useCallback(async () => {
     const { data } = await supabase.from("courses").select("id, title").order("title");
     setCourses(data || []);
-  };
+  }, []);
 
   const fetchLessons = async (courseId: number) => {
     try {
@@ -175,7 +182,7 @@ const AdminQuizManager = () => {
     setView("create");
   };
 
-  const openEditDetails = (quiz: any) => {
+  const openEditDetails = (quiz: Quiz) => {
     setEditingDetailsId(quiz.id);
     setQuizForm({
       title: quiz.title || "",
@@ -200,7 +207,7 @@ const AdminQuizManager = () => {
     }
     setSavingQuiz(true);
     try {
-      const payload: any = {
+      const payload: Partial<Tables<"quizzes">> = {
         title: quizForm.title.trim(),
         type: quizForm.type,
         duration_minutes: quizForm.duration_minutes,
@@ -282,7 +289,7 @@ const AdminQuizManager = () => {
       }));
       const { error } = await supabase.from("questions").insert(rows);
       if (error) throw error;
-      const oldIds = (existing || []).map((r: any) => r.id);
+      const oldIds = (existing || []).map((r: { id: string }) => r.id);
       if (oldIds.length > 0) {
         const { error: delErr } = await supabase.from("questions").delete().in("id", oldIds);
         if (delErr) throw delErr;
@@ -319,11 +326,11 @@ const AdminQuizManager = () => {
     const { data } = await supabase.from("questions").select("*")
       .eq("quiz_id", quiz.id).order("order_index");
     if (data && data.length > 0) {
-      setQuestionForms(data.map((q: any) => ({
+      setQuestionForms(data.map((q: QuestionRow) => ({
         _uid: crypto.randomUUID(),
         question_text: q.question_text,
-        question_type: q.question_type,
-        options: Array.isArray(q.options) ? q.options : ["", "", "", ""],
+        question_type: q.question_type as QuestionForm["question_type"],
+        options: Array.isArray(q.options) ? (q.options as string[]) : ["", "", "", ""],
         correct_answer: q.correct_answer,
         explanation: q.explanation || "",
         marks: q.marks,
@@ -386,19 +393,19 @@ const AdminQuizManager = () => {
     if (error) { toast.error(error.message); setLoadingAttempts(false); return; }
 
     // Fetch profile names for each unique user
-    const userIds = [...new Set((data || []).map((a: any) => a.user_id))];
-    let profileMap: Record<string, string> = {};
+    const userIds = [...new Set((data || []).map((a: { user_id: string }) => a.user_id))];
+    const profileMap: Record<string, string> = {};
     if (userIds.length > 0) {
       const { data: profiles } = await supabase
         .from("profiles")
         .select("id, full_name, email")
         .in("id", userIds);
-      (profiles || []).forEach((p: any) => {
+      (profiles || []).forEach((p: { id: string; full_name: string | null; email: string | null }) => {
         profileMap[p.id] = p.full_name || p.email || "Unknown";
       });
     }
 
-    const enriched = (data || []).map((a: any) => ({
+    const enriched = (data || []).map((a: typeof data[number]) => ({
       ...a,
       student_name: profileMap[a.user_id] || "Unknown",
     }));
@@ -406,7 +413,7 @@ const AdminQuizManager = () => {
     setLoadingAttempts(false);
   };
 
-  const updateQuestionForm = (idx: number, field: keyof QuestionForm, value: any) => {
+  const updateQuestionForm = (idx: number, field: keyof QuestionForm, value: QuestionForm[keyof QuestionForm]) => {
     setQuestionForms(prev => prev.map((q, i) => i === idx ? { ...q, [field]: value } : q));
   };
 
@@ -976,7 +983,7 @@ const AdminQuizManager = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <Label className="text-xs">Type</Label>
-                    <Select value={q.question_type} onValueChange={v => updateQuestionForm(qIdx, "question_type", v as any)}>
+                    <Select value={q.question_type} onValueChange={v => updateQuestionForm(qIdx, "question_type", v as QuestionForm["question_type"])}>
                       <SelectTrigger className="mt-1 h-11"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="mcq">MCQ</SelectItem>
@@ -1005,8 +1012,8 @@ const AdminQuizManager = () => {
                           className={cn(
                             "w-8 h-8 rounded-full border-2 shrink-0 flex items-center justify-center text-xs font-bold transition-colors",
                             q.correct_answer === String(oIdx)
-                              ? "border-green-500 bg-green-500 text-white"
-                              : "border-muted-foreground/30 text-muted-foreground hover:border-green-400"
+                              ? "border-success bg-success text-success-foreground"
+                              : "border-muted-foreground/30 text-muted-foreground hover:border-success/60"
                           )}
                         >
                           {String.fromCharCode(65 + oIdx)}
@@ -1032,7 +1039,7 @@ const AdminQuizManager = () => {
                           onClick={() => updateQuestionForm(qIdx, "correct_answer", v)}
                           className={cn(
                             "flex-1 py-3 rounded-lg border-2 text-sm font-medium transition-colors capitalize min-h-[44px]",
-                            q.correct_answer === v ? "border-green-500 bg-green-500/10 text-green-600" : "border-border"
+                            q.correct_answer === v ? "border-success bg-success/10 text-success" : "border-border"
                           )}
                         >
                           {v}

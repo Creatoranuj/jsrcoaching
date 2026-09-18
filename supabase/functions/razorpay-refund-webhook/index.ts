@@ -33,11 +33,10 @@ function getSupabaseAdmin() {
   );
 }
 
-// The edge runtime has no generated Database types, so the untyped admin
-// client is deliberate. Typing it as `ReturnType<typeof createClient>` made
-// `deno check` fail on every logSecurityAlert call (never-typed table rows).
-// deno-lint-ignore no-explicit-any
-type AdminClient = any;
+// The edge runtime has no generated Database types. logSecurityAlert only
+// ever calls `.from(table).insert(row)`, so a narrow structural type covers
+// every call site without needing full generated Database types.
+type AdminClient = { from(table: string): { insert(row: Record<string, unknown>): Promise<{ error: unknown }> } };
 
 async function logSecurityAlert(
   supabaseAdmin: AdminClient,

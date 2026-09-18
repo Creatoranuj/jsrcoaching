@@ -53,7 +53,7 @@ export const assertOnline = async (): Promise<void> => {
  * Invoke a Supabase edge function with a hard timeout and normalised errors.
  * Works in every environment (preview, Vercel, Capacitor APK/IPA).
  */
-export const invokePaymentFunction = async <T = any>(
+export const invokePaymentFunction = async <T = unknown>(
   name: string,
   body: Record<string, unknown>,
   timeoutMs: number = DEFAULT_TIMEOUT_MS

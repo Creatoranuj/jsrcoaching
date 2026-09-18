@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   CheckCircle, Clock, Download, Eye, Link as LinkIcon, Plus, Search, Trash2, Upload,
 } from "lucide-react";
+import type { Tables } from "@/integrations/supabase/types";
 
 // Courses tab of the admin dashboard, lifted verbatim out of Admin.tsx.
 // Purely presentational: Supabase writes, storage uploads and CSV export stay
@@ -37,7 +38,7 @@ interface AdminCoursesTabProps {
   courseThumbnailMode: ThumbnailMode;
   onCourseThumbnailModeChange: (mode: ThumbnailMode) => void;
   // list
-  courses: any[];
+  courses: Tables<"courses">[];
   search: string;
   onSearchChange: (value: string) => void;
   onExport: () => void;

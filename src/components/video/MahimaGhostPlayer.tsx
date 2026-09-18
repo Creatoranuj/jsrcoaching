@@ -299,7 +299,7 @@ const MahimaGhostPlayer = memo(({
   const youtubeId = videoId || extractYoutubeId(videoUrl);
 
   // YouTube IFrame API Commands
-  const sendCommand = useCallback((func: string, args: any = "") => {
+  const sendCommand = useCallback((func: string, args: string | number | Array<string | number> = "") => {
     if (playerRef.current?.contentWindow) {
       try {
         const message = JSON.stringify({
@@ -639,6 +639,8 @@ const MahimaGhostPlayer = memo(({
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+    const controlsTimeout = controlsTimeoutRef.current;
+    const progressInterval = progressIntervalRef.current;
     container.addEventListener('contextmenu', preventAll, { capture: true });
     container.addEventListener('copy', preventAll, { capture: true });
     container.addEventListener('cut', preventAll, { capture: true });
@@ -654,8 +656,8 @@ const MahimaGhostPlayer = memo(({
       container.removeEventListener('cut', preventAll);
       container.removeEventListener('dragstart', preventAll);
       container.removeEventListener('click', blockLinks);
-      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
-      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+      if (controlsTimeout) clearTimeout(controlsTimeout);
+      if (progressInterval) clearInterval(progressInterval);
     };
   }, [preventAll]);
 
@@ -671,8 +673,9 @@ const MahimaGhostPlayer = memo(({
   //    they can't setState on an unmounted component.
   //  • Drop any lingering `playerFullscreen` history sentinel.
   useEffect(() => {
+    const player = playerRef.current;
     return () => {
-      try { if (playerRef.current) playerRef.current.src = "about:blank"; } catch {}
+      try { if (player) player.src = "about:blank"; } catch {}
       if (readyFallbackRef.current) clearTimeout(readyFallbackRef.current);
       if (doubleTapTimerRef.current) clearTimeout(doubleTapTimerRef.current);
       if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);

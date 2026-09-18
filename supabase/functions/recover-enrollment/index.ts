@@ -113,8 +113,9 @@ Deno.serve(async (req) => {
     const credentials = btoa(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`);
 
     // Scan the candidate orders (newest first) for a genuinely captured payment.
+    interface RazorpayCapturedPayment { amount: number; [key: string]: unknown; }
     let paymentRecord: (typeof candidates)[number] | null = null;
-    let capturedPayment: any = null;
+    let capturedPayment: RazorpayCapturedPayment | null = null;
     let sawAmountMismatch = false;
 
     for (const candidate of candidates) {
@@ -131,8 +132,8 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      const razorpayData = razorpayRes.data ?? {};
-      const captured = razorpayData.items?.find((p: any) => p.status === 'captured');
+      const razorpayData = (razorpayRes.data ?? {}) as { items?: RazorpayCapturedPayment[] };
+      const captured = razorpayData.items?.find((p) => p.status === 'captured');
       if (!captured) continue;
 
       // ── AMOUNT TAMPERING CHECK ──

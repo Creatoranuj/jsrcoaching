@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../../integrations/supabase/client";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
@@ -22,14 +22,14 @@ interface RaisedHandsListProps {
 const RaisedHandsList = ({ sessionId }: RaisedHandsListProps) => {
   const [participants, setParticipants] = useState<Participant[]>([]);
 
-  const fetchParticipants = async () => {
+  const fetchParticipants = useCallback(async () => {
     const { data } = await supabase
       .from("live_participants")
       .select("*")
       .eq("session_id", sessionId)
       .order("joined_at", { ascending: true });
     if (data) setParticipants(data as Participant[]);
-  };
+  }, [sessionId]);
 
   useEffect(() => {
     fetchParticipants();
@@ -49,7 +49,7 @@ const RaisedHandsList = ({ sessionId }: RaisedHandsListProps) => {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [sessionId]);
+  }, [sessionId, fetchParticipants]);
 
   const dismissHand = async (participantId: string, userName: string) => {
     const { error } = await supabase

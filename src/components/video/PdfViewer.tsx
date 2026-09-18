@@ -171,7 +171,7 @@ const PdfViewerInner = forwardRef<PdfViewerHandle, PdfViewerProps>(
         setShowOpenExternal(true);
       }, escalateMs);
       return () => window.clearTimeout(t);
-    }, [embedUrl, useIframe, isDrive, isHtmlViewer]);
+    }, [embedUrl, useIframe, isDrive, isHtmlViewer, effectiveUrl]);
 
     useEffect(() => {
       if (!useIframe) return;

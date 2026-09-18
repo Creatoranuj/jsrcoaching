@@ -113,7 +113,7 @@ runIf("enrollment bypass — red team", () => {
       razorpay_order_id: "order_fake_" + Date.now(),
       amount: 1,
       status: "completed",
-    } as any);
+    } as never);
     expect(error).not.toBeNull();
   });
 });

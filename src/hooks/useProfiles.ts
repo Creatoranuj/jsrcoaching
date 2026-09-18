@@ -43,21 +43,22 @@ async function fetchProfileRow(userId: string): Promise<Profile | null> {
 
 export const useProfiles = () => {
   const { user, isAdmin } = useAuth();
+  const userId = user?.id;
   const queryClient = useQueryClient();
 
   // Cached per-user profile — shared across ALL components via React Query.
   const profileQuery = useQuery({
-    queryKey: ["profile", user?.id],
-    queryFn: () => fetchProfileRow(user!.id),
-    enabled: !!user?.id,
+    queryKey: ["profile", userId],
+    queryFn: () => fetchProfileRow(userId!),
+    enabled: !!userId,
     staleTime: PROFILE_STALE_MS,
     gcTime: PROFILE_GC_MS,
   });
 
   const fetchProfile = useCallback(async () => {
-    if (!user?.id) return;
-    await queryClient.invalidateQueries({ queryKey: ["profile", user.id] });
-  }, [user?.id, queryClient]);
+    if (!userId) return;
+    await queryClient.invalidateQueries({ queryKey: ["profile", userId] });
+  }, [userId, queryClient]);
 
   const fetchAllProfiles = useCallback(async (): Promise<Profile[]> => {
     if (!isAdmin) return [];

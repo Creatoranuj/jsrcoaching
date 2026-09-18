@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../integrations/supabase/client";
 import Header from "../components/Layout/Header";
@@ -13,16 +13,17 @@ import {
   Trophy, Activity, ShieldOff, ShieldCheck,
 } from "lucide-react";
 import { format } from "date-fns";
+import type { LucideIcon } from "lucide-react";
 
 type Snapshot = {
-  profile: any;
-  enrollments: any[];
+  profile: Record<string, unknown> & { is_blocked?: boolean };
+  enrollments: Record<string, unknown>[];
   batch_count: number;
-  payments: any[];
+  payments: Record<string, unknown>[];
   total_spent: number;
   lessons_completed: number;
   quiz_attempts: number;
-  last_session: any;
+  last_session: Record<string, unknown> | null;
 };
 
 const AdminStudentDetail = () => {
@@ -35,16 +36,16 @@ const AdminStudentDetail = () => {
 
   useEffect(() => { if (!authLoading && !isAdmin) navigate("/admin/login"); }, [authLoading, isAdmin, navigate]);
 
-  const fetchAll = async () => {
+  const fetchAll = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
     const { data: snap, error } = await supabase.rpc("admin_get_user_snapshot", { _user_id: userId });
     if (error) toast.error(error.message);
     setData(snap as unknown as Snapshot);
     setLoading(false);
-  };
+  }, [userId]);
 
-  useEffect(() => { if (isAdmin && userId) fetchAll(); }, [isAdmin, userId]);
+  useEffect(() => { if (isAdmin && userId) fetchAll(); }, [isAdmin, userId, fetchAll]);
 
   const toggleBlock = async () => {
     if (!data?.profile) return;
@@ -155,7 +156,7 @@ const AdminStudentDetail = () => {
   );
 };
 
-const Stat = ({ icon: Icon, label, value }: { icon: any; label: string; value: any }) => (
+const Stat = ({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string | number }) => (
   <Card><CardContent className="pt-4 pb-3">
     <div className="flex items-center gap-2 text-muted-foreground text-xs uppercase tracking-wide"><Icon className="h-4 w-4" />{label}</div>
     <p className="text-2xl font-bold mt-1">{value}</p>

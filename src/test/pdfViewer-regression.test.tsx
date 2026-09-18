@@ -21,7 +21,7 @@ import React from "react";
 
 // ── Mock heavy children so we can assert on the wrapper + FAB only ────────
 vi.mock("../components/video/PdfViewer", () => {
-  const PdfViewer = React.forwardRef(function PdfViewer(_props: any, ref: any) {
+  const PdfViewer = React.forwardRef(function PdfViewer(_props: unknown, ref: React.Ref<{ getScrollEl: () => null; getIframeEl: () => null }>) {
     React.useImperativeHandle(ref, () => ({
       getScrollEl: () => null,
       getIframeEl: () => null,

@@ -16,27 +16,28 @@ export interface Bookmark {
  */
 export function useLessonBookmarks(lessonId?: string) {
   const { user } = useAuth();
+  const userId = user?.id;
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
 
   const refresh = useCallback(async () => {
-    if (!user?.id || !lessonId) { setBookmarks([]); return; }
+    if (!userId || !lessonId) { setBookmarks([]); return; }
     const { data } = await supabase
       .from("lesson_bookmarks" as never)
       .select("id,at_seconds,note")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .eq("lesson_id", lessonId)
       .order("at_seconds", { ascending: true });
     setBookmarks(((data as unknown) as Bookmark[]) || []);
-  }, [user?.id, lessonId]);
+  }, [userId, lessonId]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
   const add = useCallback(async (atSeconds: number, note?: string) => {
-    if (!user?.id || !lessonId) return;
+    if (!userId || !lessonId) return;
     const { data, error } = await supabase
       .from("lesson_bookmarks" as never)
       .insert({
-        user_id: user.id,
+        user_id: userId,
         lesson_id: lessonId,
         at_seconds: Math.floor(atSeconds),
         note: note ?? null,
@@ -52,7 +53,7 @@ export function useLessonBookmarks(lessonId?: string) {
       const row = (data as unknown) as Bookmark;
       setBookmarks((prev) => [...prev, row].sort((a, b) => a.at_seconds - b.at_seconds));
     }
-  }, [user?.id, lessonId]);
+  }, [userId, lessonId]);
 
   const remove = useCallback(async (id: string) => {
     setBookmarks((prev) => prev.filter((b) => b.id !== id));
@@ -76,14 +77,14 @@ export function useLessonBookmarks(lessonId?: string) {
 
   /** Add and return the inserted row so the caller can immediately open a notes editor. */
   const addAndReturn = useCallback(async (atSeconds: number, note?: string): Promise<Bookmark | null> => {
-    if (!user?.id || !lessonId) {
+    if (!userId || !lessonId) {
       toast.error("Please sign in to bookmark");
       return null;
     }
     const { data, error } = await supabase
       .from("lesson_bookmarks" as never)
       .insert({
-        user_id: user.id,
+        user_id: userId,
         lesson_id: lessonId,
         at_seconds: Math.floor(atSeconds),
         note: note ?? null,
@@ -98,7 +99,7 @@ export function useLessonBookmarks(lessonId?: string) {
     const row = (data as unknown) as Bookmark;
     setBookmarks((prev) => [...prev, row].sort((a, b) => a.at_seconds - b.at_seconds));
     return row;
-  }, [user?.id, lessonId]);
+  }, [userId, lessonId]);
 
 
   return { bookmarks, add, addAndReturn, update, remove, refresh };

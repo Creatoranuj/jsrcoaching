@@ -83,7 +83,7 @@ const extractFilename = (url: string, fallback = "document.pdf"): string => {
 /** Check if running inside Capacitor native shell */
 const isNativePlatform = (): boolean => {
   try {
-    return !!(window as any).Capacitor?.isNativePlatform?.();
+    return !!(window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.();
   } catch {
     return false;
   }

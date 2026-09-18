@@ -111,7 +111,7 @@ const Login = () => {
               <div className="flex-1">
                 <p className="text-sm text-destructive">{errorMessage}</p>
                 {isNetworkError && (
-                  <Button type="button" variant="outline" size="sm" className="mt-2 gap-1.5" onClick={handleSubmit as any}>
+                  <Button type="button" variant="outline" size="sm" className="mt-2 gap-1.5" onClick={handleSubmit}>
                     <RefreshCw className="h-3.5 w-3.5" /> Retry
                   </Button>
                 )}

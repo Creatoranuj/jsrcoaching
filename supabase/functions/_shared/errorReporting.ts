@@ -23,8 +23,7 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
 // The edge runtime has no generated Database types, so the untyped client is
 // deliberate here (same pattern as the other functions in this repo).
-// deno-lint-ignore no-explicit-any
-let cached: any = null;
+let cached: ReturnType<typeof createClient> | null = null;
 function admin() {
   if (!cached) cached = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
   return cached;

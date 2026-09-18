@@ -36,7 +36,7 @@ const RaiseHandButton = ({ sessionId }: RaiseHandButtonProps) => {
           table: "live_participants",
           filter: `session_id=eq.${sessionId}`,
         },
-        (payload: any) => {
+        (payload: { new?: { user_id?: string; hand_raised?: boolean } }) => {
           if (payload.new?.user_id === user.id) {
             setHandRaised(payload.new.hand_raised);
           }

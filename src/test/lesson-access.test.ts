@@ -9,19 +9,19 @@ import {
 
 describe("canAccessLesson", () => {
   it("opens unlocked lessons to everyone", () => {
-    expect(canAccessLesson({ is_locked: false } as any, false)).toBe(true);
+    expect(canAccessLesson({ is_locked: false } as unknown as Parameters<typeof canAccessLesson>[0], false)).toBe(true);
   });
 
   it("keeps locked lessons shut without a purchase", () => {
-    expect(canAccessLesson({ is_locked: true } as any, false)).toBe(false);
+    expect(canAccessLesson({ is_locked: true } as unknown as Parameters<typeof canAccessLesson>[0], false)).toBe(false);
   });
 
   it("opens locked lessons after purchase", () => {
-    expect(canAccessLesson({ is_locked: true } as any, true)).toBe(true);
+    expect(canAccessLesson({ is_locked: true } as unknown as Parameters<typeof canAccessLesson>[0], true)).toBe(true);
   });
 
   it("treats a missing lock flag as unlocked", () => {
-    expect(canAccessLesson({} as any, false)).toBe(true);
+    expect(canAccessLesson({} as unknown as Parameters<typeof canAccessLesson>[0], false)).toBe(true);
   });
 });
 
@@ -47,7 +47,7 @@ describe("normalizeLesson", () => {
   });
 
   it("keeps provided values and preserves unknown keys", () => {
-    const l = normalizeLesson({ id: "1", video_url: "u", lecture_type: "VIDEO", extra: 7 }) as any;
+    const l = normalizeLesson({ id: "1", video_url: "u", lecture_type: "VIDEO", extra: 7 }) as unknown as Record<string, unknown>;
     expect(l.video_url).toBe("u");
     expect(l.lecture_type).toBe("VIDEO");
     expect(l.extra).toBe(7);

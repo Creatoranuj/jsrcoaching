@@ -121,6 +121,14 @@ const MahimaVideoPlayer: React.FC<MahimaVideoPlayerProps> = ({ videoUrl, onEnded
   }, [kickTimer]);
 
 
+  const seekBy = useCallback((seconds: number) => {
+    if (playerRef.current && duration > 0) {
+      const currentTime = playerRef.current.getCurrentTime();
+      playerRef.current.seekTo(Math.max(0, Math.min(duration, currentTime + seconds)));
+      kickTimer();
+    }
+  }, [duration, kickTimer]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -157,7 +165,7 @@ const MahimaVideoPlayer: React.FC<MahimaVideoPlayerProps> = ({ videoUrl, onEnded
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [kickTimer]);
+  }, [kickTimer, seekBy]);
 
   // Fullscreen detection — reconciles state when user exits via gesture / back btn,
   // and always restores body.overflow (white-screen guard).
@@ -221,14 +229,6 @@ const MahimaVideoPlayer: React.FC<MahimaVideoPlayerProps> = ({ videoUrl, onEnded
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     return false;
-  };
-
-  const seekBy = (seconds: number) => {
-    if (playerRef.current && duration > 0) {
-      const currentTime = playerRef.current.getCurrentTime();
-      playerRef.current.seekTo(Math.max(0, Math.min(duration, currentTime + seconds)));
-      kickTimer();
-    }
   };
 
   const toggleFullscreen = async () => {

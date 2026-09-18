@@ -98,7 +98,7 @@ const Reports = () => {
     attempts.filter((a) => a.submitted_at).map((a) => a.submitted_at!)
   );
 
-  const enrolledCount = enrollments.filter((e: any) => e.status === "active" || !e.status).length;
+  const enrolledCount = enrollments.filter((e) => e.status === "active" || !e.status).length;
 
   // Last 5 for bar chart (chronological order)
   const chartData = [...attempts]
@@ -270,7 +270,7 @@ const Reports = () => {
                       <XAxis dataKey="name" tick={{ fontSize: 11 }} className="text-muted-foreground" />
                       <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} className="text-muted-foreground" />
                       <Tooltip
-                        formatter={(v: number, _name: string, props: any) => [`${v}% avg (${props.payload.count} attempts)`, "Score"]}
+                        formatter={(v: number, _name: string, props: { payload: { count: number } }) => [`${v}% avg (${props.payload.count} attempts)`, "Score"]}
                         contentStyle={{ fontSize: 12, borderRadius: 8 }}
                       />
                       <Bar dataKey="avg" radius={[4, 4, 0, 0]} fill="hsl(var(--primary))" fillOpacity={0.8} />
@@ -341,7 +341,7 @@ const Reports = () => {
               </div>
             ) : (
               <div className="space-y-4">
-                {enrollments.map((e: any) => (
+                {enrollments.map((e) => (
                   <div key={e.id} className="space-y-1.5">
                     <div className="flex items-center justify-between text-sm">
                       <span className="font-medium truncate">{e.course?.title ?? "Course"}</span>

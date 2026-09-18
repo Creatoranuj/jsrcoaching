@@ -92,14 +92,7 @@ const Doubts = () => {
     }
   }, [authLoading, isAuthenticated, navigate]);
 
-  useEffect(() => {
-    if (user) {
-      fetchSessions();
-      fetchCourses();
-    }
-  }, [user]);
-
-  const fetchSessions = async () => {
+  const fetchSessions = useCallback(async () => {
     setLoading(true);
     try {
       let query = supabase
@@ -140,7 +133,14 @@ const Doubts = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isStaff, user]);
+
+  useEffect(() => {
+    if (user) {
+      fetchSessions();
+      fetchCourses();
+    }
+  }, [user, fetchSessions]);
 
   const fetchCourses = async () => {
     const { data } = await supabase.from("courses").select("id, title");

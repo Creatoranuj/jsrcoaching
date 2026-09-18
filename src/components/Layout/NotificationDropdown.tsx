@@ -22,10 +22,6 @@ const NotificationDropdown = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [open, setOpen] = useState(false);
 
-  useEffect(() => {
-    fetchNotices();
-  }, [user?.id]);
-
   const fetchNotices = useCallback(async () => {
     const { data: noticeData } = await supabase
       .from("notices")
@@ -48,6 +44,10 @@ const NotificationDropdown = () => {
     setNotices(mapped);
     setUnreadCount(mapped.filter((n) => !n.isRead).length);
   }, [user]);
+
+  useEffect(() => {
+    fetchNotices();
+  }, [fetchNotices]);
 
   const markAllRead = useCallback(async () => {
     if (!user || notices.length === 0) return;

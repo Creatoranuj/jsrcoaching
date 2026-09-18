@@ -48,11 +48,16 @@ try {
     const MAX_BUFFER = 500;
     const levels: LogEntry["level"][] = ["log", "info", "warn", "error", "debug"];
     const original: Partial<Record<LogEntry["level"], (...a: unknown[]) => void>> = {};
+    const consoleMethods: Record<LogEntry["level"], (...a: unknown[]) => void> = {
+      log: console.log.bind(console),
+      info: console.info.bind(console),
+      warn: console.warn.bind(console),
+      error: console.error.bind(console),
+      debug: console.debug.bind(console),
+    };
     levels.forEach((lvl) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      original[lvl] = (console as any)[lvl]?.bind(console);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (console as any)[lvl] = (...args: unknown[]) => {
+      original[lvl] = consoleMethods[lvl];
+      console[lvl] = (...args: unknown[]) => {
         if (buffer.length < MAX_BUFFER) buffer.push({ level: lvl, args, t: Date.now() });
         original[lvl]?.(...args);
       };

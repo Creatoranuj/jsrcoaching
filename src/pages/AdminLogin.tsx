@@ -24,7 +24,7 @@ const AdminLogin = () => {
       if (session?.user) {
         const { data: isAdmin } = await supabase.rpc('has_role', {
           _user_id: session.user.id,
-          _role: 'admin' as any,
+          _role: 'admin',
         });
         if (isAdmin) navigate('/admin/upload');
       }
@@ -51,7 +51,7 @@ const AdminLogin = () => {
       // Check admin role via security-definer RPC
       const { data: isAdminRole, error: roleError } = await supabase.rpc('has_role', {
         _user_id: data.user.id,
-        _role: 'admin' as any,
+        _role: 'admin',
       });
 
       if (roleError) reportError(roleError, { surface: "AdminLogin.roleCheck" });

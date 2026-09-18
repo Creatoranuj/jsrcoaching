@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../integrations/supabase/client";
 import Header from "../components/Layout/Header";
@@ -45,7 +45,7 @@ const AdminModeration = () => {
 
   useEffect(() => { if (!authLoading && !isAdmin) navigate("/admin/login"); }, [authLoading, isAdmin, navigate]);
 
-  const fetchItems = async () => {
+  const fetchItems = useCallback(async () => {
     if (tab === "lesson") { setLoading(false); return; } // handled by <BatchCommentsPanel />
     setLoading(true);
     if (tab === "reports") {
@@ -59,20 +59,20 @@ const AdminModeration = () => {
       const table = tab === "posts" ? "community_posts" : tab === "comments" ? "community_comments" : "doubt_replies";
       const bodyCol = tab === "replies" ? "message" : "body";
       const { data, error } = await supabase
-        .from(table as any)
+        .from(table as "community_posts" | "community_comments" | "doubt_replies")
         .select(`id, user_id, ${bodyCol}, created_at, is_hidden, hidden_reason`)
         .order("created_at", { ascending: false })
         .limit(200);
       if (error) toast.error(error.message);
-      setItems((data ?? []).map((r: any) => ({
-        id: r.id, user_id: r.user_id, body: r[bodyCol] ?? "", created_at: r.created_at,
-        is_hidden: !!r.is_hidden, hidden_reason: r.hidden_reason,
+      setItems((data ?? []).map((r: Record<string, unknown>) => ({
+        id: r.id as string, user_id: r.user_id as string | null, body: (r[bodyCol] as string) ?? "", created_at: r.created_at as string,
+        is_hidden: !!r.is_hidden, hidden_reason: r.hidden_reason as string | null,
       })));
     }
     setLoading(false);
-  };
+  }, [tab]);
 
-  useEffect(() => { if (isAdmin) fetchItems(); }, [isAdmin, tab]);
+  useEffect(() => { if (isAdmin) fetchItems(); }, [isAdmin, tab, fetchItems]);
 
   const toggleHide = async (item: Item) => {
     const contentType: ContentType = tab === "posts" ? "post" : tab === "comments" ? "comment" : "reply";
@@ -109,7 +109,7 @@ const AdminModeration = () => {
             </Button>
           </div>
 
-          <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
+          <Tabs value={tab} onValueChange={(v) => setTab(v as "posts" | "comments" | "lesson" | "replies" | "reports")}>
             <TabsList>
               <TabsTrigger value="posts">Posts</TabsTrigger>
               <TabsTrigger value="comments">Comments</TabsTrigger>

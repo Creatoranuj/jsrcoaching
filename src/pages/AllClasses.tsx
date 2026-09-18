@@ -104,7 +104,7 @@ const AllClasses = () => {
 
         if (error) throw error;
 
-        const mapLesson = (l: any): Resource => ({
+        const mapLesson = (l: { id: string; title: string; video_url: string | null; lecture_type: string | null; description: string | null; youtube_id: string | null; course_id: number | null; courses: { title: string } | null }): Resource => ({
           id: l.id,
           title: l.title,
           video_url: l.video_url,
@@ -232,7 +232,7 @@ const AllClasses = () => {
               onClick={() => {
                 // Picking a course here switches the app-wide active course
                 // too, so Home/My Courses follow the same selection.
-                setSelectedBatch({ id: course.id, title: course.title, grade: course.grade ?? null } as any);
+                setSelectedBatch({ id: course.id, title: course.title, grade: course.grade ?? null });
                 navigate(`/classes/${course.id}/chapters?from=all-classes`);
               }}
               className={cn(

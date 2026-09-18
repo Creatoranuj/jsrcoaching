@@ -116,10 +116,10 @@ export default function PaymentsSection({ range }: Props) {
       const [{ data: courses }, { data: profiles }] = await Promise.all([
         courseIds.length
           ? supabase.from("courses").select("id, title").in("id", courseIds)
-          : Promise.resolve({ data: [] as any[] }),
+          : Promise.resolve({ data: [] as { id: number; title: string }[] }),
         userIds.length
           ? supabase.from("profiles").select("id, full_name").in("id", userIds)
-          : Promise.resolve({ data: [] as any[] }),
+          : Promise.resolve({ data: [] as { id: string; full_name: string | null }[] }),
       ]);
 
       if (cancelled) return;

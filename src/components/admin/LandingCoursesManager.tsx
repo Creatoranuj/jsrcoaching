@@ -89,7 +89,7 @@ export default function LandingCoursesManager() {
 
   const saveEdit = async () => {
     if (!editingId) return;
-    const { id: _id, created_at, updated_at, ...rest } = editForm as any;
+    const { id: _id, created_at, updated_at, ...rest } = editForm;
     await update.mutateAsync({ id: editingId, ...rest });
     setEditingId(null);
     setEditForm({});

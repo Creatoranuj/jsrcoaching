@@ -48,15 +48,17 @@ const Signup = () => {
   // Cleanup timer + abort in-flight requests on unmount
   useEffect(() => {
     aliveRef.current = true;
+    const submitTimer = submitTimerRef;
+    const abortController = abortRef;
     return () => {
       aliveRef.current = false;
-      if (submitTimerRef.current) clearTimeout(submitTimerRef.current);
-      abortRef.current?.abort();
+      if (submitTimer.current) clearTimeout(submitTimer.current);
+      abortController.current?.abort();
     };
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     setErrorMessage(null);
     setIsNetworkError(false);
 
@@ -196,7 +198,7 @@ const Signup = () => {
               <div className="flex-1">
                 <p className="text-sm text-destructive">{errorMessage}</p>
                 {isNetworkError && (
-                  <Button type="button" variant="outline" size="sm" className="mt-2 gap-1.5" onClick={handleSubmit as any}>
+                  <Button type="button" variant="outline" size="sm" className="mt-2 gap-1.5" onClick={() => handleSubmit()}>
                     <RefreshCw className="h-3.5 w-3.5" /> Retry
                   </Button>
                 )}

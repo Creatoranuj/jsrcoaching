@@ -130,7 +130,7 @@ const ChatbotSettings = () => {
     if (!isAdmin) { navigate("/dashboard"); return; }
     fetchData();
     fetchCrawlHistory();
-  }, [isAdmin]);
+  }, [isAdmin, navigate]);
 
   const fetchCrawlHistory = async () => {
     setLoadingHistory(true);

@@ -44,12 +44,12 @@ export const useNotes = (lessonId?: number) => {
     }
     toast.success("Note added!");
     return true;
-  }, [isAdmin, isTeacher, fetchNotes]);
+  }, [isAdmin, isTeacher]);
 
   const deleteNote = useCallback(async (id: number): Promise<boolean> => {
     toast.success("Note deleted!");
     return true;
-  }, [fetchNotes]);
+  }, []);
 
   useEffect(() => {
     fetchNotes();

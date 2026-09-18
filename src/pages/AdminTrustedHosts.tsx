@@ -196,7 +196,7 @@ export default function AdminTrustedHosts() {
             <TabsContent value="list" className="mt-4 space-y-3">
               <div className="flex items-center gap-2">
                 <Label className="text-sm">Filter:</Label>
-                <Select value={filter} onValueChange={(v: any) => setFilter(v)}>
+                <Select value={filter} onValueChange={(v: TrustedHostCategory | "all") => setFilter(v)}>
                   <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All categories</SelectItem>
@@ -310,7 +310,7 @@ export default function AdminTrustedHosts() {
             </div>
             <div>
               <Label>Category</Label>
-              <Select value={category} onValueChange={(v: any) => setCategory(v)}>
+              <Select value={category} onValueChange={(v: TrustedHostCategory) => setCategory(v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {(Object.keys(CATEGORY_LABEL) as TrustedHostCategory[]).map((c) => (

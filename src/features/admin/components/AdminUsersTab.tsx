@@ -53,7 +53,7 @@ function AdminUsersTabImpl({
                 className="pl-9 bg-card"
               />
             </div>
-            <Select value={roleFilter} onValueChange={(v: any) => onRoleFilterChange(v)}>
+            <Select value={roleFilter} onValueChange={(v: UserRoleFilter) => onRoleFilterChange(v)}>
               <SelectTrigger className="w-[130px] bg-card">
                 <Filter className="h-4 w-4 mr-2" />
                 <SelectValue />

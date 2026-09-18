@@ -6,6 +6,11 @@ import { resolveContentUrl } from "../lib/resolveContentUrl";
 import type { Course } from "./useCourses";
 import { logger } from "@/lib/logger";
 import { getErrorMessage } from "@/lib/errorMessage";
+import type { Tables } from "@/integrations/supabase/types";
+
+type EnrollmentRow = Pick<Tables<"enrollments">, "id" | "user_id" | "course_id" | "purchased_at" | "status"> & {
+  courses: Tables<"courses"> | null;
+};
 
 
 export interface Enrollment {
@@ -60,7 +65,7 @@ export const useEnrollments = () => {
         try { return await resolveContentUrl(u); } catch { return null; }
       };
       const settled = await Promise.allSettled(
-        (data || []).map(async (e: any): Promise<EnrollmentWithCourse> => ({
+        (data || []).map(async (e: EnrollmentRow): Promise<EnrollmentWithCourse> => ({
           id: e.id,
           userId: e.user_id,
           courseId: e.course_id,

@@ -1,8 +1,14 @@
 import { reportError, addBreadcrumb } from "../lib/sentry";
 
+interface RazorpayInstance {
+  open: () => void;
+  close?: () => void;
+  on: (event: "payment.failed", handler: (response: { error?: RazorpayPaymentError }) => void) => void;
+}
+
 declare global {
   interface Window {
-    Razorpay: any;
+    Razorpay: new (options: Omit<RazorpayOptions, "onFailure">) => RazorpayInstance;
   }
 }
 

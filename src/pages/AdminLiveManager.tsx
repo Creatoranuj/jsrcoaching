@@ -92,7 +92,7 @@ const AdminLiveManager = () => {
       scheduled_at: form.scheduled_at || null,
       course_id: form.course_id ? Number(form.course_id) : null,
     };
-    let error: any;
+    let error: { message: string } | null = null;
     if (editingId) {
       ({ error } = await supabase.from("live_sessions").update(payload).eq("id", editingId));
     } else {

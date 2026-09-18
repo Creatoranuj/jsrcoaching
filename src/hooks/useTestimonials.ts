@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../integrations/supabase/client";
+import type { TablesUpdate } from "../integrations/supabase/types";
 import { toast } from "sonner";
 
 export interface Testimonial {
@@ -53,7 +54,7 @@ export const useCreateTestimonial = () => {
     mutationFn: async (row: TestimonialInsert) => {
       const { data, error } = await supabase
         .from("landing_testimonials")
-        .insert(row as any)
+        .insert(row)
         .select()
         .single();
       if (error) throw error;
@@ -73,7 +74,7 @@ export const useUpdateTestimonial = () => {
     mutationFn: async ({ id, ...updates }: Partial<Testimonial> & { id: string }) => {
       const { error } = await supabase
         .from("landing_testimonials")
-        .update(updates as any)
+        .update(updates as TablesUpdate<"landing_testimonials">)
         .eq("id", id);
       if (error) throw error;
     },

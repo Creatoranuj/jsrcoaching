@@ -48,12 +48,12 @@ describe("AdminOverviewTab", () => {
 });
 
 describe("AdminPaymentsTab", () => {
-  const upiPending: any = {
+  const upiPending: Record<string, unknown> = {
     _key: "upi-1", _method: "upi", _status: "pending", _amount: 499, _course: "Class 10 Science",
     _displayName: "Asha", _email: "asha@example.com", _date: "2026-03-10T05:00:00Z",
     id: 7, sender_name: "Asha", transaction_id: "UTR123", screenshot_url: "receipts/a.png",
   };
-  const rzpDone: any = {
+  const rzpDone: Record<string, unknown> = {
     _key: "rzp-1", _method: "razorpay", _status: "completed", _amount: 999, _course: "Class 12 Maths",
     _displayName: "Ravi", _date: "2026-03-11T05:00:00Z",
     razorpay_order_id: "order_abcd1234", razorpay_payment_id: "pay_9999",

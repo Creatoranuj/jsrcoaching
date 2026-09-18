@@ -44,6 +44,37 @@ function publicUrlFor(path: string): string | null {
   return data?.publicUrl || null;
 }
 
+/**
+ * After a project migration the `content` bucket itself can be gone. In that
+ * case every public CDN URL we hand back 404s, so each card fires a doomed
+ * image request before falling back to its placeholder. Probe the bucket once
+ * per session; if it is missing, public paths resolve to null immediately and
+ * the UI paints the branded placeholder with zero extra requests.
+ */
+let contentBucketProbe: Promise<boolean> | null = null;
+
+async function contentBucketExists(): Promise<boolean> {
+  contentBucketProbe ??= (async () => {
+    try {
+      const api = supabase.storage.from(BUCKET) as unknown as {
+        list?: (prefix: string, opts: { limit: number }) => Promise<{ error: { message: string } | null }>;
+      };
+      // Older/mocked clients without `list` → assume the bucket is fine.
+      if (typeof api.list !== "function") return true;
+      const { error } = await api.list("", { limit: 1 });
+      if (error && /bucket not found|no such bucket/i.test(error.message)) {
+        void reportFailure("missing_object", null, `bucket "${BUCKET}" not found`);
+        return false;
+      }
+      return true;
+    } catch {
+      return true; // Never block image rendering on a probe failure.
+    }
+  })();
+  return contentBucketProbe;
+}
+
+
 
 /**
  * Only URLs belonging to THIS Supabase project may be re-signed. Rows that
@@ -138,7 +169,7 @@ export async function resolveContentUrl(
   if (!path) return url; // Not a `content` bucket URL — pass through.
 
   // Presentation images: permanent public CDN URL, no session required.
-  if (isPublicPath(path)) return publicUrlFor(path);
+  if (isPublicPath(path)) return (await contentBucketExists()) ? publicUrlFor(path) : null;
 
 
 
@@ -172,20 +203,25 @@ export async function resolveContentUrls(
   const out: Array<string | null> = new Array(urls.length).fill(null);
   const gatedIndexByPath = new Map<string, number[]>();
   const pathsToSign: string[] = [];
+  const publicSlots: Array<[number, string]> = [];
 
   urls.forEach((url, i) => {
     if (!url) return;
     const path = extractContentPath(url);
     if (!path) { out[i] = url; return; }
-    if (isPublicPath(path)) { out[i] = publicUrlFor(path); return; }
-
-
+    if (isPublicPath(path)) { publicSlots.push([i, path]); return; }
 
     const existing = gatedIndexByPath.get(path);
     if (existing) { existing.push(i); return; }
     gatedIndexByPath.set(path, [i]);
     pathsToSign.push(path);
   });
+
+  // One bucket probe covers every public slot in this batch (cached per session).
+  if (publicSlots.length > 0 && (await contentBucketExists())) {
+    publicSlots.forEach(([i, path]) => { out[i] = publicUrlFor(path); });
+  }
+
 
   if (pathsToSign.length === 0) return out;
 

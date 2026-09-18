@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import WhatsAppIcon from "./WhatsAppIcon";
 import { openExternal } from "../../lib/native/browser";
+import { openResource } from "../../lib/openResource";
 import { tapHaptic } from "../../lib/native/haptics";
 import { cn } from "../../lib/utils";
 import { FAB_Z, fabBottom, fabBottomDesktop, type FabSlot } from "../../config/fabStack";
@@ -69,7 +70,7 @@ export default function WhatsAppFab({
       e.preventDefault();
       void openExternal(href, { preferWebView: false }).catch((err) => {
         console.warn("[WhatsAppFab] openExternal failed", err);
-        window.open(href, "_blank", "noopener");
+        void openResource({ url: href, kind: "link" });
       });
     },
     [href],

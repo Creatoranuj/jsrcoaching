@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../integrations/supabase/client";
 import { toast } from "sonner";
+import type { TablesInsert, TablesUpdate } from "@/integrations/supabase/types";
 
 export interface LandingCourse {
   id: string;
@@ -60,7 +61,7 @@ export const useCreateLandingCourse = () => {
     mutationFn: async (row: LandingCourseInsert) => {
       const { data, error } = await supabase
         .from("landing_courses")
-        .insert(row as any)
+        .insert(row as TablesInsert<'landing_courses'>)
         .select()
         .single();
       if (error) throw error;
@@ -80,7 +81,7 @@ export const useUpdateLandingCourse = () => {
     mutationFn: async ({ id, ...updates }: Partial<LandingCourse> & { id: string }) => {
       const { error } = await supabase
         .from("landing_courses")
-        .update(updates as any)
+        .update(updates as TablesUpdate<'landing_courses'>)
         .eq("id", id);
       if (error) throw error;
     },

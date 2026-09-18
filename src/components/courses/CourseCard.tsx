@@ -24,7 +24,7 @@ interface CourseCardProps {
   course: CourseProps;
   onClick?: () => void;
   isAdmin?: boolean;
-  onAdminEnroll?: (courseId: number) => Promise<any>;
+  onAdminEnroll?: (courseId: number) => Promise<unknown>;
   isEnrolling?: boolean;
   isEnrolled?: boolean;
   onEnrollFree?: () => void;
