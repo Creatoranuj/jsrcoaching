@@ -7,6 +7,33 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [v1.8.1] — 2026-09-18
+
+Maintenance release. Consolidates the merged audit work (PR #48, #49, #50) and
+the admin icon-by-link feature; no behaviour changes beyond what those PRs
+introduced.
+
+### Added
+- Subject / chapter icons can be set **or updated by link** after creation
+  (Paste Link / Upload Icon toggle in the inline edit row); clearing the field
+  removes the icon.
+- Storage-backed icons now render through the content-URL resolver in the admin
+  list, so `storage://` paths no longer show as broken images.
+
+### Security
+- Live database verification of the two revenue/privilege loopholes
+  (paid enrollment without payment, role escalation via a profile row):
+  both confirmed CLOSED against the live project — paid enrollment only through
+  `complete_paid_enrollment()`, roles only in `public.user_roles` + `has_role()`.
+- The missing `content` storage bucket was restored and the affected course
+  thumbnail re-uploaded.
+
+### Verified
+- ESLint 0 problems, `tsc --noEmit` clean, 712 tests passing (6 skipped),
+  production build OK, `npx cap sync android` OK (21 plugins).
+
+---
+
 ## [v1.8.0] — 2026-09-18
 
 Release after a full end-to-end audit (engineering + design + crash/memory)
