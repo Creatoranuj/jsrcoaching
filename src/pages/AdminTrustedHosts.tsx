@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Plus, Trash2, Pencil, Copy, ShieldCheck, RefreshCw, Globe,
 } from "lucide-react";
+import { useConfirm } from "@/components/admin/ConfirmDialog";
 import {
   useTrustedHosts,
   type TrustedHost,
@@ -53,6 +54,7 @@ function normalizeHost(input: string): string {
 
 export default function AdminTrustedHosts() {
   const navigate = useNavigate();
+  const confirmAction = useConfirm();
   const { hosts, loading, refetch } = useTrustedHosts();
 
   // Form state
@@ -115,7 +117,7 @@ export default function AdminTrustedHosts() {
   };
 
   const handleDelete = async (h: TrustedHost) => {
-    if (!confirm(`Remove ${h.host}?`)) return;
+    if (!(await confirmAction({ title: `Remove ${h.host}?`, variant: "destructive" }))) return;
     const { error } = await supabase.from("trusted_hosts").delete().eq("id", h.id);
     if (error) toast.error(error.message); else { toast.success("Removed"); refetch(); }
   };

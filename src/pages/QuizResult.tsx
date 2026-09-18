@@ -377,7 +377,7 @@ const QuizResult = () => {
         style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
       >
         <div className="flex items-center gap-3 max-w-3xl mx-auto px-4 py-3">
-          <button onClick={() => navigate("/all-tests")} className="text-muted-foreground hover:text-foreground transition-colors">
+          <button onClick={() => navigate("/all-tests")} aria-label="Back to tests" className="text-muted-foreground hover:text-foreground transition-colors min-h-11 min-w-11 -ml-2 flex items-center justify-center rounded-md shrink-0">
             <ChevronLeft className="h-5 w-5" />
           </button>
           <div className="flex-1 min-w-0">

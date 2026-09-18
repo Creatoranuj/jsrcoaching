@@ -252,6 +252,13 @@ const Admin = () => {
 
   // --- ROLE MANAGEMENT ---
   const handleChangeRole = async (userId: string, newRole: string) => {
+    // AUTHZ: promoting to admin is a privileged, silent-by-default action —
+    // require an explicit confirm like every other high-impact admin action.
+    if (newRole === "admin" && !(await confirmAction({
+      title: "Grant admin access to this user?",
+      description: "They will gain full access to payments, users, and content.",
+      variant: "destructive",
+    }))) return;
     setRoleChanging(prev => ({ ...prev, [userId]: true }));
     try {
       const { error: delError } = await supabase.from('user_roles').delete().eq('user_id', userId);
