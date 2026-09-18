@@ -27,6 +27,8 @@ import {
 import { toast } from "sonner";
 import { cn } from "../../lib/utils";
 import { useLessonPdfs, type LessonPdf } from "../../hooks/useLessonPdfs";
+import { ChapterIcon } from "./ChapterIcon";
+import { ChapterIconEditor } from "./ChapterIconEditor";
 import { verifyShareAccess } from "@/lib/shareAccessCheck";
 import { useReorder } from "@/hooks/useReorder";
 import {
@@ -77,6 +79,10 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
   const [editingChapterId, setEditingChapterId] = useState<string | null>(null);
   const [editChapterTitle, setEditChapterTitle] = useState("");
   const [editChapterCode, setEditChapterCode] = useState("");
+  // Icon of the subject/chapter being edited — lets an admin replace the icon
+  // by link (or a fresh upload) AFTER creation, not only at create time.
+  const [editChapterIcon, setEditChapterIcon] = useState("");
+  const [editChapterIconMode, setEditChapterIconMode] = useState<"file" | "url">("url");
 
   // Inline edit state
   const [editingLessonId, setEditingLessonId] = useState<string | null>(null);
@@ -249,6 +255,8 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
     const { error } = await supabase.from("chapters").update({
       title: editChapterTitle.trim(),
       code: editChapterCode.trim() || editChapterTitle.trim().substring(0, 10).toUpperCase().replace(/\s/g, '-'),
+      // Empty field clears the icon; a pasted link or a fresh upload replaces it.
+      thumbnail_url: editChapterIcon.trim() || null,
     }).eq("id", id);
     if (error) toast.error(error.message);
     else {
@@ -703,7 +711,7 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
                 ) : (
                   <Input placeholder="Paste icon URL" value={newChapterIcon} onChange={e => setNewChapterIcon(e.target.value)} className="flex-1 h-8 text-xs" />
                 )}
-                {newChapterIcon && <img src={newChapterIcon} alt="icon" className="h-8 w-8 rounded object-cover border" />}
+                {newChapterIcon && <ChapterIcon url={newChapterIcon} fallbackLabel="?" className="h-8 w-8" />}
               </div>
               <div className="flex gap-2">
                 <Button size="sm" onClick={() => handleCreateChapter()} disabled={isCreatingChapter || uploadingIcon}>
@@ -749,24 +757,28 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
                 <SortableCard key={ch.id} id={ch.id} className="w-full p-3 border rounded-xl bg-card hover:border-primary hover:shadow-sm transition-all group">
                   {(handle) => (
                   editingChapterId === ch.id ? (
-                    <div className="flex items-center gap-2">
-                      <Input value={editChapterTitle} onChange={e => setEditChapterTitle(e.target.value)} className="h-8 text-base flex-1" placeholder="Title" />
-                      <Input value={editChapterCode} onChange={e => setEditChapterCode(e.target.value)} className="h-8 text-base w-24" placeholder="Code" />
-                      <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-7 sm:w-7" onClick={() => handleRenameChapter(ch.id, false)}><Check className="h-3.5 w-3.5" /></Button>
-                      <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-7 sm:w-7" onClick={() => setEditingChapterId(null)}><X className="h-3.5 w-3.5" /></Button>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Input value={editChapterTitle} onChange={e => setEditChapterTitle(e.target.value)} className="h-8 text-base flex-1" placeholder="Title" />
+                        <Input value={editChapterCode} onChange={e => setEditChapterCode(e.target.value)} className="h-8 text-base w-24" placeholder="Code" />
+                        <Button size="icon" variant="ghost" aria-label="Save subject" className="h-9 w-9 sm:h-7 sm:w-7" onClick={() => handleRenameChapter(ch.id, false)}><Check className="h-3.5 w-3.5" /></Button>
+                        <Button size="icon" variant="ghost" aria-label="Cancel editing" className="h-9 w-9 sm:h-7 sm:w-7" onClick={() => setEditingChapterId(null)}><X className="h-3.5 w-3.5" /></Button>
+                      </div>
+                      <ChapterIconEditor
+                        value={editChapterIcon}
+                        mode={editChapterIconMode}
+                        onModeChange={setEditChapterIconMode}
+                        onChange={setEditChapterIcon}
+                        onUpload={(f) => handleIconUpload(f, setEditChapterIcon)}
+                        uploading={uploadingIcon}
+                      />
                     </div>
                   ) : (
                     <div className="flex items-center justify-between">
                       <DragHandle handle={handle} label={ch.title} />
                       <button onClick={() => setSelectedChapterId(ch.id)} className="flex items-center gap-3 flex-1 text-left min-w-0">
 
-                        {ch.thumbnail_url ? (
-                          <img src={ch.thumbnail_url} alt="" className="w-8 h-8 rounded-lg object-cover" />
-                        ) : (
-                          <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground">
-                            {index + 1}
-                          </div>
-                        )}
+                        <ChapterIcon url={ch.thumbnail_url} fallbackLabel={index + 1} className="w-8 h-8 shrink-0" />
                         <FolderOpen className="h-4 w-4 text-primary" />
                         <div>
                           <p className="font-medium text-sm">{ch.title}</p>
@@ -785,7 +797,7 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
                         <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-7 sm:w-7 sm:opacity-60 sm:group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); handleReorderChapter(ch.id, "down", chapters, false); }} disabled={index === chapters.length - 1}>
                           <ArrowDown className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                         </Button>
-                        <Button size="icon" variant="ghost" aria-label="Edit chapter" className="h-9 w-9 sm:h-7 sm:w-7 sm:opacity-60 sm:group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); setEditingChapterId(ch.id); setEditChapterTitle(ch.title); setEditChapterCode(ch.code); }}>
+                        <Button size="icon" variant="ghost" aria-label="Edit chapter" className="h-9 w-9 sm:h-7 sm:w-7 sm:opacity-60 sm:group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); setEditingChapterId(ch.id); setEditChapterTitle(ch.title); setEditChapterCode(ch.code); setEditChapterIcon(ch.thumbnail_url ?? ""); setEditChapterIconMode("url"); }}>
                           <Edit2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                         </Button>
                         <Button size="icon" variant="ghost" aria-label="Delete chapter" className="h-9 w-9 sm:h-7 sm:w-7 text-destructive sm:opacity-60 sm:group-hover:opacity-100 transition-opacity" onClick={(e) => { e.stopPropagation(); handleDeleteChapter(ch.id); }}>
@@ -885,7 +897,7 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
               ) : (
                 <Input placeholder="Paste icon URL" value={newSubFolderIcon} onChange={e => setNewSubFolderIcon(e.target.value)} className="flex-1 h-8 text-xs" />
               )}
-              {newSubFolderIcon && <img src={newSubFolderIcon} alt="icon" className="h-8 w-8 rounded object-cover border" />}
+              {newSubFolderIcon && <ChapterIcon url={newSubFolderIcon} fallbackLabel="?" className="h-8 w-8" />}
             </div>
             <div className="flex gap-2">
               <Button size="sm" onClick={handleCreateSubFolder} disabled={isCreatingChapter || uploadingIcon}>
@@ -905,23 +917,27 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
               <SortableCard key={sc.id} id={sc.id} className="w-full p-3 border rounded-xl bg-card hover:border-primary hover:shadow-sm transition-all group">
                 {(handle) => (
                 editingChapterId === sc.id ? (
-                  <div className="flex items-center gap-2">
-                    <Input value={editChapterTitle} onChange={e => setEditChapterTitle(e.target.value)} className="h-8 text-base flex-1" placeholder="Title" />
-                    <Input value={editChapterCode} onChange={e => setEditChapterCode(e.target.value)} className="h-8 text-base w-24" placeholder="Code" />
-                    <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-7 sm:w-7" onClick={() => handleRenameChapter(sc.id, true)}><Check className="h-3.5 w-3.5" /></Button>
-                    <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-7 sm:w-7" onClick={() => setEditingChapterId(null)}><X className="h-3.5 w-3.5" /></Button>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Input value={editChapterTitle} onChange={e => setEditChapterTitle(e.target.value)} className="h-8 text-base flex-1" placeholder="Title" />
+                      <Input value={editChapterCode} onChange={e => setEditChapterCode(e.target.value)} className="h-8 text-base w-24" placeholder="Code" />
+                      <Button size="icon" variant="ghost" aria-label="Save chapter" className="h-9 w-9 sm:h-7 sm:w-7" onClick={() => handleRenameChapter(sc.id, true)}><Check className="h-3.5 w-3.5" /></Button>
+                      <Button size="icon" variant="ghost" aria-label="Cancel editing" className="h-9 w-9 sm:h-7 sm:w-7" onClick={() => setEditingChapterId(null)}><X className="h-3.5 w-3.5" /></Button>
+                    </div>
+                    <ChapterIconEditor
+                      value={editChapterIcon}
+                      mode={editChapterIconMode}
+                      onModeChange={setEditChapterIconMode}
+                      onChange={setEditChapterIcon}
+                      onUpload={(f) => handleIconUpload(f, setEditChapterIcon)}
+                      uploading={uploadingIcon}
+                    />
                   </div>
                 ) : (
                   <div className="flex items-center justify-between">
                     <DragHandle handle={handle} label={sc.title} />
                     <button onClick={() => setSelectedSubChapterId(sc.id)} className="flex items-center gap-3 flex-1 text-left min-w-0">
-                      {sc.thumbnail_url ? (
-                        <img src={sc.thumbnail_url} alt="" className="w-7 h-7 rounded-lg object-cover" />
-                      ) : (
-                        <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground">
-                          {idx + 1}
-                        </div>
-                      )}
+                      <ChapterIcon url={sc.thumbnail_url} fallbackLabel={idx + 1} className="w-7 h-7 shrink-0" />
                       <FolderOpen className="h-4 w-4 text-primary shrink-0" />
                       <div className="min-w-0">
                         <p className="font-medium text-sm truncate">{sc.title}</p>
@@ -935,7 +951,7 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
                       <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-7 sm:w-7 sm:opacity-60 sm:group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); handleReorderChapter(sc.id, "down", subChapters, true); }} disabled={idx === subChapters.length - 1}>
                         <ArrowDown className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                       </Button>
-                      <Button size="icon" variant="ghost" aria-label="Edit chapter" className="h-9 w-9 sm:h-7 sm:w-7 sm:opacity-60 sm:group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); setEditingChapterId(sc.id); setEditChapterTitle(sc.title); setEditChapterCode(sc.code); }}>
+                      <Button size="icon" variant="ghost" aria-label="Edit chapter" className="h-9 w-9 sm:h-7 sm:w-7 sm:opacity-60 sm:group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); setEditingChapterId(sc.id); setEditChapterTitle(sc.title); setEditChapterCode(sc.code); setEditChapterIcon(sc.thumbnail_url ?? ""); setEditChapterIconMode("url"); }}>
                         <Edit2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                       </Button>
                       <Button size="icon" variant="ghost" aria-label="Delete chapter" className="h-9 w-9 sm:h-7 sm:w-7 text-destructive sm:opacity-60 sm:group-hover:opacity-100 transition-opacity" onClick={(e) => { e.stopPropagation(); handleDeleteChapter(sc.id); }}>
