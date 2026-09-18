@@ -27,7 +27,11 @@ async function ensureListener(): Promise<void> {
     try {
       const { Capacitor } = await loadCore();
       if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== "ios") return;
-      const mod: any = await import(
+      type ListenerHandle = { remove?: () => void };
+      type PrivacyScreenPlugin = {
+        addListener?: (event: string, cb: () => void) => Promise<ListenerHandle>;
+      };
+      const mod: { PrivacyScreen?: PrivacyScreenPlugin } | null = await import(
         /* @vite-ignore */ "@capacitor-community/privacy-screen"
       ).catch(() => null);
       const plugin = mod?.PrivacyScreen;

@@ -32,9 +32,10 @@ import { useReorder } from "@/hooks/useReorder";
 import {
   ReorderList, SortableTableRow, SortableCard, DragHandle, ReorderArrows,
 } from "./ReorderControls";
+import type { Tables } from "@/integrations/supabase/types";
 
 interface ContentDrillDownProps {
-  coursesList: any[];
+  coursesList: Tables<"courses">[];
   onNavigateToUpload: (courseId: string, chapterId: string) => void;
   onRefresh: () => void;
 }
@@ -46,9 +47,9 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
   const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
   const [selectedSubChapterId, setSelectedSubChapterId] = useState<string | null>(null);
-  const [chapters, setChapters] = useState<any[]>([]);
-  const [subChapters, setSubChapters] = useState<any[]>([]);
-  const [lessons, setLessons] = useState<any[]>([]);
+  const [chapters, setChapters] = useState<Tables<"chapters">[]>([]);
+  const [subChapters, setSubChapters] = useState<Tables<"chapters">[]>([]);
+  const [lessons, setLessons] = useState<Tables<"lessons">[]>([]);
   const [lessonSearch, setLessonSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<ContentTypeFilter>("all");
   const [loading, setLoading] = useState(false);
@@ -84,7 +85,7 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
     description: "", position: "0", is_locked: false, thumbnail_url: "",
   });
   const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
-  const [editChaptersList, setEditChaptersList] = useState<any[]>([]);
+  const [editChaptersList, setEditChaptersList] = useState<Tables<"chapters">[]>([]);
 
   // Inline upload dialog state
   const [showUploadDialog, setShowUploadDialog] = useState(false);
@@ -271,11 +272,11 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
   // unfiltered — otherwise reordering a filtered subset would scramble hidden rows.
   const reorderEnabled = lessonSearch.trim() === "" && typeFilter === "all";
 
-  const handleReorderChapter = (id: string, direction: "up" | "down", list: any[], isSubChapter: boolean) => {
+  const handleReorderChapter = (id: string, direction: "up" | "down", list: Tables<"chapters">[], isSubChapter: boolean) => {
     void chapterReorder.moveByStep(list, id, direction, isSubChapter ? setSubChapters : setChapters);
   };
 
-  const handleDragChapter = (from: number, to: number, list: any[], isSubChapter: boolean) => {
+  const handleDragChapter = (from: number, to: number, list: Tables<"chapters">[], isSubChapter: boolean) => {
     void chapterReorder.moveByIndex(list, from, to, isSubChapter ? setSubChapters : setChapters);
   };
 
@@ -1170,7 +1171,7 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
                         <TableCell>
                           <button
                             onClick={() => handleToggleLock(l.id, l.is_locked)}
-                            className={cn("p-1 rounded", l.is_locked ? "text-destructive" : "text-green-600")}
+                            className={cn("p-1 rounded", l.is_locked ? "text-destructive" : "text-success")}
                             title={l.is_locked ? "Locked — click to unlock" : "Unlocked — click to lock"}
                             aria-label={l.is_locked ? `Unlock lesson ${l.title}` : `Lock lesson ${l.title}`}
                           >
@@ -1235,14 +1236,14 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
                             <div className="flex items-center gap-2 text-xs text-muted-foreground">
                               <Badge variant="outline" className="text-[10px] px-1.5 py-0">{l.lecture_type}</Badge>
                               <span className="flex items-center gap-0.5"><Hash className="h-3 w-3" />{l.position}</span>
-                              {l.is_locked ? <Lock className="h-3 w-3 text-destructive" /> : <Unlock className="h-3 w-3 text-green-600" />}
+                              {l.is_locked ? <Lock className="h-3 w-3 text-destructive" /> : <Unlock className="h-3 w-3 text-success" />}
                             </div>
                           </div>
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
                           <button
                             onClick={() => handleToggleLock(l.id, l.is_locked)}
-                            className={cn("min-h-11 min-w-11 inline-flex items-center justify-center rounded-md hover:bg-muted", l.is_locked ? "text-destructive" : "text-green-600")}
+                            className={cn("min-h-11 min-w-11 inline-flex items-center justify-center rounded-md hover:bg-muted", l.is_locked ? "text-destructive" : "text-success")}
                             aria-label={l.is_locked ? `Unlock lesson ${l.title}` : `Lock lesson ${l.title}`}
                           >
                             {l.is_locked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
@@ -1287,7 +1288,7 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
             {/* Content Type */}
             <div className="grid grid-cols-5 gap-1.5">
               {([["video", "Lecture", Video], ["pdf", "PDF", FileText], ["dpp", "DPP", FileText], ["notes", "Notes", BookOpen], ["test", "Test", ClipboardCheck]] as const).map(([type, label, Icon]) => (
-                <Button key={type} size="sm" variant={uploadType === type ? "default" : "outline"} onClick={() => { setUploadType(type as any); if (type === "video" || type === "test") setUploadMode("link"); }} className="text-xs px-2">
+                <Button key={type} size="sm" variant={uploadType === type ? "default" : "outline"} onClick={() => { setUploadType(type); if (type === "video" || type === "test") setUploadMode("link"); }} className="text-xs px-2">
                   <Icon className="h-3 w-3 mr-1" /> {label}
                 </Button>
               ))}
@@ -1337,7 +1338,7 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
                   />
                   <label htmlFor="drilldown-file-upload" className="cursor-pointer">
                     {uploadFile ? (
-                      <div className="flex items-center justify-center gap-2 text-green-600">
+                      <div className="flex items-center justify-center gap-2 text-success">
                         <FileText className="h-5 w-5" />
                         <span className="font-medium text-sm">{uploadFile.name}</span>
                       </div>

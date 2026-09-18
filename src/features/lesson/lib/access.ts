@@ -29,7 +29,7 @@ export function checkCommentImage(
  * Normalises a lesson row from the course bundle: the API may omit optional
  * fields, and the UI relies on `''`/`null` rather than `undefined`.
  */
-export function normalizeLesson(row: any): Lesson {
+export function normalizeLesson(row: Record<string, unknown> & { id: string }): Lesson {
   return {
     ...row,
     video_url: row.video_url || "",

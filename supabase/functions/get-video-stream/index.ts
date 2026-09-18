@@ -5,6 +5,30 @@ import { buildCorsHeaders } from "../_shared/cors.ts";
 
 interface StreamInfo { url: string; quality: string; type: string; container: string; }
 
+interface PipedInstanceEntry { api_url?: string; uptime_24h?: number; }
+
+interface RawFormat {
+  url?: string;
+  mimeType?: string;
+  format?: string;
+  quality?: string;
+  qualityLabel?: string;
+  videoOnly?: boolean;
+  type?: string;
+  audioQuality?: string;
+  audioChannels?: number;
+  signatureCipher?: string;
+  cipher?: string;
+}
+
+interface PipedStreamsResponse { videoStreams?: RawFormat[]; }
+interface InvidiousStreamsResponse { formatStreams?: RawFormat[]; adaptiveFormats?: RawFormat[]; }
+interface YtStreamingData { formats?: RawFormat[]; adaptiveFormats?: RawFormat[]; }
+interface YtPlayerResponse {
+  playabilityStatus?: { status?: string };
+  streamingData?: YtStreamingData;
+}
+
 // ─── Piped Instance Discovery + Health Cache ───
 // Only 1 public Piped API instance survives as of March 2026
 const PIPED_SEED_INSTANCES = [
@@ -36,9 +60,9 @@ async function refreshInstances(): Promise<void> {
       const data = await res.json();
       if (Array.isArray(data)) {
         const apis = data
-          .filter((d: any) => d.api_url && d.uptime_24h > 90)
-          .sort((a: any, b: any) => (b.uptime_24h || 0) - (a.uptime_24h || 0))
-          .map((d: any) => {
+          .filter((d: PipedInstanceEntry) => d.api_url && (d.uptime_24h ?? 0) > 90)
+          .sort((a: PipedInstanceEntry, b: PipedInstanceEntry) => (b.uptime_24h || 0) - (a.uptime_24h || 0))
+          .map((d: PipedInstanceEntry) => {
             try { return new URL(d.api_url).origin; } catch { return null; }
           })
           .filter(Boolean) as string[];
@@ -114,7 +138,7 @@ async function extractViaPiped(videoId: string, signal: AbortSignal): Promise<{ 
   }
 }
 
-function parsePipedStreams(data: any): StreamInfo[] {
+function parsePipedStreams(data: PipedStreamsResponse): StreamInfo[] {
   const streams: StreamInfo[] = [];
   const videoStreams = data.videoStreams || [];
   for (const s of videoStreams) {
@@ -162,7 +186,7 @@ async function extractViaInvidious(videoId: string, signal: AbortSignal): Promis
   return { streams: [], source: "" };
 }
 
-function parseInvidiousStreams(data: any): StreamInfo[] {
+function parseInvidiousStreams(data: InvidiousStreamsResponse): StreamInfo[] {
   const streams: StreamInfo[] = [];
   for (const f of (data.formatStreams || [])) {
     if (!f.url) continue;
@@ -212,7 +236,7 @@ async function extractViaWebClient(videoId: string, signal: AbortSignal): Promis
     const vd = html.match(/"VISITOR_DATA"\s*:\s*"([^"]+)"/)?.[1];
     
     // Extract ytInitialPlayerResponse
-    let pr: any = null;
+    let pr: YtPlayerResponse | null = null;
     const m1 = html.match(/var\s+ytInitialPlayerResponse\s*=\s*(\{.+?\})\s*;\s*(?:var|<\/script)/s);
     if (m1) try { pr = JSON.parse(m1[1]); } catch {}
     if (!pr) { 
@@ -310,7 +334,7 @@ async function extractViaMobile(videoId: string, visitorData?: string, signal?: 
   return [];
 }
 
-function safeParseTruncatedJson(raw: string): any {
+function safeParseTruncatedJson(raw: string): YtPlayerResponse | null {
   let depth = 0;
   for (let i = 0; i < raw.length; i++) {
     if (raw[i] === '{') depth++; else if (raw[i] === '}') { depth--; if (depth === 0) { try { return JSON.parse(raw.substring(0, i + 1)); } catch { return null; } } }
@@ -318,7 +342,7 @@ function safeParseTruncatedJson(raw: string): any {
   return null;
 }
 
-function parseYTStreams(sd: any): StreamInfo[] {
+function parseYTStreams(sd: YtStreamingData | undefined): StreamInfo[] {
   if (!sd) return [];
   const formats = [...(sd.formats || []), ...(sd.adaptiveFormats || [])];
   const streams: StreamInfo[] = [];

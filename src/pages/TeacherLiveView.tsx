@@ -191,7 +191,7 @@ const TeacherLiveView = () => {
               <TabsTrigger value="hands" className="gap-1 text-xs">
                 <Hand className="h-3.5 w-3.5" /> Hands
                 {raisedHandCount > 0 && (
-                  <Badge className="bg-amber-500 text-white text-[10px] h-4 px-1 ml-0.5">{raisedHandCount}</Badge>
+                  <Badge className="bg-gold text-gold-foreground text-[10px] h-4 px-1 ml-0.5">{raisedHandCount}</Badge>
                 )}
               </TabsTrigger>
               <TabsTrigger value="chat" className="gap-1 text-xs">

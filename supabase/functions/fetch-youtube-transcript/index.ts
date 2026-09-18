@@ -87,9 +87,10 @@ async function discoverTracks(youtubeId: string): Promise<Array<{ url: string; l
     if (!m) return [];
     const tracks = JSON.parse(m[1].replace(/\\u0026/g, "&").replace(/\\\//g, "/"));
     if (!Array.isArray(tracks)) return [];
-    return tracks
-      .filter((t: any) => t && typeof t.baseUrl === "string")
-      .map((t: any) => ({ url: t.baseUrl as string, lang: (t.languageCode as string) || "unk" }));
+    return (tracks as unknown[])
+      .filter((t): t is { baseUrl: string; languageCode?: string } =>
+        !!t && typeof t === "object" && typeof (t as { baseUrl?: unknown }).baseUrl === "string")
+      .map((t) => ({ url: t.baseUrl, lang: t.languageCode || "unk" }));
   } catch {
     return [];
   }

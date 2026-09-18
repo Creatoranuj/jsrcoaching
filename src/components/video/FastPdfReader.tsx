@@ -521,6 +521,10 @@ const FastPdfReader = forwardRef<FastPdfReaderHandle, Props>(
     // (byteLength 0), (2) allocate a brand-new ArrayBuffer per file identity
     // and copy bytes into it — pdf.js can safely transfer this fresh copy.
     const file = useMemo(() => {
+      // resumeEpoch/retryNonce are referenced (no-op) so they stay real
+      // dependencies below — see explanation at the end of this memo.
+      void resumeEpoch;
+      void retryNonce;
       const source = fallbackData ?? data;
       if (source) {
         if (source.byteLength === 0) {

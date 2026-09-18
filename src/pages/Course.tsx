@@ -186,17 +186,19 @@ const CoursePage = () => {
   });
 
   const course = courseQuery.data ?? null;
-  const lessons = lessonsQuery.data ?? [];
   const loading = courseQuery.isLoading || lessonsQuery.isLoading;
 
-  const filteredLessons = useMemo(() => lessons.filter(l => {
-    const type = l.lectureType || "VIDEO";
-    if (activeTab === "all") return true;
-    if (activeTab === "lectures") return type === "VIDEO";
-    if (activeTab === "notes") return type === "NOTES" || type === "PDF" || type === "DPP";
-    if (activeTab === "tests") return type === "TEST";
-    return true;
-  }), [lessons, activeTab]);
+  const filteredLessons = useMemo(() => {
+    const lessons = lessonsQuery.data ?? [];
+    return lessons.filter(l => {
+      const type = l.lectureType || "VIDEO";
+      if (activeTab === "all") return true;
+      if (activeTab === "lectures") return type === "VIDEO";
+      if (activeTab === "notes") return type === "NOTES" || type === "PDF" || type === "DPP";
+      if (activeTab === "tests") return type === "TEST";
+      return true;
+    });
+  }, [lessonsQuery.data, activeTab]);
 
   const handleWatch = (lesson: Lesson) => {
     const fromQS = fromParam ? `&from=${fromParam}` : '&from=courses';

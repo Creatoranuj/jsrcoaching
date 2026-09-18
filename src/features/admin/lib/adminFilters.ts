@@ -5,6 +5,8 @@
 // filtering, CSV shaping) can be unit-tested without mounting the page or
 // touching Supabase. Behaviour is a 1:1 port of the previous inline code.
 
+import type { Tables } from "@/integrations/supabase/types";
+
 export type PaymentMethod = "upi" | "razorpay";
 
 export type PaymentStatusFilter =
@@ -26,8 +28,29 @@ export interface AdminUser {
   role: string | null;
 }
 
+/** Joined profile fields hydrated client-side (profiles is not FK-linked). */
+interface JoinedProfile {
+  full_name: string | null;
+  email: string | null;
+}
+
+/** Joined course title hydrated via the `courses (title)` select. */
+interface JoinedCourse {
+  title: string | null;
+}
+
+export type ManualPaymentRow = Tables<"payment_requests"> & {
+  profiles?: JoinedProfile | null;
+  courses?: JoinedCourse | null;
+};
+
+export type RazorpayPaymentRow = Tables<"razorpay_payments"> & {
+  profiles?: JoinedProfile | null;
+  courses?: JoinedCourse | null;
+};
+
 export interface UnifiedPayment {
-  [key: string]: any;
+  [key: string]: unknown;
   _method: PaymentMethod;
   _key: string;
   _displayName: string;
@@ -44,8 +67,8 @@ export interface UnifiedPayment {
  * tab renders from, so both providers can share a single row component.
  */
 export function unifyPayments(
-  manualPayments: any[] = [],
-  razorpayPayments: any[] = [],
+  manualPayments: ManualPaymentRow[] = [],
+  razorpayPayments: RazorpayPaymentRow[] = [],
 ): UnifiedPayment[] {
   const manual = (manualPayments || []).map((p) => ({
     ...p,
@@ -147,7 +170,7 @@ export function promotableStudents(users: AdminUser[], search: string): AdminUse
  * are noise in an export), and comma-bearing values get quoted.
  * Returns null when there is nothing to export.
  */
-export function buildCsv(data: any[]): string | null {
+export function buildCsv(data: Array<Record<string, unknown>>): string | null {
   if (!data || data.length === 0) return null;
   const headers = Object.keys(data[0]).filter(
     (k) => !k.includes("id") && typeof data[0][k] !== "object",

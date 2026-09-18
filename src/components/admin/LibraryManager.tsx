@@ -39,6 +39,12 @@ interface Course {
   title: string;
 }
 
+import type { Tables } from "@/integrations/supabase/types";
+
+type MaterialRow = Tables<"materials"> & { courses: { title: string } | null };
+type NoteRow = Tables<"notes"> & { lessons: { title: string } | null };
+type LessonRow = Tables<"lessons"> & { courses: { title: string } | null };
+
 interface LibraryManagerProps {
   /**
    * Courses list owned by the parent Admin page. Passed in (rather than
@@ -70,14 +76,14 @@ interface LibraryManagerProps {
 function LibraryManagerImpl({ coursesList }: LibraryManagerProps) {
   const confirmAction = useConfirm();
 
-  const [libraryLessons, setLibraryLessons] = useState<any[]>([]);
-  const [lessons, setLessons] = useState<any[]>([]);
+  const [libraryLessons, setLibraryLessons] = useState<LessonRow[]>([]);
+  const [lessons, setLessons] = useState<LessonRow[]>([]);
   const [libraryTypeFilter, setLibraryTypeFilter] = useState<
     "all" | "VIDEO" | "PDF" | "DPP" | "NOTES" | "TEST"
   >("all");
   const [libraryCourseFilter, setLibraryCourseFilter] = useState<string>("all");
-  const [materialsList, setMaterialsList] = useState<any[]>([]);
-  const [notesList, setNotesList] = useState<any[]>([]);
+  const [materialsList, setMaterialsList] = useState<MaterialRow[]>([]);
+  const [notesList, setNotesList] = useState<NoteRow[]>([]);
   const [newMaterial, setNewMaterial] = useState({
     title: "",
     description: "",
@@ -277,7 +283,7 @@ function LibraryManagerImpl({ coursesList }: LibraryManagerProps) {
             <div className="flex flex-wrap items-center gap-2">
               <Select
                 value={libraryTypeFilter}
-                onValueChange={(v: any) => setLibraryTypeFilter(v)}
+                onValueChange={(v: "all" | "VIDEO" | "PDF" | "DPP" | "NOTES" | "TEST") => setLibraryTypeFilter(v)}
               >
                 <SelectTrigger className="w-[130px] bg-card">
                   <Filter className="h-4 w-4 mr-2" />
@@ -319,7 +325,7 @@ function LibraryManagerImpl({ coursesList }: LibraryManagerProps) {
               </div>
             ) : (
               <div className="divide-y">
-                {filteredLibraryLessons.map((l: any) => (
+                {filteredLibraryLessons.map((l) => (
                   <div
                     key={l.id}
                     className="p-4 hover:bg-muted/30 transition-colors flex items-center justify-between"
@@ -666,13 +672,13 @@ function LibraryManagerImpl({ coursesList }: LibraryManagerProps) {
                 }}
               />
               {noteFile && (
-                <div className="flex items-center gap-2 p-2 bg-green-50 rounded border border-green-200 text-sm text-green-700">
+                <div className="flex items-center gap-2 p-2 bg-success/10 rounded border border-success/30 text-sm text-success">
                   <FileText className="h-4 w-4" />
                   <span className="font-medium truncate">{noteFile.name}</span>
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="ml-auto h-6 text-red-500"
+                    className="ml-auto h-9 w-9 text-destructive"
                     onClick={() => setNoteFile(null)}
                   >
                     ✕

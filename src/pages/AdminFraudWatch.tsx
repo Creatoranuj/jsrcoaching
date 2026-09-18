@@ -42,7 +42,7 @@ const RULE_LABEL: Record<string, string> = {
 
 const SEVERITY_STYLE: Record<Row["severity"], string> = {
   critical: "bg-destructive/15 text-destructive border-destructive/30",
-  high: "bg-[hsl(38,92%,50%)]/15 text-[hsl(38,92%,35%)] border-[hsl(38,92%,50%)]/30",
+  high: "bg-gold/15 text-gold-foreground border-gold/30",
   medium: "bg-primary/10 text-primary border-primary/20",
   low: "bg-muted text-muted-foreground",
 };
@@ -208,7 +208,7 @@ const Chip = ({ active, onClick, children, tone }: { active: boolean; onClick: (
     className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors min-h-[36px] active:scale-[0.97] duration-150
       ${active
         ? tone === "critical" ? "bg-destructive text-destructive-foreground border-destructive"
-        : tone === "high" ? "bg-[hsl(38,92%,50%)] text-white border-[hsl(38,92%,50%)]"
+        : tone === "high" ? "bg-gold text-gold-foreground border-gold"
         : tone === "medium" ? "bg-primary text-primary-foreground border-primary"
         : "bg-foreground text-background border-foreground"
         : "bg-background text-foreground border-border hover:bg-muted"}`}

@@ -98,7 +98,7 @@ const DiscussionSection: React.FC<DiscussionSectionProps> = ({
         message: newComment.trim(),
         user_name: userName,
         user_id: userId,
-      } as any);
+      });
 
     setIsSubmitting(false);
 

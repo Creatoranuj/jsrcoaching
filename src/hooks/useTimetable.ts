@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../integrations/supabase/client";
 import { useAuth } from "../contexts/AuthContext";
@@ -66,7 +66,7 @@ export const useTimetable = () => {
     },
   });
 
-  const timetable = timetableQuery.data ?? [];
+  const timetable = useMemo(() => timetableQuery.data ?? [], [timetableQuery.data]);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: TIMETABLE_KEY });
 

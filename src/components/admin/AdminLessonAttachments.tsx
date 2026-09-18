@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useLessonAttachments, type LessonAttachment, type LessonAttachmentKind } from "@/hooks/useLessonAttachments";
+import { useConfirm } from "@/components/admin/ConfirmDialog";
 
 const MAX_BYTES = 50 * 1024 * 1024; // 50 MB warn threshold
 
@@ -17,6 +18,7 @@ interface Props {
 }
 
 export function AdminLessonAttachments({ lessonId }: Props) {
+  const confirmAction = useConfirm();
   const { attachments, loading, addAttachment, deleteAttachment, fetchAttachments } = useLessonAttachments(lessonId);
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -84,7 +86,7 @@ export function AdminLessonAttachments({ lessonId }: Props) {
                 <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-6 sm:w-6" disabled={idx === attachments.length - 1} onClick={() => moveDown(idx)}>
                   <ArrowDown className="h-3 w-3" />
                 </Button>
-                <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-6 sm:w-6 text-destructive" onClick={() => { if (confirm(`Delete "${att.title || att.file_name}"?`)) void deleteAttachment(att.id); }}>
+                <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-6 sm:w-6 text-destructive" onClick={async () => { if (await confirmAction({ title: `Delete "${att.title || att.file_name}"?`, variant: "destructive" })) void deleteAttachment(att.id); }}>
                   <Trash2 className="h-3 w-3" />
                 </Button>
               </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { lazyWithRetry } from "../lib/lazyWithRetry";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../integrations/supabase/client";
@@ -88,7 +88,7 @@ const AdminAnalytics = () => {
     if (!authLoading && !isAdmin) navigate("/login");
   }, [authLoading, isAdmin, navigate]);
 
-  const fetchAll = async () => {
+  const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
       // AUDIT 2026-09-17: a single failing query used to reject silently and
@@ -109,9 +109,9 @@ const AdminAnalytics = () => {
       setLoading(false);
       setLastRefresh(new Date());
     }
-  };
+  }, []);
 
-  useEffect(() => { if (isAdmin) void fetchAll(); }, [isAdmin]);
+  useEffect(() => { if (isAdmin) void fetchAll(); }, [isAdmin, fetchAll]);
 
   // ── 1. Daily Active Users (last 7 days via quiz_attempts) ──────────────────
   const fetchDAU = async () => {
@@ -317,7 +317,7 @@ const AdminAnalytics = () => {
             </div>
           </div>
 
-          <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
+          <Tabs value={tab} onValueChange={(v) => setTab(v as "learning" | "users" | "payments")}>
             <TabsList>
               <TabsTrigger value="learning">Learning</TabsTrigger>
               <TabsTrigger value="users">Users & Sessions</TabsTrigger>

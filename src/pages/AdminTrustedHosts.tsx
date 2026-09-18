@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Plus, Trash2, Pencil, Copy, ShieldCheck, RefreshCw, Globe,
 } from "lucide-react";
+import { useConfirm } from "@/components/admin/ConfirmDialog";
 import {
   useTrustedHosts,
   type TrustedHost,
@@ -53,6 +54,7 @@ function normalizeHost(input: string): string {
 
 export default function AdminTrustedHosts() {
   const navigate = useNavigate();
+  const confirmAction = useConfirm();
   const { hosts, loading, refetch } = useTrustedHosts();
 
   // Form state
@@ -115,7 +117,7 @@ export default function AdminTrustedHosts() {
   };
 
   const handleDelete = async (h: TrustedHost) => {
-    if (!confirm(`Remove ${h.host}?`)) return;
+    if (!(await confirmAction({ title: `Remove ${h.host}?`, variant: "destructive" }))) return;
     const { error } = await supabase.from("trusted_hosts").delete().eq("id", h.id);
     if (error) toast.error(error.message); else { toast.success("Removed"); refetch(); }
   };
@@ -196,7 +198,7 @@ export default function AdminTrustedHosts() {
             <TabsContent value="list" className="mt-4 space-y-3">
               <div className="flex items-center gap-2">
                 <Label className="text-sm">Filter:</Label>
-                <Select value={filter} onValueChange={(v: any) => setFilter(v)}>
+                <Select value={filter} onValueChange={(v: TrustedHostCategory | "all") => setFilter(v)}>
                   <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All categories</SelectItem>
@@ -310,7 +312,7 @@ export default function AdminTrustedHosts() {
             </div>
             <div>
               <Label>Category</Label>
-              <Select value={category} onValueChange={(v: any) => setCategory(v)}>
+              <Select value={category} onValueChange={(v: TrustedHostCategory) => setCategory(v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {(Object.keys(CATEGORY_LABEL) as TrustedHostCategory[]).map((c) => (

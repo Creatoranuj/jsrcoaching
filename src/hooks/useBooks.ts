@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../integrations/supabase/client';
 import { toast } from './use-toast';
 import { logger } from "@/lib/logger";
+import type { TablesUpdate } from "@/integrations/supabase/types";
 
 export interface Book {
   id: string;
@@ -57,9 +58,9 @@ export function useBooks() {
 
       if (dbError) throw dbError;
       setBooks((data || []) as Book[]);
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error('Error fetching books:', err);
-      setError(err);
+      setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
       setIsLoading(false);
     }
@@ -98,7 +99,7 @@ export function useBooks() {
       if (dbError) throw dbError;
       toast({ title: 'Book added' });
       await fetchBooks();
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error('Error adding book:', err);
       toast({ title: 'Failed to add book', variant: 'destructive' });
     } finally {
@@ -109,7 +110,7 @@ export function useBooks() {
   const updateBook = async ({ id, formData, coverFile }: { id: string; formData: BookFormData; coverFile?: File }) => {
     try {
       setIsUpdating(true);
-      const updateData: any = {
+      const updateData: TablesUpdate<'books'> = {
         title: formData.title,
         author: formData.author,
         description: formData.description,
@@ -140,7 +141,7 @@ export function useBooks() {
       if (dbError) throw dbError;
       toast({ title: 'Book updated' });
       await fetchBooks();
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error('Error updating book:', err);
       toast({ title: 'Failed to update book', variant: 'destructive' });
     } finally {
@@ -159,7 +160,7 @@ export function useBooks() {
       if (dbError) throw dbError;
       toast({ title: 'Book deleted' });
       await fetchBooks();
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error('Error deleting book:', err);
       toast({ title: 'Failed to delete book', variant: 'destructive' });
     } finally {

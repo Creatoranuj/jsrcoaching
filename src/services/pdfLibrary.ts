@@ -340,7 +340,7 @@ export async function downloadPdf(
     } catch {
       /* ignore */
     }
-    if ((err as any)?.name === "AbortError") {
+    if ((err as { name?: string } | null)?.name === "AbortError") {
       await libraryDB.delete(meta.pdf_id);
     } else {
       const partial = await libraryDB.get(meta.pdf_id);

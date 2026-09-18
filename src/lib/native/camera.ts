@@ -53,18 +53,18 @@ async function ensurePermissions(
   const { Camera } = await import("@capacitor/camera");
   const needed: ("camera" | "photos")[] =
     source === "camera" ? ["camera"] : ["photos"];
-  let perm;
+  let perm: Record<string, string>;
   try {
-    perm = await Camera.checkPermissions();
+    perm = (await Camera.checkPermissions()) as unknown as Record<string, string>;
   } catch (e) {
     console.warn("[camera] checkPermissions failed", e);
-    perm = {} as Record<string, string>;
+    perm = {};
   }
-  const missing = needed.filter((k) => (perm as any)[k] !== "granted");
+  const missing = needed.filter((k) => perm[k] !== "granted");
   if (!missing.length) return;
-  let req;
+  let req: Record<string, string>;
   try {
-    req = await Camera.requestPermissions({ permissions: missing });
+    req = (await Camera.requestPermissions({ permissions: missing })) as unknown as Record<string, string>;
   } catch (e) {
     logger.error("[camera] requestPermissions failed", e);
     throw new CameraPermissionError(
@@ -75,7 +75,7 @@ async function ensurePermissions(
     );
   }
   for (const k of missing) {
-    if ((req as any)[k] !== "granted") {
+    if (req[k] !== "granted") {
       const kind = k === "camera" ? "camera" : "photos";
       throw new CameraPermissionError(
         kind === "camera"
@@ -110,7 +110,7 @@ export async function pickPhoto(source: PickSource = "camera"): Promise<File | n
         correctOrientation: true,
         presentationStyle: "fullscreen",
       });
-      const uri = photo?.webPath || (photo as any)?.path;
+      const uri = photo?.webPath || (photo as unknown as { path?: string })?.path;
       if (!uri) return null;
       const prefix = source === "camera" ? "scan" : "photo";
       const mime = photo.format ? `image/${photo.format}` : "image/jpeg";

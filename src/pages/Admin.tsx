@@ -12,10 +12,12 @@ import {
   activeTeachers as listActiveTeachers, promotableStudents as listPromotableStudents,
   buildCsv, csvFileName,
 } from "@/features/admin/lib/adminFilters";
-import type { AdminUser } from "@/features/admin/lib/adminFilters";
+import type { AdminUser, ManualPaymentRow, RazorpayPaymentRow, UnifiedPayment } from "@/features/admin/lib/adminFilters";
 import { paymentTotals } from "@/features/admin/lib/adminStats";
 import { AdminUsersTab } from "@/features/admin/components/AdminUsersTab";
 import { AdminSessionsTab } from "@/features/admin/components/AdminSessionsTab";
+import type { AdminSession } from "@/features/admin/components/AdminSessionsTab";
+import type { Tables } from "@/integrations/supabase/types";
 import { AdminOverviewTab } from "@/features/admin/components/AdminOverviewTab";
 import { AdminStatsGrid } from "@/features/admin/components/AdminStatsGrid";
 import { AdminPaymentsTab } from "@/features/admin/components/AdminPaymentsTab";
@@ -114,9 +116,9 @@ const Admin = () => {
 
 
   // -- DATA STATES --
-  const [payments, setPayments] = useState<any[]>([]);
-  const [razorpayPayments, setRazorpayPayments] = useState<any[]>([]);
-  const [coursesList, setCoursesList] = useState<any[]>([]);
+  const [payments, setPayments] = useState<ManualPaymentRow[]>([]);
+  const [razorpayPayments, setRazorpayPayments] = useState<RazorpayPaymentRow[]>([]);
+  const [coursesList, setCoursesList] = useState<Tables<"courses">[]>([]);
   const [usersList, setUsersList] = useState<UserWithRole[]>([]);
   const [loading, setLoading] = useState(false);
   const [roleChanging, setRoleChanging] = useState<Record<string, boolean>>({});
@@ -130,7 +132,7 @@ const Admin = () => {
   });
 
   // -- SESSIONS STATE --
-  const [sessionsList, setSessionsList] = useState<any[]>([]);
+  const [sessionsList, setSessionsList] = useState<AdminSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [terminatingSession, setTerminatingSession] = useState<string | null>(null);
 
@@ -184,8 +186,8 @@ const Admin = () => {
       if (coursesData) setCoursesList(coursesData);
 
       const { data: profilesData } = await supabase.from('profiles').select('*');
-      const profileMap = new Map<string, any>((profilesData || []).map((p) => [p.id, p]));
-      const withProfile = (rows: any[] | null) =>
+      const profileMap = new Map<string, Tables<"profiles">>((profilesData || []).map((p) => [p.id, p]));
+      const withProfile = <T extends { user_id: string }>(rows: T[] | null) =>
         (rows || []).map((r) => ({ ...r, profiles: profileMap.get(r.user_id) ?? null }));
 
       // profiles is not FK-linked to payment tables — join client-side.
@@ -250,6 +252,13 @@ const Admin = () => {
 
   // --- ROLE MANAGEMENT ---
   const handleChangeRole = async (userId: string, newRole: string) => {
+    // AUTHZ: promoting to admin is a privileged, silent-by-default action —
+    // require an explicit confirm like every other high-impact admin action.
+    if (newRole === "admin" && !(await confirmAction({
+      title: "Grant admin access to this user?",
+      description: "They will gain full access to payments, users, and content.",
+      variant: "destructive",
+    }))) return;
     setRoleChanging(prev => ({ ...prev, [userId]: true }));
     try {
       const { error: delError } = await supabase.from('user_roles').delete().eq('user_id', userId);
@@ -307,7 +316,7 @@ const Admin = () => {
   };
 
   // --- EXPORT ---
-  const exportToCSV = (data: any[], filename: string) => {
+  const exportToCSV = (data: Array<Record<string, unknown>>, filename: string) => {
     const csvContent = buildCsv(data);
     if (!csvContent) { toast.error("No data to export"); return; }
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -396,7 +405,7 @@ const Admin = () => {
   };
 
   // --- REFUND CONFIRMATION DIALOG STATE ---
-  const [refundConfirmPayment, setRefundConfirmPayment] = useState<any>(null);
+  const [refundConfirmPayment, setRefundConfirmPayment] = useState<UnifiedPayment | null>(null);
   const [refundConfirmText, setRefundConfirmText] = useState("");
   // Blank = full refund (historical behaviour). Rupees, converted to paise.
   const [refundAmountText, setRefundAmountText] = useState("");
@@ -522,7 +531,7 @@ const Admin = () => {
       thumbnailUrl = `storage://content/thumbnails/${fileName}`;
 
     }
-    const updateData: any = { title: editCourseData.title, description: editCourseData.description, price: parseFloat(editCourseData.price) || 0, grade: editCourseData.grade, start_date: editCourseData.startDate || null, end_date: editCourseData.endDate || null };
+    const updateData: Partial<Tables<"courses">> = { title: editCourseData.title, description: editCourseData.description, price: parseFloat(editCourseData.price) || 0, grade: editCourseData.grade, start_date: editCourseData.startDate || null, end_date: editCourseData.endDate || null };
     if (thumbnailUrl) { updateData.image_url = thumbnailUrl; updateData.thumbnail_url = thumbnailUrl; }
     const { error } = await supabase.from('courses').update(updateData).eq('id', editingCourseId);
     if (error) toast.error(error.message);

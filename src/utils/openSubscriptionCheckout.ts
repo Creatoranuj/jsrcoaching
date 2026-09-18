@@ -19,8 +19,14 @@ import { getErrorMessage } from "@/lib/errorMessage";
 const MERCHANT_NAME = "JSR COACHING";
 const BRAND_COLOR = "#F97316";
 
+interface SubscriptionSummary {
+  id: string;
+  plan_slug: string;
+  current_period_end: string;
+}
+
 interface CheckoutCallbacks {
-  onSuccess: (sub: { id: string; plan_slug: string; current_period_end: string }) => void;
+  onSuccess: (sub: SubscriptionSummary) => void;
   onError: (message: string) => void;
   onDismiss?: () => void;
 }
@@ -59,7 +65,7 @@ export const openSubscriptionCheckout = async (
 
   const verify = async (response: RazorpaySuccessResponse) => {
     try {
-      const verifyData = await invokePaymentFunction<{ subscription: any }>(
+      const verifyData = await invokePaymentFunction<{ subscription: SubscriptionSummary }>(
         "verify-subscription-payment",
         {
           razorpay_order_id: response.razorpay_order_id,
@@ -126,9 +132,9 @@ export const openSubscriptionCheckout = async (
 
 export const startSubscriptionTrial = async (
   planSlug: SubscriptionPlanSlug
-): Promise<{ ok: true; subscription: any } | { ok: false; error: string }> => {
+): Promise<{ ok: true; subscription: SubscriptionSummary } | { ok: false; error: string }> => {
   try {
-    const data = await invokePaymentFunction<{ subscription: any }>(
+    const data = await invokePaymentFunction<{ subscription: SubscriptionSummary }>(
       "start-subscription-trial",
       { plan_slug: planSlug }
     );

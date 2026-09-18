@@ -108,7 +108,7 @@ export async function withRetry<T>(
  * Safe Supabase query with timeout and retry
  */
 export async function safeQuery<T>(
-  queryFn: () => Promise<{ data: T | null; error: any }>,
+  queryFn: () => Promise<{ data: T | null; error: unknown }>,
   fallbackData: T,
   options: {
     timeoutMs?: number;

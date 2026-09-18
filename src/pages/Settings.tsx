@@ -222,7 +222,7 @@ const Settings = () => {
       });
 
       if (_delErr || _delData?.error) {
-        const status = (_delErr as any)?.context?.status as number | undefined;
+        const status = (_delErr as { context?: { status?: number } } | null)?.context?.status;
         let message = "Kuch ruk gaya — dobara try karo";
         if (status === 401) message = "Please sign in again to continue.";
         else if (status === 409) message = "A deletion request is already pending for your account.";

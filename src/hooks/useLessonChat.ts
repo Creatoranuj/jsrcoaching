@@ -145,8 +145,8 @@ export function useLessonChat(
     try {
       const reply = await invokeAI(text, history);
       setChatMessages((prev) => [...prev, { role: "assistant", content: reply, ts: Date.now() }]);
-    } catch (e: any) {
-      const msg = e?.message || "AI could not answer right now";
+    } catch (e: unknown) {
+      const msg = (e as Error)?.message || "AI could not answer right now";
       toast.error(msg);
       setChatMessages((prev) => [
         ...prev,
@@ -173,8 +173,8 @@ export function useLessonChat(
     try {
       const reply = await invokeAI(lastUser.content, history);
       setChatMessages((prev) => [...prev, { role: "assistant", content: reply, ts: Date.now() }]);
-    } catch (e: any) {
-      const msg = e?.message || "AI could not answer right now";
+    } catch (e: unknown) {
+      const msg = (e as Error)?.message || "AI could not answer right now";
       toast.error(msg);
       setChatMessages((prev) => [
         ...prev,

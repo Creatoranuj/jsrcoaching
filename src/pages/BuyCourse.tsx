@@ -12,7 +12,7 @@ import {
 import { useAdminEnrollment } from "../hooks/useAdminEnrollment";
 import { openRazorpayCheckout, formatRazorpayError, buildRazorpayPrefill, UPI_FIRST_CHECKOUT_CONFIG, type RazorpaySuccessResponse } from "../utils/razorpay";
 import { openNativeRazorpayCheckout, type NativeCheckoutStep, RazorpayCancelledError, RazorpayNativeError, RazorpayBridgeMissingError, RazorpayLaunchTimeoutError, RazorpayInvalidResponseError, RazorpaySheetUnresponsiveError } from "../utils/razorpayNative";
-import { invokePaymentFunction, recoverEnrollment } from "../utils/paymentApi";
+import { invokePaymentFunction, recoverEnrollment, PaymentApiError } from "../utils/paymentApi";
 import { tapMedium, notifySuccess, notifyError } from "../lib/nativeChrome";
 import { LoadingSpinner } from "../components/ui/loading-spinner";
 import { resolveContentUrl } from "../lib/resolveContentUrl";
@@ -26,6 +26,34 @@ import { APP_LINK_HOSTS } from "@/config/deepLinks";
 
 const MERCHANT_NAME = "JSR COACHING";
 
+interface RazorpayOrderData {
+  order_id: string;
+  key_id: string;
+  amount: number;
+  currency?: string;
+  course_title?: string;
+  course_id?: number | string;
+  mode?: "test" | "live";
+  reused?: boolean;
+}
+
+interface CourseData {
+  id: number;
+  title: string;
+  description: string | null;
+  grade: number | null;
+  price: number;
+  thumbnailUrl: string | null;
+  imageUrl: string | null;
+  end_date?: string | null;
+}
+
+function errorMessage(err: unknown, fallback: string): string {
+  if (err instanceof PaymentApiError) return err.message || fallback;
+  if (err instanceof Error) return err.message || fallback;
+  return fallback;
+}
+
 /**
  * Hand the checkout to the PHONE'S REAL BROWSER (Android Custom Tab).
  *
@@ -37,7 +65,7 @@ const MERCHANT_NAME = "JSR COACHING";
  * The order is REUSED, never recreated — no double charge is possible.
  */
 const openBrowserCheckout = async (
-  orderData: any,
+  orderData: RazorpayOrderData & { course_id?: number | string },
   prefill: { name?: string; email?: string; contact?: string }
 ): Promise<void> => {
   const q = new URLSearchParams({
@@ -85,7 +113,7 @@ const BuyCourse = () => {
   // or the web checkout fallback (no UPI intents). Surfaced in the diagnostic
   // line so one screenshot tells us which path the device took.
   const [payMode, setPayMode] = useState<null | "native" | "web" | "browser">(null);
-  const [course, setCourse] = useState<any>(null);
+  const [course, setCourse] = useState<CourseData | null>(null);
   const [loading, setLoading] = useState(true);
   const [adminAutoEnrolled, setAdminAutoEnrolled] = useState(false);
   // Apple IAP policy guard — true only inside the native iOS build.
@@ -171,7 +199,7 @@ const BuyCourse = () => {
       playSuccessSound();
       toast.success("Free enrollment successful! Starting your course...");
       navigate(`/my-courses`);
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error("Free enrollment error:", error);
       toast.error("Failed to enroll. Please try again.");
     }
@@ -325,7 +353,7 @@ const BuyCourse = () => {
    *   **test mode** has no real UPI PSP handles, so the native sheet hides the
    *   UPI tab entirely while the web checkout still renders UPI (collect/VPA).
    */
-  const handleRazorpayPayment = async (opts?: { forceWeb?: boolean; existingOrder?: any }) => {
+  const handleRazorpayPayment = async (opts?: { forceWeb?: boolean; existingOrder?: RazorpayOrderData }) => {
     if (!user) {
       toast.error("Please login first");
       navigate("/login", { state: { from: location.pathname + location.search } });
@@ -352,10 +380,10 @@ const BuyCourse = () => {
     setPayStep(opts?.forceWeb ? "web" : "order");
     setPayMode(opts?.forceWeb ? "web" : null);
     const idempotency_key = idemKeyFor(user.id, String(courseId));
-    let orderData: any = opts?.existingOrder;
+    let orderData: RazorpayOrderData | undefined = opts?.existingOrder;
     try {
       if (!orderData) {
-        orderData = await invokePaymentFunction<any>("create-razorpay-order", {
+        orderData = await invokePaymentFunction<RazorpayOrderData>("create-razorpay-order", {
           course_id: Number(courseId),
           idempotency_key,
         });
@@ -371,10 +399,11 @@ const BuyCourse = () => {
         `nb:pendingOrder:${user.id}:${courseId}`,
         JSON.stringify({ order_id: orderData.order_id, ts: Date.now() })
       );
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error("Razorpay create-order error:", error);
+      const apiError = error instanceof PaymentApiError ? error : undefined;
       // On timeout, the order may still have been created server-side.
-      if (error?.code === "TIMEOUT") {
+      if (apiError?.code === "TIMEOUT") {
         toast.info("Network slow — checking if your order went through...");
         if (await attemptReconcile(Number(courseId))) {
           playSuccessSound();
@@ -387,7 +416,7 @@ const BuyCourse = () => {
           return;
         }
       }
-      toast.error(error?.message || "Failed to initiate payment. Please try again.");
+      toast.error(errorMessage(error, "Failed to initiate payment. Please try again."));
       setIsRazorpayLoading(false);
       setPayPhase(null);
       setPayStep(null);
@@ -476,7 +505,7 @@ const BuyCourse = () => {
           if (isMountedRef.current) setPayStep(step);
         });
         await verifyRazorpayPayment(resp);
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (e instanceof RazorpayBridgeMissingError) {
           // Old APK without the native bridge — silently use the in-app web
           // checkout instead of dead-ending the purchase.
@@ -522,7 +551,7 @@ const BuyCourse = () => {
           }) + " If payment was captured, enrollment will happen automatically via webhook.");
         } else {
           void notifyError();
-          toast.error(formatRazorpayError({ description: e?.message })
+          toast.error(formatRazorpayError({ description: e instanceof Error ? e.message : undefined })
             + " If payment was captured, enrollment will happen automatically via webhook.");
         }
       } finally {
@@ -559,10 +588,10 @@ const BuyCourse = () => {
           },
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error("Razorpay open error:", error);
       toast.error(
-        (error?.message || "Failed to open checkout. Please try again.") +
+        errorMessage(error, "Failed to open checkout. Please try again.") +
           " If payment was captured, enrollment will happen automatically via webhook."
       );
     } finally {
@@ -606,13 +635,15 @@ const BuyCourse = () => {
         if (isMountedRef.current) navigate(`/my-courses/${courseId}?payment=success`, { replace: true, state: { justPurchased: Number(courseId) } });
       }, 1500);
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error("Verification error:", error);
+      const apiErr = error instanceof PaymentApiError ? error : undefined;
+      const msg = errorMessage(error, "razorpay_unreachable");
       const unreachable =
-        error?.message === "razorpay_unreachable" || error?.status === 503;
+        msg === "razorpay_unreachable" || apiErr?.status === 503;
       // Verification timed out / 5xx / Razorpay unreachable but the money is
       // very likely captured — reconcile before showing any failure.
-      if (error?.code === "TIMEOUT" || unreachable || (error?.status && error.status >= 500)) {
+      if (apiErr?.code === "TIMEOUT" || unreachable || (apiErr?.status && apiErr.status >= 500)) {
         toast.info("Confirming with server...");
         // One explicit retry with a short backoff — the webhook may still be
         // in flight when the first reconcile runs.
@@ -637,7 +668,7 @@ const BuyCourse = () => {
       }
       void notifyError();
       toast.error(
-        (error.message || "Payment verification failed. Please contact support.") +
+        errorMessage(error, "Payment verification failed. Please contact support.") +
           " If payment was captured, enrollment will happen automatically via webhook."
       );
     }

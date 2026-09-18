@@ -450,7 +450,7 @@ export const openNativeRazorpayCheckout = async (
 ): Promise<RazorpaySuccessResponse> => {
   const payload = buildNativeCheckoutPayload(options);
 
-  let result: any;
+  let result: { response?: unknown } | undefined;
   try {
     const keyMode = options.key.startsWith("rzp_live_") ? "live"
       : options.key.startsWith("rzp_test_") ? "test"
@@ -491,13 +491,14 @@ export const openNativeRazorpayCheckout = async (
     // eventual native rejection never surfaces as an unhandled rejection.
     void Promise.resolve(openPromise).catch(() => {});
     result = await awaitNativeCheckoutResult(RazorpayNative, openPromise);
-  } catch (e: any) {
+  } catch (e: unknown) {
     // Structural failures are re-thrown untouched so the caller can react
     // (fall back to web / show the "didn't open" message).
     if (e instanceof RazorpayLaunchTimeoutError) throw e;
     if (e instanceof RazorpayBridgeMissingError) throw e;
     if (e instanceof RazorpaySheetUnresponsiveError) throw e;
-    const msg = e?.message || e?.errorMessage || String(e ?? "");
+    const errObj = e as { message?: string; errorMessage?: string } | null | undefined;
+    const msg = errObj?.message || errObj?.errorMessage || String(e ?? "");
     if (looksLikeCancel(msg)) throw new RazorpayCancelledError();
     // Preserve Razorpay's structured error (step / reason / code) so the
     // caller can render an actionable message instead of "undefined".
@@ -507,10 +508,11 @@ export const openNativeRazorpayCheckout = async (
 
   // The plugin returns `{ response: string | object }` — newer versions
   // already parse the JSON, older versions return a stringified payload.
-  let parsed: any = result?.response ?? result;
+  let parsed: { razorpay_payment_id?: string; razorpay_order_id?: string; razorpay_signature?: string } | string | undefined =
+    result?.response as typeof parsed ?? (result as typeof parsed);
   if (typeof parsed === "string") {
     try {
-      parsed = JSON.parse(parsed);
+      parsed = JSON.parse(parsed) as { razorpay_payment_id?: string; razorpay_order_id?: string; razorpay_signature?: string };
     } catch {
       // Legacy bridges can return only the payment id. Preserve the shape here
       // so the completeness check below raises a dedicated recovery error.

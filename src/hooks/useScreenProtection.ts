@@ -21,8 +21,13 @@ import { safeGet, safeSet } from "@/lib/storage";
 
 const ADMIN_OPT_IN_KEY = "nb_admin_screen_protection_enabled";
 
+interface PrivacyScreenPlugin {
+  enable?: () => Promise<void>;
+  disable?: () => Promise<void>;
+}
+
 let activeCount = 0;
-let pluginPromise: Promise<any | null> | null = null;
+let pluginPromise: Promise<PrivacyScreenPlugin | null> | null = null;
 // Tri-state: `null` = unknown (never synced with native yet). We start here
 // so the first reconcile ALWAYS makes an explicit enable()/disable() call,
 // regardless of what the plugin's native default did at Activity onCreate.
@@ -47,13 +52,13 @@ function emit() {
   });
 }
 
-function loadPlugin(): Promise<any | null> {
+function loadPlugin(): Promise<PrivacyScreenPlugin | null> {
   if (pluginPromise) return pluginPromise;
   pluginPromise = (async () => {
     try {
       const { Capacitor } = await loadCore();
       if (!Capacitor.isNativePlatform()) return null;
-      const mod: any = await import(
+      const mod: { PrivacyScreen?: PrivacyScreenPlugin } | null = await import(
         /* @vite-ignore */ "@capacitor-community/privacy-screen"
       ).catch(() => null);
       return mod?.PrivacyScreen ?? null;

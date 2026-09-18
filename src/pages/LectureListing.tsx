@@ -94,7 +94,7 @@ const LectureListing = () => {
   const [hasPurchased, setHasPurchased] = useState(false);
   const [showSubChapters, setShowSubChapters] = useState(cached?.showSubChapters ?? false);
   const [lessonQuizMap, setLessonQuizMap] = useState<Record<string, string>>({});
-  const [standaloneQuizzes, setStandaloneQuizzes] = useState<any[]>([]);
+  const [standaloneQuizzes, setStandaloneQuizzes] = useState<{ id: string; title: string; type: string | null; duration_minutes: number | null; total_marks: number | null; created_at: string | null }[]>([]);
   // Inline notes-sheet state — opening the attachments Sheet on this page
   // (instead of navigating to LessonView with ?openPdf=1) removes the
   // full-screen route-transition flash that showed as "screen blink".
@@ -298,7 +298,7 @@ const LectureListing = () => {
       setStandaloneQuizzes(standaloneQuizzes || []);
     };
     fetchQuizzes();
-  }, [lessons, courseId]);
+  }, [lessons, courseId, chapterId]);
 
   const handleLectureClick = (lesson: Lesson, opts?: { openPdf?: boolean }) => {
     if (lesson.is_locked && !hasPurchased && !isAdminOrTeacher) {

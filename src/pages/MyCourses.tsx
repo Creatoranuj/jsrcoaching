@@ -59,6 +59,22 @@ interface EnrolledCourse {
 
 type PriceFilter = "all" | "paid" | "free";
 
+interface MyCoursesSnapshotRow {
+  enrollment_id: number;
+  course_id: number;
+  title: string;
+  description: string | null;
+  grade: string | null;
+  image_url: string | null;
+  thumbnail_url: string | null;
+  price: number | null;
+  start_date: string | null;
+  end_date: string | null;
+  purchased_at: string | null;
+  total_lessons: number | string | null;
+  completed_lessons: number | string | null;
+}
+
 // ── Static outside component ───────────────────────────────────────────────
 // "All" removed — user can toggle Paid/Free off (click again) to see all.
 const priceTabs: { id: Exclude<PriceFilter, "all">; label: string }[] = [
@@ -329,7 +345,7 @@ const MyCourses = () => {
       // that kept My Courses on skeletons for 20-30s on slow networks.
       const rpc = await supabase.rpc("get_my_courses_snapshot" as never);
       if (!rpc.error && Array.isArray(rpc.data)) {
-        const rows = rpc.data as Array<Record<string, any>>;
+        const rows = rpc.data as Array<MyCoursesSnapshotRow>;
         const counts: Record<number, number> = {};
         rows.forEach((r) => { counts[r.course_id] = (counts[r.course_id] || 0) + 1; });
         const seen: Record<number, number> = {};

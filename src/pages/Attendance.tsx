@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Header from "../components/Layout/Header";
 import { supabase } from "../integrations/supabase/client";
 import Sidebar from "../components/Layout/Sidebar";
@@ -46,13 +46,7 @@ const Attendance = () => {
     return () => { cancelled = true; };
   }, []);
 
-  // Fetch enrolled students for the selected course
-  useEffect(() => {
-    if (!selectedCourseId) return;
-    fetchStudents();
-  }, [selectedCourseId]);
-
-  const fetchStudents = async () => {
+  const fetchStudents = useCallback(async () => {
     try {
       setLoading(true);
       setAttendance({});
@@ -65,7 +59,7 @@ const Attendance = () => {
 
       if (!error && data) {
         const userIds = Array.from(new Set(data.map((e) => e.user_id).filter(Boolean)));
-        const profileMap = new Map<string, any>();
+        const profileMap = new Map<string, { id: string; full_name: string | null; email: string | null }>();
         if (userIds.length) {
           const { data: profs } = await supabase
             .from("profiles")
@@ -90,7 +84,13 @@ const Attendance = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedCourseId]);
+
+  // Fetch enrolled students for the selected course
+  useEffect(() => {
+    if (!selectedCourseId) return;
+    fetchStudents();
+  }, [selectedCourseId, fetchStudents]);
 
   const today = new Date().toLocaleDateString("en-IN", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
@@ -182,7 +182,7 @@ const Attendance = () => {
             studentList.map((student) => (
               <StudentAttendanceRow
                 key={student.id}
-                student={{ ...student, id: student.id as any }}
+                student={{ ...student, id: student.id as unknown as number }}
                 status={attendance[student.id] || null}
                 onStatusChange={(status) => handleStatusChange(student.id, status)}
               />

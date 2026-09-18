@@ -9,7 +9,7 @@ const mockNavigate = vi.fn();
 let mockAuthState = {
   isAuthenticated: false,
   isLoading: false,
-  user: null as any,
+  user: null as unknown as Record<string, unknown> | null,
 };
 
 vi.mock("@/contexts/AuthContext", () => ({

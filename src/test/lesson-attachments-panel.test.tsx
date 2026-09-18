@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { LessonAttachmentsPanel } from "@/features/lesson/components/LessonAttachmentsPanel";
 
 vi.mock("@/components/lesson/AttachmentRow", () => ({
-  AttachmentRow: ({ attachment }: any) => <div data-testid="attachment-row">{attachment.file_name}</div>,
+  AttachmentRow: ({ attachment }: { attachment: { file_name: string } }) => <div data-testid="attachment-row">{attachment.file_name}</div>,
 }));
 
 const pdfs = [

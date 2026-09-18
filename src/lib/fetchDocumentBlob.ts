@@ -99,7 +99,7 @@ async function withTimeout<T>(
     // Caller cancelled → propagate. Our own deadline → a retryable message.
     if (signal?.aborted) throw err;
     if ((err as { name?: string })?.name === "AbortError") {
-      throw new Error("This source timed out");
+      throw new Error("This source timed out", { cause: err });
     }
     throw err;
   } finally {

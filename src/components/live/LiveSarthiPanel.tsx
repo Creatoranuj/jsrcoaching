@@ -59,14 +59,14 @@ const LiveSarthiPanel = ({ sessionId, sessionTitle, sessionDescription, courseTi
       ({ data, error } = await call());
     }
     if (error) {
-      const status = (error as any)?.context?.status;
+      const status = (error as { context?: { status?: number } })?.context?.status;
       if (status === 429) throw new Error("Bahut requests — thodi der ruk ke try karo.");
       if (status === 402) throw new Error("AI credits khatam. Admin ko batayein.");
       throw new Error(error.message || "AI error");
     }
-    const apiErr = (data as any)?.error;
+    const apiErr = (data as { error?: string })?.error;
     if (apiErr) throw new Error(apiErr);
-    return (data as any)?.reply || "Answer nahi mila.";
+    return (data as { reply?: string })?.reply || "Answer nahi mila.";
   }, [sessionTitle, sessionDescription, courseTitle]);
 
   const send = useCallback(async (override?: string) => {
@@ -79,8 +79,8 @@ const LiveSarthiPanel = ({ sessionId, sessionTitle, sessionDescription, courseTi
     try {
       const reply = await invoke(text, history);
       setMessages((p) => [...p, { role: "assistant", content: reply, ts: Date.now() }]);
-    } catch (e: any) {
-      const msg = e?.message || "AI could not answer";
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "AI could not answer";
       toast.error(msg);
       setMessages((p) => [...p, { role: "assistant", content: `_${msg}_`, ts: Date.now(), error: true }]);
     } finally {

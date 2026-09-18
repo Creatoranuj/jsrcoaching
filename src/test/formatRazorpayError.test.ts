@@ -15,8 +15,8 @@ describe("formatRazorpayError", () => {
 
   it("never returns the literal string 'undefined' for null/empty errors", () => {
     expect(formatRazorpayError(undefined)).not.toMatch(forbidden);
-    expect(formatRazorpayError(null as any)).not.toMatch(forbidden);
-    expect(formatRazorpayError({} as any)).not.toMatch(forbidden);
+    expect(formatRazorpayError(null as unknown as Parameters<typeof formatRazorpayError>[0])).not.toMatch(forbidden);
+    expect(formatRazorpayError({} as unknown as Parameters<typeof formatRazorpayError>[0])).not.toMatch(forbidden);
   });
 
   it("maps BAD_REQUEST_ERROR with description='undefined' to a friendly retry message", () => {

@@ -108,7 +108,7 @@ const QuizAttempt = () => {
       }
     };
     fetchQuizData();
-  }, [quizId, user]);
+  }, [quizId, user, navigate]);
 
   const saveAnswerToLocal = useCallback((newAnswers: Record<string, string>) => {
     if (answersKey) safeSet(answersKey, JSON.stringify(newAnswers));

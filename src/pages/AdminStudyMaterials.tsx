@@ -16,6 +16,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Loader2, Trash2, Upload, Link as LinkIcon, FileText, Pencil, X, Save } from "lucide-react";
 import EmptyState from "@/components/common/EmptyState";
+import { useConfirm } from "@/components/admin/ConfirmDialog";
 import {
   useStudyMaterials,
   type StudyMaterial,
@@ -39,6 +40,7 @@ function inferKind(mime: string): StudyMaterialKind {
 }
 
 export default function AdminStudyMaterials() {
+  const confirmAction = useConfirm();
   const { user, role, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -181,7 +183,7 @@ export default function AdminStudyMaterials() {
   }
 
   async function handleDelete(m: StudyMaterial) {
-    if (!confirm(`Delete "${m.title}"?`)) return;
+    if (!(await confirmAction({ title: `Delete "${m.title}"?`, variant: "destructive" }))) return;
     try {
       if (m.file_url) {
         const [bucket, ...rest] = m.file_url.split("/");

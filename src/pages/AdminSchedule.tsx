@@ -24,7 +24,7 @@ const AdminSchedule = () => {
 
   const [showCreate, setShowCreate] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [courses, setCourses] = useState<any[]>([]);
+  const [courses, setCourses] = useState<{ id: number; title: string }[]>([]);
   const emptyForm = { title: "", description: "", courseId: "", scheduledDate: "", scheduledTime: "", durationMinutes: "60", meetingLink: "" };
   const [form, setForm] = useState(emptyForm);
   const [creating, setCreating] = useState(false);

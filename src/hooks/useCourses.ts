@@ -7,6 +7,7 @@ import { resolveContentUrl, resolveContentUrls } from "../lib/resolveContentUrl"
 import { logger } from "@/lib/logger";
 import { getCached, setCached, invalidateCache, TTL } from "@/lib/ttlCache";
 import { getErrorMessage } from "@/lib/errorMessage";
+import type { Tables, TablesUpdate } from "@/integrations/supabase/types";
 
 const CACHE_KEY = "courses:list:v2";
 
@@ -31,7 +32,7 @@ export interface CourseInput {
   thumbnailUrl?: string;
 }
 
-function mapCourse(c: any): Course {
+function mapCourse(c: Tables<'courses'>): Course {
   return {
     id: c.id,
     title: c.title,
@@ -160,7 +161,7 @@ export const useCourses = () => {
 
   const updateCourse = useCallback(async (id: number, input: Partial<CourseInput>): Promise<boolean> => {
     try {
-      const updateData: any = {};
+      const updateData: TablesUpdate<'courses'> = {};
       if (input.title !== undefined) updateData.title = input.title;
       if (input.description !== undefined) updateData.description = input.description;
       if (input.grade !== undefined) updateData.grade = input.grade;

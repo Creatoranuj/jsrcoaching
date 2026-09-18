@@ -93,11 +93,11 @@ const checkDrive = async (url: string): Promise<ShareCheckResult> => {
       };
     }
     return inconclusive("drive", `Share check inconclusive (status ${res.status})`);
-  } catch (e: any) {
-    if (e?.name === "AbortError") {
+  } catch (e: unknown) {
+    if ((e as { name?: string })?.name === "AbortError") {
       return inconclusive("drive", "Share check timed out — link saved unverified");
     }
-    return inconclusive("drive", e?.message || "Share check network error — link saved unverified");
+    return inconclusive("drive", (e as Error)?.message || "Share check network error — link saved unverified");
   }
 };
 
@@ -134,11 +134,11 @@ const checkNotion = async (url: string): Promise<ShareCheckResult> => {
       };
     }
     return inconclusive("notion", `Share check inconclusive (status ${res.status})`);
-  } catch (e: any) {
-    if (e?.name === "AbortError") {
+  } catch (e: unknown) {
+    if ((e as { name?: string })?.name === "AbortError") {
       return inconclusive("notion", "Share check timed out — link saved unverified");
     }
-    return inconclusive("notion", e?.message || "Share check network error — link saved unverified");
+    return inconclusive("notion", (e as Error)?.message || "Share check network error — link saved unverified");
   }
 };
 
@@ -188,11 +188,11 @@ const checkDocs = async (url: string): Promise<ShareCheckResult> => {
       };
     }
     return inconclusive("docs", `Share check inconclusive (status ${res.status})`);
-  } catch (e: any) {
-    if (e?.name === "AbortError") {
+  } catch (e: unknown) {
+    if ((e as { name?: string })?.name === "AbortError") {
       return inconclusive("docs", "Share check timed out — link saved unverified");
     }
-    return inconclusive("docs", e?.message || "Share check network error — link saved unverified");
+    return inconclusive("docs", (e as Error)?.message || "Share check network error — link saved unverified");
   }
 };
 

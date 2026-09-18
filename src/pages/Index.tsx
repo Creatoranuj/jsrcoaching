@@ -39,6 +39,7 @@ import { useLandingCourses } from "@/hooks/useLandingCourses";
 import { supabase } from "@/integrations/supabase/client";
 import WhatsAppFab from "@/components/common/WhatsAppFab";
 import { WHATSAPP_NUMBER } from "@/components/common/WhatsAppButton";
+import { openResource } from "@/lib/openResource";
 
 export interface HomepageCourse {
   id: string;
@@ -663,7 +664,7 @@ function EnquiryForm({ courses }: { courses: HomepageCourse[] }) {
       setSaving(false);
     }
     const text = `Namaste JSR COACHING,\n\nNaam: ${name.trim()}\nPhone: ${cleanPhone}\nCourse: ${course}\nMessage: ${message.trim() || "Fees aur admission details chahiye."}`;
-    window.open(whatsappLink(WHATSAPP_URL, text), "_blank", "noopener,noreferrer");
+    void openResource({ url: whatsappLink(WHATSAPP_URL, text), kind: "link" });
   }
 
   return (

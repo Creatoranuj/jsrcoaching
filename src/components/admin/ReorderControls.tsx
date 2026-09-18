@@ -154,7 +154,7 @@ export function ReorderArrows({
       <Button
         size="icon"
         variant="ghost"
-        className="h-6 w-8 shrink-0"
+        className="relative h-6 w-8 shrink-0 before:absolute before:-inset-2.5 before:content-['']"
         onClick={(e) => { e.stopPropagation(); onUp(); }}
         disabled={disableUp}
         aria-label={`Move ${label} up`}
@@ -164,7 +164,7 @@ export function ReorderArrows({
       <Button
         size="icon"
         variant="ghost"
-        className="h-6 w-8 shrink-0"
+        className="relative h-6 w-8 shrink-0 before:absolute before:-inset-2.5 before:content-['']"
         onClick={(e) => { e.stopPropagation(); onDown(); }}
         disabled={disableDown}
         aria-label={`Move ${label} down`}

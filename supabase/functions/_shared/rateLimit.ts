@@ -7,8 +7,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "
 
 // Untyped on purpose: the edge runtime has no generated Database types, so the
 // rpc() overloads would infer `never` for these custom functions.
-// deno-lint-ignore no-explicit-any
-let cachedAdmin: any = null;
+let cachedAdmin: ReturnType<typeof createClient> | null = null;
 function admin() {
   if (!cachedAdmin) {
     cachedAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);

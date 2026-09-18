@@ -11,7 +11,7 @@ import {
   RotateCcw, ChevronDown, ChevronUp, Lightbulb,
   Bell, BookOpen, BarChart3, Target, TrendingUp,
   Award, Minus, Zap, Timer, Sparkles, GraduationCap,
-  AlertTriangle, Gauge, Flame, ShieldCheck,
+  AlertTriangle, Gauge, Flame, ShieldCheck, type LucideIcon,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { QuizQuestionThumb } from "../components/quiz/QuizQuestionImage";
@@ -145,7 +145,7 @@ const QuizResult = () => {
       }
     };
     fetchData();
-  }, [quizId, attemptId]);
+  }, [quizId, attemptId, navigate]);
 
   // Compute live rank against all other students' best attempts on this quiz
   useEffect(() => {
@@ -167,7 +167,7 @@ const QuizResult = () => {
       setRank(higher + 1);
       setTotalParticipants(bestByUser.size);
     })();
-  }, [quizId, attempt?.id]);
+  }, [quizId, attempt]);
 
   const formatTime = (seconds: number) => {
     if (!seconds) return "—";
@@ -310,7 +310,7 @@ const QuizResult = () => {
             : { label: "Balanced Pace", tone: "text-primary", icon: Gauge };
 
   // Strategy tips (rule-based, max 4)
-  const tips: { icon: any; text: string; tone: string }[] = [];
+  const tips: { icon: LucideIcon; text: string; tone: string }[] = [];
   if (totalQ > 0 && skippedCount / totalQ > 0.3) {
     tips.push({
       icon: Sparkles,
@@ -377,7 +377,7 @@ const QuizResult = () => {
         style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
       >
         <div className="flex items-center gap-3 max-w-3xl mx-auto px-4 py-3">
-          <button onClick={() => navigate("/all-tests")} className="text-muted-foreground hover:text-foreground transition-colors">
+          <button onClick={() => navigate("/all-tests")} aria-label="Back to tests" className="text-muted-foreground hover:text-foreground transition-colors min-h-11 min-w-11 -ml-2 flex items-center justify-center rounded-md shrink-0">
             <ChevronLeft className="h-5 w-5" />
           </button>
           <div className="flex-1 min-w-0">
@@ -948,8 +948,8 @@ const QuizResult = () => {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs text-muted-foreground mb-1">Q{idx + 1}</p>
-                      {(q as any).image_url && (
-                        <QuizQuestionThumb src={(q as any).image_url} />
+                      {q.image_url && (
+                        <QuizQuestionThumb src={q.image_url} />
                       )}
                       <p className="text-sm font-medium text-foreground line-clamp-2">{q.question_text}</p>
                     </div>
