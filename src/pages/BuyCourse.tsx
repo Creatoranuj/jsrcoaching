@@ -18,6 +18,7 @@ import { LoadingSpinner } from "../components/ui/loading-spinner";
 import { resolveContentUrl } from "../lib/resolveContentUrl";
 import { safeGet, safeSet, safeRemove } from "../lib/storage";
 import { logger } from "@/lib/logger";
+import { loadBuildStamp, formatBuildStamp } from "@/lib/buildStamp";
 import successSound from "@/assets/success.mp3.asset.json";
 import AccessCountdown from "../components/courses/AccessCountdown";
 
@@ -56,6 +57,19 @@ const BuyCourse = () => {
   // Set from the server-issued order response ('test' | 'live'). Surfaces a
   // visible badge so a test-mode gateway can never be mistaken for live.
   const [paymentMode, setPaymentMode] = useState<"test" | "live" | null>(null);
+  // Which build is actually installed. Printed next to the checkout button so
+  // a screenshot alone proves whether the fix is on the device.
+  const [buildLabel, setBuildLabel] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void loadBuildStamp().then((stamp) => {
+      if (alive) setBuildLabel(formatBuildStamp(stamp));
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -748,9 +762,11 @@ const BuyCourse = () => {
                       >
                         UPI option nahi dikh raha? Browser checkout se pay karein
                       </Button>
-                      {payStep && (
+                      {(payStep || buildLabel) && (
                         <p className="mt-1.5 text-center text-[11px] text-muted-foreground">
-                          step: {payStep}
+                          {payStep ? `step: ${payStep}` : null}
+                          {payStep && buildLabel ? " · " : null}
+                          {buildLabel ? `build: ${buildLabel}` : null}
                         </p>
                       )}
                     </>
