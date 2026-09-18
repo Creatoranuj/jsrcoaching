@@ -5,7 +5,8 @@ import { recoverEnrollment } from "@/utils/paymentApi";
 import { logger } from "@/lib/logger";
 
 const KEY_PREFIX = "nb:pendingOrder:";
-const MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24h — Razorpay auto-refunds beyond this
+const MAX_AGE_MS = 10 * 60 * 1000; // 10 min — beyond this the webhook has long settled;
+// stale keys used to re-run the 15s "Confirming your purchase" poll on every visit.
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLLS = 5; // ~15s reconcile window
 
