@@ -21,9 +21,43 @@ import { logger } from "@/lib/logger";
 import { loadBuildStamp, formatBuildStamp } from "@/lib/buildStamp";
 import successSound from "@/assets/success.mp3.asset.json";
 import AccessCountdown from "../components/courses/AccessCountdown";
+import { APP_LINK_HOSTS } from "@/config/deepLinks";
 
 
 const MERCHANT_NAME = "JSR COACHING";
+
+/**
+ * Hand the checkout to the PHONE'S REAL BROWSER (Android Custom Tab).
+ *
+ * Razorpay's JS checkout detects an Android WebView and hides the UPI intent
+ * tiles (GPay / PhonePe / Paytm) there, because a WebView cannot launch
+ * another app. The old in-app web fallback therefore always rendered a
+ * UPI-less checkout. Opening the SAME order in a Custom Tab restores UPI.
+ *
+ * The order is REUSED, never recreated — no double charge is possible.
+ */
+const openBrowserCheckout = async (
+  orderData: any,
+  prefill: { name?: string; email?: string; contact?: string }
+): Promise<void> => {
+  const q = new URLSearchParams({
+    order: String(orderData.order_id),
+    key: String(orderData.key_id),
+    amount: String(orderData.amount),
+    currency: String(orderData.currency || "INR"),
+    title: String(orderData.course_title || "Course"),
+    course: String(orderData.course_id ?? ""),
+  });
+  if (prefill.name) q.set("n", prefill.name);
+  if (prefill.email) q.set("e", prefill.email);
+  if (prefill.contact) q.set("p", prefill.contact);
+
+  const origin = `https://${APP_LINK_HOSTS[0]}`;
+  const { openExternal } = await import("@/lib/native/browser");
+  // preferWebView:false → system browser (Custom Tab), NOT the embedded
+  // WebView. That is the entire point of this fallback; do not change it.
+  await openExternal(`${origin}/pay?${q.toString()}`, { preferWebView: false });
+};
 // Self-hosted via Lovable CDN — no third-party dependency, works offline
 // with cached CDN response, and satisfies the app-wide "no unlisted external
 // host" invariant (was pixabay.com which is not in network_security_config).
@@ -46,11 +80,11 @@ const BuyCourse = () => {
   const [payPhase, setPayPhase] = useState<null | "preparing" | "opening">(null);
   // Exact sub-step of the checkout launch. Rendered as a tiny diagnostic line
   // so a stuck attempt can be reported from a screenshot instead of guessed at.
-  const [payStep, setPayStep] = useState<null | "order" | "bridge" | "sheet" | "web">(null);
+  const [payStep, setPayStep] = useState<null | "order" | "bridge" | "sheet" | "web" | "browser">(null);
   // Which checkout actually ran: the in-app native Razorpay SDK (UPI app tiles)
   // or the web checkout fallback (no UPI intents). Surfaced in the diagnostic
   // line so one screenshot tells us which path the device took.
-  const [payMode, setPayMode] = useState<null | "native" | "web">(null);
+  const [payMode, setPayMode] = useState<null | "native" | "web" | "browser">(null);
   const [course, setCourse] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [adminAutoEnrolled, setAdminAutoEnrolled] = useState(false);
@@ -409,6 +443,31 @@ const BuyCourse = () => {
     // intents launch Google Pay / PhonePe / Paytm directly without an
     // in-app browser. Web → fall back to the JS checkout.
     const { Capacitor } = await import("@capacitor/core");
+
+    // Native + fallback → hand the SAME order to the phone's real browser.
+    // Never re-open the JS checkout inside our WebView: Razorpay hides the
+    // UPI app tiles there, which is exactly the bug users reported.
+    if (Capacitor.isNativePlatform() && opts?.forceWeb) {
+      try {
+        setPayStep("browser");
+        setPayMode("browser");
+        await openBrowserCheckout(
+          { ...orderData, course_id: courseId },
+          {
+            name: user.fullName,
+            email: user.email,
+            contact: profile?.mobile ?? undefined,
+          }
+        );
+        toast.info("Payment browser me khul gaya — UPI wahan dikhega. Payment ke baad app me wapas aayein.");
+      } catch (err) {
+        logger.error("Browser checkout handoff failed:", err);
+        toast.error("Browser checkout khul nahi paya. Internet check karke dobara koshish karein.");
+      } finally {
+        if (isMountedRef.current) { setIsRazorpayLoading(false); setPayPhase(null); }
+      }
+      return;
+    }
     if (Capacitor.isNativePlatform() && !opts?.forceWeb) {
       try {
         setPayMode("native");

@@ -104,6 +104,9 @@ const LiveClass = lazyWithRetry(() => import("./pages/LiveClass"));
 const TeacherLiveView = lazyWithRetry(() => import("./pages/TeacherLiveView"));
 const Library = lazyWithRetry(() => import("./pages/Library"));
 const PaymentCallback = lazyWithRetry(() => import("./pages/PaymentCallback"));
+// Public, session-less checkout page opened in the phone's real browser by
+// the native app (Custom Tab) — the only place Razorpay shows UPI app tiles.
+const PayBrowser = lazyWithRetry(() => import("./pages/PayBrowser"));
 const Doubts = lazyWithRetry(() => import("./pages/Doubts"));
 const Privacy = lazyWithRetry(() => import("./pages/Privacy"));
 const DeleteAccountPublic = lazyWithRetry(() => import("./pages/DeleteAccountPublic"));
@@ -350,6 +353,7 @@ const App = () => (
                     <Route path="/forgot-password" element={<ForgotPassword />} />
                     <Route path="/reset-password" element={<ResetPassword />} />
                     <Route path="/install" element={<Install />} />
+                    <Route path="/pay" element={<PayBrowser />} />
                     <Route path="/privacy" element={<Privacy />} />
                     <Route path="/delete-account" element={<DeleteAccountPublic />} />
 

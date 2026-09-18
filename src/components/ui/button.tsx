@@ -11,7 +11,9 @@ const buttonVariants = cva(
   //   - active:scale-[0.97] = sub-100ms visual press confirmation
   //   - duration-150 ease-out = Tailwind token (no arbitrary [Nms])
   //   - link/ghost-on-decorative override the scale below
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-semibold ring-offset-background transition-all duration-150 ease-out active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 disabled:active:scale-100 [&_svg]:pointer-events-none [&_svg]:size-[18px] [&_svg]:shrink-0",
+  //   - whitespace-normal + break-words: long Hindi/Hinglish labels wrap
+  //     instead of being clipped at the screen edge on 360px phones
+  "inline-flex items-center justify-center gap-2 whitespace-normal break-words text-center rounded-xl text-sm font-semibold ring-offset-background transition-all duration-150 ease-out active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 disabled:active:scale-100 [&_svg]:pointer-events-none [&_svg]:size-[18px] [&_svg]:shrink-0",
   {
     variants: {
       variant: {
@@ -24,10 +26,12 @@ const buttonVariants = cva(
         link: "text-primary underline-offset-4 hover:underline active:scale-100 rounded-none",
       },
       size: {
-        default: "h-11 px-5 py-2",
-        sm: "h-10 rounded-lg px-4",
-        lg: "h-12 rounded-xl px-6 text-base",
-        icon: "h-11 w-11 rounded-xl",
+        // min-h (not fixed h) so a wrapped two-line label grows the button
+        // instead of overflowing it. Tap targets stay >= 44px.
+        default: "min-h-11 px-5 py-2",
+        sm: "min-h-10 rounded-lg px-4 py-1.5",
+        lg: "min-h-12 rounded-xl px-6 py-2.5 text-base",
+        icon: "h-11 w-11 shrink-0 rounded-xl",
       },
     },
     defaultVariants: {
