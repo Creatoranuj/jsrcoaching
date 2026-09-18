@@ -47,6 +47,10 @@ const BuyCourse = () => {
   // Exact sub-step of the checkout launch. Rendered as a tiny diagnostic line
   // so a stuck attempt can be reported from a screenshot instead of guessed at.
   const [payStep, setPayStep] = useState<null | "order" | "bridge" | "sheet" | "web">(null);
+  // Which checkout actually ran: the in-app native Razorpay SDK (UPI app tiles)
+  // or the web checkout fallback (no UPI intents). Surfaced in the diagnostic
+  // line so one screenshot tells us which path the device took.
+  const [payMode, setPayMode] = useState<null | "native" | "web">(null);
   const [course, setCourse] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [adminAutoEnrolled, setAdminAutoEnrolled] = useState(false);
@@ -312,6 +316,7 @@ const BuyCourse = () => {
     setIsRazorpayLoading(true);
     setPayPhase(opts?.forceWeb ? "opening" : "preparing");
     setPayStep(opts?.forceWeb ? "web" : "order");
+    setPayMode(opts?.forceWeb ? "web" : null);
     const idempotency_key = idemKeyFor(user.id, String(courseId));
     let orderData: any = opts?.existingOrder;
     try {
@@ -406,6 +411,7 @@ const BuyCourse = () => {
     const { Capacitor } = await import("@capacitor/core");
     if (Capacitor.isNativePlatform() && !opts?.forceWeb) {
       try {
+        setPayMode("native");
         void tapMedium();
         const resp = await openNativeRazorpayCheckout(sharedOpts, (step) => {
           if (isMountedRef.current) setPayStep(step);
@@ -417,6 +423,7 @@ const BuyCourse = () => {
           // checkout instead of dead-ending the purchase.
           logger.warn("Native Razorpay bridge missing — falling back to web checkout");
           setPayStep("web");
+          setPayMode("web");
           await handleRazorpayPayment({ forceWeb: true, existingOrder: orderData });
           return;
         }
@@ -427,6 +434,7 @@ const BuyCourse = () => {
           logger.warn("Native Razorpay sheet did not open — falling back to web checkout");
           toast.info("Payment screen khul nahi payi — browser checkout se khol rahe hain…");
           setPayStep("web");
+          setPayMode("web");
           await handleRazorpayPayment({ forceWeb: true, existingOrder: orderData });
           return;
         } else if (e instanceof RazorpayCancelledError) {
@@ -758,14 +766,15 @@ const BuyCourse = () => {
                         type="button"
                         variant="outline"
                         onClick={() => { void tapMedium(); void handleRazorpayPayment({ forceWeb: true }); }}
-                        className="mt-2 h-11 w-full text-sm font-medium"
+                        className="mt-2 h-auto min-h-11 w-full whitespace-normal break-words px-3 py-2.5 text-sm font-medium leading-snug"
                       >
-                        UPI option nahi dikh raha? Browser checkout se pay karein
+                        Browser checkout se pay karein
                       </Button>
                       {(payStep || buildLabel) && (
-                        <p className="mt-1.5 text-center text-[11px] text-muted-foreground">
+                        <p className="mt-1.5 break-words text-center text-[11px] text-muted-foreground">
                           {payStep ? `step: ${payStep}` : null}
-                          {payStep && buildLabel ? " · " : null}
+                          {payStep && payMode ? ` · mode: ${payMode}` : null}
+                          {(payStep || payMode) && buildLabel ? " · " : null}
                           {buildLabel ? `build: ${buildLabel}` : null}
                         </p>
                       )}
