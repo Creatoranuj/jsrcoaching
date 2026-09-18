@@ -94,7 +94,10 @@ export const NATIVE_RESUME_TIMEOUT_MS = 6000;
  * never resolved inside the APK WebView the CTA stayed on "Opening payment…"
  * forever with no error and no fallback — exactly the reported symptom.
  */
-export const BRIDGE_LOAD_TIMEOUT_MS = 4000;
+// Cold start on a low-end phone can take several seconds just to hydrate the
+// Capacitor chunk; 4s was tripping on real devices and silently demoting the
+// purchase to the web checkout, which never shows UPI app tiles.
+export const BRIDGE_LOAD_TIMEOUT_MS = 12000;
 
 /** Coarse progress marker surfaced in the UI so a stuck step is visible. */
 export type NativeCheckoutStep = "bridge" | "sheet";
