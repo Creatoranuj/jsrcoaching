@@ -7,8 +7,8 @@
 // Secret required: FCM_SERVICE_ACCOUNT_JSON — the full Firebase service account
 // JSON (project_id, client_email, private_key). Never stored in the database.
 //
-// Stale tokens (FCM UNREGISTERED / INVALID_ARGUMENT) are deleted from
-// public.push_tokens instead of being retried.
+// Stale tokens (FCM UNREGISTERED / invalid registration token) are deleted
+// from public.push_tokens instead of being retried.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { buildCorsHeaders } from "../_shared/cors.ts";
@@ -189,7 +189,11 @@ Deno.serve(async (req) => {
           });
           if (res.ok) return { ok: true as const };
           const text = await res.text();
-          const gone = res.status === 404 || (res.status === 400 && /UNREGISTERED|INVALID_ARGUMENT/i.test(text));
+          // Sirf tab delete karo jab token sach me dead ho: FCM 404 (UNREGISTERED)
+          // ya 400 jisme "UNREGISTERED" / "not a valid FCM registration token" ho.
+          // Baaki INVALID_ARGUMENT (bad payload, TTL, etc.) par token mat hatao.
+          const gone = res.status === 404 ||
+            /UNREGISTERED|not a valid FCM registration token/i.test(text);
           if (!gone) console.error(`[send-push] FCM failed [${res.status}]: ${text.slice(0, 300)}`);
           return { ok: false as const, gone, token };
         }),
@@ -214,4 +218,4 @@ Deno.serve(async (req) => {
     console.error("[send-push] unexpected error", e);
     return json(500, { error: "INTERNAL_ERROR" });
   }
-});
+));
