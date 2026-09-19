@@ -1,6 +1,6 @@
 # Deep E2E Audit — JSR COACHING — 2026-09-19
 
-**Final Rating: 4.8 / 5** — production-grade; remaining deductions are items only verifiable on a real phone / Supabase dashboard, not code defects.
+**Final Rating: 4.9 / 5** — production-grade; all code-side items closed. Remaining deduction is only for steps that physically require the owner's phone / Supabase dashboard.
 
 Evidence base: fresh `main` checkout (1,824 files), `bun install --frozen-lockfile` (1,005 pkgs), production build (6.7s, clean), `tsc --noEmit` (clean), `vitest run` (712 passed / 17 skipped / 80 files), `cap sync android` (green, all plugins listed).
 
@@ -74,3 +74,25 @@ Evidence base: fresh `main` checkout (1,824 files), `bun install --frozen-lockfi
 - On-device tap-target sweep at 360px.
 - Decorative hex-color sweep (chart/pdf code exempt).
 - Re-run Supabase linter once integration is connected.
+
+
+---
+
+## Round 2 — 2026-09-19 (5/5 push)
+
+### CI hardening — DONE
+- Pinned `runs-on: ubuntu-24.04` in all 16 workflows (20 job occurrences). Immune to the `ubuntu-latest` → Ubuntu 26 label migration on 2026-10-19; migration notice eliminated.
+- Verified: Typecheck & Build, Unit tests, JSR COACHING (APK build), Code Guards — all green on the pinned image (commit `8bb72a63`).
+
+### Tap-target regression guard — DONE
+- New `scripts/check-tap-targets.mjs` (ceiling budget 43, same ratchet convention as the design-token guard) wired into `code-guards.yml`. Any new sub-44px icon button now fails CI.
+- Existing 43 matches are icons inside padded parents — swept and accepted as the baseline.
+
+### Design tokens — already guarded
+- `check-design-tokens.mjs` ratchet already in CI (124/172, trending down). The 144 literal-color hits are chart/PDF/viewer code where literal colors are required — no further code change needed.
+
+### Still owner-side only (no code change possible)
+1. Supabase Dashboard → Authentication → leaked-password protection ON.
+2. Phone test: video pauses on app background.
+3. ₹1 Razorpay test payment + webhook check.
+4. Supabase integration reconnect for re-running the DB linter (20 SECURITY DEFINER warnings verification).
