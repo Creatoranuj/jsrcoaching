@@ -253,23 +253,18 @@ const DeferredChatWidget = () => {
   );
 };
 
-// Inline-SVG brand mark — ships in JS bundle, zero network on first paint.
-import BrandMark from "./components/brand/BrandMark";
 import RouteSkeleton from "./components/RouteSkeleton";
+import HomeSkeleton from "./components/skeletons/HomeSkeleton";
 import { startIdlePrefetch } from "./lib/prefetch";
 
 
-const PageLoader = memo(() => (
-  <div className="min-h-dvh flex items-center justify-center bg-background">
-    <div className="flex flex-col items-center gap-4">
-      <div className="relative">
-        <BrandMark size={64} className="h-16 w-16 rounded-2xl animate-pulse" />
-        <div className="absolute inset-0 rounded-2xl border-2 border-primary/40 animate-spin" style={{ animationDuration: '3s' }} />
-      </div>
-      <span className="sr-only">Loading</span>
-    </div>
-  </div>
-));
+// Auth-gate placeholder. A spinner made the landing page feel stuck, so we
+// show the shape of the page that is about to appear instead: the home layout
+// on "/", the generic route skeleton everywhere else.
+const PageLoader = memo(() => {
+  const { pathname } = useLocation();
+  return pathname === "/" ? <HomeSkeleton /> : <RouteSkeleton />;
+});
 
 // Fire warm-route prefetch once after the App component mounts (idle-gated).
 // Gated by auth state so anonymous visitors on the landing page don't pay
@@ -342,7 +337,7 @@ const App = () => (
                 <NavigationHistoryProvider>
                   <ScrollToTop />
                   <ForceUpdateGate>
-                  <Suspense fallback={<RouteSkeleton />}>
+                  <Suspense fallback={<PageLoader />}>
                   <RouteTransitions>
                   <Routes>
                     {/* Public Routes */}
