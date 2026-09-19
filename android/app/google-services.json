@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "586153778410",
+    "project_id": "jsr-app-403f6",
+    "storage_bucket": "jsr-app-403f6.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:586153778410:android:52f2bf5dd017dd33034b93",
+        "android_client_info": {
+          "package_name": "com.jsrcoaching.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBv2oGnoqtg8cFr6ZbLGBLsWpW1G7gf3gU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
