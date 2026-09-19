@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useAdminEnrollment } from "../hooks/useAdminEnrollment";
 import { openRazorpayCheckout, formatRazorpayError, buildRazorpayPrefill, buildUpiCheckoutConfig, type RazorpaySuccessResponse } from "../utils/razorpay";
-import { openNativeRazorpayCheckout, type NativeCheckoutStep, RazorpayCancelledError, RazorpayNativeError, RazorpayBridgeMissingError, RazorpayLaunchTimeoutError, RazorpayInvalidResponseError, RazorpaySheetUnresponsiveError } from "../utils/razorpayNative";
+import { openNativeRazorpayCheckout, type NativeCheckoutStep, RazorpayCancelledError, RazorpayNativeError, RazorpayBridgeMissingError, RazorpayLaunchTimeoutError, RazorpayInvalidResponseError, RazorpaySheetUnresponsiveError, describePayFailure } from "../utils/razorpayNative";
 import { invokePaymentFunction, recoverEnrollment, PaymentApiError } from "../utils/paymentApi";
 import { listUpiApps, type UpiApp } from "../utils/upiApps";
 import { tapLight, tapMedium, notifySuccess, notifyError } from "../lib/nativeChrome";
@@ -181,6 +181,12 @@ const BuyCourse = () => {
   // appears after in-app payment failed twice. Students must never be pushed
   // out of the app by default.
   const [showBrowserEscape, setShowBrowserEscape] = useState(false);
+  /**
+   * Last payment failure, kept verbatim for the on-screen diagnostics panel.
+   * Without this a failed launch only ever produced a toast, so nobody could
+   * tell WHY the sheet did not open.
+   */
+  const [payDiag, setPayDiag] = useState<string | null>(null);
   const redirectTimerRef = useRef<number | null>(null);
   useEffect(() => {
     return () => {
@@ -529,11 +535,17 @@ const BuyCourse = () => {
       try {
         setPayMode("native");
         void tapMedium();
-        const resp = await openNativeRazorpayCheckout(sharedOpts, (step) => {
+        const resp = await openNativeRazorpayCheckout({
+          ...sharedOpts,
+          // Test keys get Razorpay's default sheet layout (see
+          // buildNativeCheckoutPayload) — the custom UPI block aborts there.
+          mode: orderData.mode ?? null,
+        }, (step) => {
           if (isMountedRef.current) setPayStep(step);
         });
         await verifyRazorpayPayment(resp);
       } catch (e: unknown) {
+        setPayDiag(describePayFailure(e, { order_id: orderData?.order_id, mode: orderData?.mode ?? null }));
         if (e instanceof RazorpayBridgeMissingError || e instanceof RazorpayLaunchTimeoutError) {
           // The native sheet did not open. NEVER auto-redirect to a browser
           // here: a student who suddenly lands on a website mid-purchase gets
@@ -930,13 +942,38 @@ const BuyCourse = () => {
                       >
                         Browser checkout se pay karein
                       </Button>
-                      {isAdmin && (payStep || buildLabel) && (
-                        <p className="mt-1.5 break-words text-center text-[11px] text-muted-foreground">
-                          {payStep ? `step: ${payStep}` : null}
-                          {payStep && payMode ? ` · mode: ${payMode}` : null}
-                          {(payStep || payMode) && buildLabel ? " · " : null}
-                          {buildLabel ? `build: ${buildLabel}` : null}
-                        </p>
+                      {(isAdmin || paymentMode === "test") && (
+                        <div className="mt-2 rounded-lg border border-dashed bg-muted/40 p-2.5 text-left">
+                          <p className="mb-1 text-[11px] font-semibold text-muted-foreground">
+                            Payment diagnostics
+                          </p>
+                          <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words text-[10px] leading-relaxed text-muted-foreground">
+{[
+  `build: ${buildLabel ?? "unknown"}`,
+  `step: ${payStep ?? "-"} · mode: ${payMode ?? "-"} · key: ${paymentMode ?? "-"}`,
+  payDiag ?? "no error captured yet",
+].join("\n")}
+                          </pre>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="mt-1 h-7 px-2 text-[11px]"
+                            onClick={() => {
+                              const text = [
+                                `build: ${buildLabel ?? "unknown"}`,
+                                `step: ${payStep ?? "-"} · mode: ${payMode ?? "-"} · key: ${paymentMode ?? "-"}`,
+                                payDiag ?? "no error captured yet",
+                              ].join("\n");
+                              void navigator.clipboard?.writeText(text).then(
+                                () => toast.success("Diagnostics copy ho gaye"),
+                                () => toast.error("Copy nahi ho paya"),
+                              );
+                            }}
+                          >
+                            Copy details
+                          </Button>
+                        </div>
                       )}
                     </>
                   )}
