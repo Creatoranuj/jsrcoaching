@@ -30,6 +30,11 @@ const DEFAULT_REPOSITORY = "Creatoranuj/jsrcoaching";
 const DEFAULT_WORKFLOW = "build-apk.yml";
 const DEFAULT_AUDIENCE = "jsr-coaching-release";
 const VERSION_RE = /^\d+(\.\d+){0,3}$/;
+// The download link CI publishes must be one of OUR OWN release assets. It ends
+// up in a DB column that the app turns into a navigation target, so a typo or a
+// hostile caller must never be able to point students at a foreign host.
+const DOWNLOAD_URL_RE =
+  /^https:\/\/github\.com\/Creatoranuj\/jsrcoaching\/releases\/(download\/[^/]+\/[^/]+|latest\/download\/[^/]+)$/;
 
 function timingSafeEqual(a: string, b: string): boolean {
   const ea = new TextEncoder().encode(a);
@@ -140,13 +145,27 @@ Deno.serve(async (req) => {
     if (!auth.ok) return json(auth.status, { error: auth.error });
 
     // ---- Validate input ----------------------------------------------------
-    let body: { version?: unknown; platform?: unknown; notes?: unknown; allow_downgrade?: unknown } = {};
+    let body: {
+      version?: unknown;
+      platform?: unknown;
+      notes?: unknown;
+      allow_downgrade?: unknown;
+      download_url?: unknown;
+    } = {};
     try { body = await req.json(); } catch { /* empty */ }
     const version = typeof body.version === "string" ? body.version.trim().replace(/^v/i, "") : "";
     if (!VERSION_RE.test(version)) return json(400, { error: "INVALID_VERSION" });
     const platform = body.platform === "ios" ? "ios" : "android";
     const notes = typeof body.notes === "string" ? body.notes.trim().slice(0, 500) : null;
     const allowDowngrade = body.allow_downgrade === true;
+    // Optional: the release asset students should download for this version.
+    const rawDownloadUrl =
+      typeof body.download_url === "string" ? body.download_url.trim() : "";
+    if (rawDownloadUrl && !DOWNLOAD_URL_RE.test(rawDownloadUrl)) {
+      console.warn("[set-latest-version] rejected download_url:", rawDownloadUrl);
+      return json(400, { error: "INVALID_DOWNLOAD_URL" });
+    }
+    const downloadUrl = rawDownloadUrl || null;
 
     // OIDC callers may only publish the version of the tag they are building.
     // (A main-branch build carries no tag, so it is bound by the monotonic
@@ -184,6 +203,11 @@ Deno.serve(async (req) => {
 
     const patch: Record<string, unknown> = { updated_at: new Date().toISOString(), [column]: version };
     if (notes) patch.update_notes = notes;
+    // Announce the matching download link in the SAME authorized call, so the
+    // update prompt can never offer an APK older than the version it announces.
+    if (downloadUrl) {
+      patch[platform === "ios" ? "ios_store_url" : "android_store_url"] = downloadUrl;
+    }
 
     const { error } = await admin.from("app_config").update(patch).eq("id", 1);
     if (error) throw error;
@@ -198,7 +222,14 @@ Deno.serve(async (req) => {
       sha: auth.claims?.sha ?? null,
     });
 
-    return json(200, { ok: true, platform, version, previous: existing, method: auth.method });
+    return json(200, {
+      ok: true,
+      platform,
+      version,
+      previous: existing,
+      download_url: downloadUrl,
+      method: auth.method,
+    });
   } catch (e) {
     console.error("[set-latest-version]", e);
     return json(500, { error: "INTERNAL" });
