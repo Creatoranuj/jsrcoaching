@@ -1,7 +1,8 @@
 /**
  * Push notifications bootstrap.
  *
- * CURRENT STATE: DISABLED until Firebase is configured.
+ * CURRENT STATE: ENABLED — Firebase project jsr-app-403f6 configured
+ * (android/app/google-services.json present, package com.jsrcoaching.app).
  *
  * The Android app was crashing on "Allow" because `PushNotifications.register()`
  * initializes Firebase Cloud Messaging (FCM), but `android/app/google-services.json`
@@ -21,8 +22,8 @@
  */
 import { supabase } from "@/integrations/supabase/client";
 
-// Feature flag — flip to true ONLY after google-services.json is in place.
-const PUSH_ENABLED = false;
+// Feature flag — google-services.json is in place, so register() is safe.
+const PUSH_ENABLED = true;
 
 let registered = false;
 
