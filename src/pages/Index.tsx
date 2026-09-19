@@ -37,7 +37,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useHero } from "@/hooks/useHero";
 import { useLandingCourses } from "@/hooks/useLandingCourses";
 import { supabase } from "@/integrations/supabase/client";
-import WhatsAppFab from "@/components/common/WhatsAppFab";
+import WhatsAppFab, { useWhatsAppLink } from "@/components/common/WhatsAppFab";
 import { WHATSAPP_NUMBER } from "@/components/common/WhatsAppButton";
 import { openResource } from "@/lib/openResource";
 
@@ -113,40 +113,70 @@ function AuthButtons({ stacked = false }: { stacked?: boolean }) {
   );
 }
 
-function FloatingAuthButton() {
+const FAB_MESSAGE = "Namaste JSR COACHING, mujhe admission aur batch details chahiye.";
+
+/**
+ * Phone-only bottom action bar: WhatsApp + Signup/Login (or Dashboard).
+ *
+ * One row instead of three stacked floating layers. Before this the homepage
+ * mounted a centred auth bar (bottom 1rem), the JSR Agent bubble (5rem) and a
+ * separate WhatsApp FAB (9.5rem) — ~208px of a 844px viewport covered by fixed
+ * controls, and the bubble sat on top of the "Regular practice / Doubt support"
+ * hero copy. WhatsApp now lives in the bar, so the only FAB left above it is
+ * the chat bubble, which already clears the bar via `FAB_BASE_REM`.
+ *
+ * The full-width wrapper is `pointer-events-none` so footer links behind the
+ * strip stay tappable; only the pills themselves take taps. Every control is
+ * 48px tall (>44px) and the bar adds `env(safe-area-inset-bottom)`.
+ */
+function MobileActionBar() {
   const { user } = useAuth();
+  const { href, onClick } = useWhatsAppLink(WHATSAPP_NUMBER, FAB_MESSAGE);
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:hidden">
-      {user ? (
-        <Button
-          asChild
-          className="h-12 rounded-full bg-gold px-8 font-semibold text-ink shadow-lg transition-transform hover:scale-105 motion-reduce:transition-none"
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] sm:hidden">
+      <div className="pointer-events-auto flex items-center gap-2">
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={onClick}
+          aria-label="WhatsApp par baat karein"
+          title="WhatsApp par baat karein"
+          className="grid size-12 shrink-0 place-items-center rounded-full bg-whatsapp text-whatsapp-foreground shadow-lg shadow-whatsapp/30 transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transform-none motion-reduce:transition-none"
         >
-          <Link to="/dashboard" aria-label="Dashboard kholein">
-            <LayoutDashboard /> Dashboard
-          </Link>
-        </Button>
-      ) : (
-        <div className="flex gap-2">
+          <WhatsAppIcon className="size-6" />
+        </a>
+        {user ? (
           <Button
             asChild
-            className="h-12 rounded-full bg-gold px-6 font-semibold text-ink shadow-lg transition-transform hover:scale-105 motion-reduce:transition-none"
+            className="h-12 rounded-full bg-gold px-7 font-semibold text-ink shadow-lg transition-transform hover:scale-105 motion-reduce:transition-none"
           >
-            <Link to="/signup" aria-label="Signup karein">
-              <UserPlus /> Signup
+            <Link to="/dashboard" aria-label="Dashboard kholein">
+              <LayoutDashboard /> Dashboard
             </Link>
           </Button>
-          <Button
-            asChild
-            variant="outline"
-            className="h-12 rounded-full border-ink/20 bg-background/95 px-6 font-semibold shadow-lg backdrop-blur transition-transform hover:scale-105 motion-reduce:transition-none"
-          >
-            <Link to="/login" aria-label="Login karein">
-              <LogIn /> Login
-            </Link>
-          </Button>
-        </div>
-      )}
+        ) : (
+          <>
+            <Button
+              asChild
+              className="h-12 rounded-full bg-gold px-5 font-semibold text-ink shadow-lg transition-transform hover:scale-105 motion-reduce:transition-none"
+            >
+              <Link to="/signup" aria-label="Signup karein">
+                <UserPlus /> Signup
+              </Link>
+            </Button>
+            <Button
+              asChild
+              variant="outline"
+              className="h-12 rounded-full border-ink/20 bg-background/95 px-5 font-semibold shadow-lg backdrop-blur transition-transform hover:scale-105 motion-reduce:transition-none"
+            >
+              <Link to="/login" aria-label="Login karein">
+                <LogIn /> Login
+              </Link>
+            </Button>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -578,12 +608,10 @@ export default function Index() {
         </div>
       </footer>
 
-      <WhatsAppFab
-        phone={WHATSAPP_NUMBER}
-        message="Namaste JSR COACHING, mujhe admission aur batch details chahiye."
-      />
+      {/* Tablet/desktop only — on phones WhatsApp lives inside MobileActionBar. */}
+      <WhatsAppFab phone={WHATSAPP_NUMBER} message={FAB_MESSAGE} className="max-sm:hidden" />
 
-      <FloatingAuthButton />
+      <MobileActionBar />
     </div>
   );
 }

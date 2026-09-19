@@ -157,10 +157,15 @@ export default defineConfig(({ mode }) => ({
     // `esbuild` here can leave Rolldown-created vendor chunks unminified in
     // Replit, which is why vendor-react showed ~98KB gzip with no contaminants.
     minify: 'oxc',
-    // Hidden sourcemaps: emit .map files (for Sentry upload) but do NOT
-    // reference them from bundled JS — keeps APK/payload small and avoids
-    // leaking source to end-users.
-    sourcemap: mode === "production" ? "hidden" : false,
+    // Sourcemaps are OFF by default. "hidden" maps were meant for a Sentry
+    // sourcemap upload that was never wired up (build-apk.yml only uploads the
+    // ProGuard mapping), so all 331 .map files (~20 MB) went straight into the
+    // APK via `cap copy` — anyone unzipping the APK could read the full TSX
+    // source. Opt in with BUILD_SOURCEMAPS=1 once an upload step exists;
+    // build-apk.yml deletes *.map before packaging either way and the APK
+    // smoke check fails if one is found.
+    sourcemap:
+      mode === "production" && process.env.BUILD_SOURCEMAPS === "1" ? "hidden" : false,
     chunkSizeWarningLimit: 1800,
     // Skip the modulepreload polyfill — our esnext target only ships to
     // browsers that already support <link rel="modulepreload"> natively.

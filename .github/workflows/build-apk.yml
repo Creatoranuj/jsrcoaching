@@ -338,6 +338,25 @@ jobs:
           # visible on the phone itself. No laptop / USB needed.
           VITE_ENABLE_ERUDA: ${{ inputs.debug_webview == 'true' && 'true' || 'false' }}
 
+      # SECURITY: never ship JS sourcemaps. vite.config.ts no longer emits them
+      # by default (BUILD_SOURCEMAPS=1 opts in for a future upload step), but
+      # this guard runs regardless so neither the OTA zip nor `cap copy` can
+      # package a .map — each one reconstructs the original TSX source
+      # (v1.8.2 shipped 331 of them, ~20 MB, inside the APK).
+      - name: 🧹 Strip sourcemaps from dist
+        run: |
+          MAP_COUNT=$(find dist -type f -name '*.map' | wc -l | tr -d ' ')
+          if [ "$MAP_COUNT" -gt 0 ]; then
+            echo "🧹 Removing $MAP_COUNT sourcemap file(s) from dist"
+            find dist -type f -name '*.map' -delete
+          fi
+          if grep -rIl --include='*.js' --include='*.css' -e 'sourceMappingURL=' dist/assets 2>/dev/null | grep -q .; then
+            echo "❌ Bundled JS/CSS still references a sourcemap — check vite.config.ts build.sourcemap."
+            exit 1
+          fi
+          echo "✅ dist is sourcemap-free ($MAP_COUNT removed)"
+          echo "- **Sourcemaps stripped from dist:** ${MAP_COUNT}" >> "$GITHUB_STEP_SUMMARY"
+
       - name: 🧾 Stamp web bundle version
         run: |
           cat > dist/nb-build.json <<EOF
@@ -487,6 +506,11 @@ jobs:
           test -f android/app/src/main/assets/public/index.html
           test -f android/app/src/main/assets/public/nb-build.json
           grep -q "${{ github.sha }}" android/app/src/main/assets/public/nb-build.json
+          if find android/app/src/main/assets/public -type f -name '*.map' | grep -q .; then
+            echo "❌ Sourcemaps found in android/app/src/main/assets/public — refusing to package source."
+            exit 1
+          fi
+          echo "✅ Web assets copied, 0 sourcemaps in assets/public"
         env:
           CAP_DEBUG: ${{ inputs.debug_webview == 'true' && '1' || '0' }}
 
@@ -1005,6 +1029,18 @@ jobs:
           fi
           echo "✅ capacitor.plugins.json packaged with ${PLUGIN_COUNT} plugins."
           echo "- **Capacitor plugins packaged:** ${PLUGIN_COUNT}" >> "$GITHUB_STEP_SUMMARY"
+
+          # SECURITY: no JS sourcemaps may ship inside the APK. One .map under
+          # assets/public reconstructs the original TSX for anyone who unzips
+          # the APK (v1.8.2 packaged 331 files / ~20 MB).
+          MAP_IN_APK=$(find /tmp/apkscan/assets/public -type f -name '*.map' 2>/dev/null | wc -l | tr -d ' ')
+          if [ "${MAP_IN_APK:-0}" -gt 0 ]; then
+            echo "❌ APK smoke check FAILED — ${MAP_IN_APK} sourcemap file(s) packaged under assets/public."
+            find /tmp/apkscan/assets/public -type f -name '*.map' | head -n 5
+            exit 1
+          fi
+          echo "✅ 0 sourcemaps packaged in APK."
+          echo "- **Sourcemaps in APK:** 0" >> "$GITHUB_STEP_SUMMARY"
 
           # One pass over every dex, write to disk, then grep the file. No pipes.
           : > /tmp/apkscan/dex-strings.txt
