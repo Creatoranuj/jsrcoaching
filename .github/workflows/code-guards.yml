@@ -15,6 +15,7 @@ on:
       - 'package.json'
       - 'scripts/check-design-tokens.mjs'
       - 'scripts/check-console-usage.mjs'
+      - 'scripts/check-tap-targets.mjs'
       - 'scripts/check-lockfile-registry.mjs'
       - '.github/workflows/code-guards.yml'
   pull_request:
@@ -26,6 +27,7 @@ on:
       - 'package.json'
       - 'scripts/check-design-tokens.mjs'
       - 'scripts/check-console-usage.mjs'
+      - 'scripts/check-tap-targets.mjs'
       - 'scripts/check-lockfile-registry.mjs'
   workflow_dispatch:
 
@@ -61,4 +63,7 @@ jobs:
 
       - name: Console-usage ceiling
         run: node scripts/check-console-usage.mjs
+
+      - name: Tap-target ceiling
+        run: node scripts/check-tap-targets.mjs
 
