@@ -32,7 +32,7 @@ jobs:
     # so an x86_64 emulator boots reliably in ~2-3 min. macos-14 (Apple
     # Silicon) repeatedly failed with "emulator-5554 not found" because the
     # arm64 system image never launched on that image.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
