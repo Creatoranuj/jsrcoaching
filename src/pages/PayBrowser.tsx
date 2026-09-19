@@ -24,7 +24,9 @@ import {
   formatRazorpayError,
   UPI_FIRST_CHECKOUT_CONFIG,
 } from "@/utils/razorpay";
-import { APP_SCHEME } from "@/config/deepLinks";
+// Return-link shape lives in one place so PaymentCallback always reads the
+// same param names this page writes. Do NOT hand-build the deep link here.
+import { buildPaymentReturnUrl } from "@/config/paymentReturn";
 import { reportError, addBreadcrumb } from "@/lib/sentry";
 
 type Phase = "opening" | "open" | "done" | "cancelled" | "error";
@@ -45,9 +47,7 @@ const PayBrowser = () => {
   /** Send the user back into the app. Works from a Custom Tab on Android. */
   const backToApp = useCallback(
     (status: "success" | "cancelled") => {
-      const url = `${APP_SCHEME}://payment-callback?payment=${status}${
-        courseId ? `&course=${encodeURIComponent(courseId)}` : ""
-      }${orderId ? `&order=${encodeURIComponent(orderId)}` : ""}`;
+      const url = buildPaymentReturnUrl(status, { courseId, orderId });
       try {
         window.location.href = url;
       } catch {
