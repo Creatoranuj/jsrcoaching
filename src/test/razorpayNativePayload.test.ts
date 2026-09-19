@@ -28,20 +28,28 @@ describe("buildNativeCheckoutPayload", () => {
     expect(payload.currency).toBe("INR");
   });
 
-  it("drops the web-only display config", () => {
-    const payload = buildNativeCheckoutPayload({
-      ...base,
-      config: { display: { blocks: { upi: {} }, sequence: ["block.upi"] } },
-    });
+  it("forwards the display config so the UPI block is pinned to the top", () => {
+    const display = { blocks: { upi: { instruments: [{ method: "upi", flows: ["intent"] }] } }, sequence: ["block.upi"] };
+    const payload = buildNativeCheckoutPayload({ ...base, config: { display } });
+    expect(payload.config).toEqual({ display });
+  });
+
+  it("ignores a config without a display block", () => {
+    const payload = buildNativeCheckoutPayload({ ...base, config: { junk: 1 } });
     expect(payload.config).toBeUndefined();
   });
 
-  it("omits the method map so Razorpay renders every enabled method (incl. UPI tiles)", () => {
+  it("forwards the method map so UPI is explicitly requested", () => {
     const payload = buildNativeCheckoutPayload({
       ...base,
       method: { card: true, upi: true },
     });
-    expect(payload.method).toBeUndefined();
+    expect(payload.method).toEqual({ card: true, upi: true });
+  });
+
+  it("forwards remember_customer only when enabled", () => {
+    expect(buildNativeCheckoutPayload({ ...base, remember_customer: true }).remember_customer).toBe(true);
+    expect(buildNativeCheckoutPayload(base).remember_customer).toBeUndefined();
   });
 
   it("strips prefill.method so the UPI app tiles are not skipped", () => {
@@ -70,7 +78,7 @@ describe("buildNativeCheckoutPayload", () => {
     const payload = buildNativeCheckoutPayload({
       ...base,
       // @ts-expect-error deliberately passing a web-only field
-      remember_customer: true,
+      modal: { confirm_close: true },
     });
     expect(Object.keys(payload).sort()).toEqual(
       ["amount", "currency", "description", "key", "name", "order_id"].sort()
