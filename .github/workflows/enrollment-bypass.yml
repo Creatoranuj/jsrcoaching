@@ -19,7 +19,7 @@ on:
 
 jobs:
   bypass-probe:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
       # Missing test-student credentials is a configuration state, not a code
