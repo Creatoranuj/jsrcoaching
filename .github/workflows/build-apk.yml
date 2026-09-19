@@ -118,7 +118,10 @@ jobs:
       - name: 🏷️ Set version name
         run: |
           if [[ "${{ github.ref_name }}" == "main" || "${{ github.ref_name }}" == "master" ]]; then
-            VERSION="v1.0-$(date +%Y%m%d-%H%M)"
+            # Run number keeps the tag unique: two pushes inside the same
+            # minute used to generate the SAME tag, and the second build then
+            # died on "tag already exists" (2026-09-19).
+            VERSION="v1.0-$(date +%Y%m%d-%H%M)-${GITHUB_RUN_NUMBER}"
             echo "VERSION=${VERSION}" >> $GITHUB_ENV
             echo "IS_MANUAL=true" >> $GITHUB_ENV
           else
