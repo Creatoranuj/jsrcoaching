@@ -13,6 +13,7 @@ import { useAdminEnrollment } from "../hooks/useAdminEnrollment";
 import { openRazorpayCheckout, formatRazorpayError, buildRazorpayPrefill, UPI_FIRST_CHECKOUT_CONFIG, type RazorpaySuccessResponse } from "../utils/razorpay";
 import { openNativeRazorpayCheckout, type NativeCheckoutStep, RazorpayCancelledError, RazorpayNativeError, RazorpayBridgeMissingError, RazorpayLaunchTimeoutError, RazorpayInvalidResponseError, RazorpaySheetUnresponsiveError } from "../utils/razorpayNative";
 import { invokePaymentFunction, recoverEnrollment, PaymentApiError } from "../utils/paymentApi";
+import { listUpiApps, type UpiApp } from "../utils/upiApps";
 import { tapLight, tapMedium, notifySuccess, notifyError } from "../lib/nativeChrome";
 import { LoadingSpinner } from "../components/ui/loading-spinner";
 import { resolveContentUrl } from "../lib/resolveContentUrl";
@@ -126,6 +127,10 @@ const BuyCourse = () => {
   // Which build is actually installed. Printed next to the checkout button so
   // a screenshot alone proves whether the fix is on the device.
   const [buildLabel, setBuildLabel] = useState<string | null>(null);
+  // UPI apps actually installed on this phone (Android only). Shown as chips so
+  // the student knows which app will open before tapping Pay, and so "no UPI
+  // section" can be told apart from "no UPI app installed".
+  const [upiApps, setUpiApps] = useState<UpiApp[] | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -152,6 +157,16 @@ const BuyCourse = () => {
     })();
     return () => { active = false; };
   }, []);
+
+  // Probe installed UPI apps once we know we are inside the Android app.
+  useEffect(() => {
+    if (!isNative || isIosNative) return;
+    let active = true;
+    void listUpiApps().then((apps) => {
+      if (active) setUpiApps(apps);
+    });
+    return () => { active = false; };
+  }, [isNative, isIosNative]);
 
 
   // Mount guard for navigate()-after-await. Without this, the 1500ms delayed
@@ -699,7 +714,7 @@ const BuyCourse = () => {
           <BackButton fallback="/courses" />
         )}
         <h1 className="font-semibold text-lg">Secure Checkout</h1>
-        {paymentMode === "test" && !isNative && (
+        {paymentMode === "test" && (
           <span className="ml-auto rounded-full border border-destructive/40 bg-destructive/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-destructive">
             Test mode
           </span>
@@ -796,6 +811,34 @@ const BuyCourse = () => {
                       <CheckCircle className="h-5 w-5 shrink-0 text-primary" />
                     </div>
 
+                    {/* UPI apps detected on this device get top billing — the
+                        student sees exactly which app the payment sheet will
+                        hand off to, so nothing feels like a browser redirect. */}
+                    {upiApps && upiApps.length > 0 && (
+                      <div className="rounded-xl border bg-muted/30 p-3">
+                        <p className="mb-2 text-xs font-medium">
+                          UPI apps on your phone — tap UPI on the payment sheet
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {upiApps.slice(0, 6).map((app) => (
+                            <span
+                              key={app.packageName}
+                              className="rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary"
+                            >
+                              {app.label}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {upiApps && upiApps.length === 0 && (
+                      <p className="rounded-xl border border-dashed bg-muted/30 p-3 text-xs text-muted-foreground">
+                        No UPI app found on this phone. You can still pay by
+                        entering your UPI ID, or use a card / netbanking.
+                      </p>
+                    )}
+
                     <div className="flex flex-wrap gap-2">
                       {["UPI / GPay", "PhonePe", "Paytm", "Visa · RuPay", "Netbanking"].map((m) => (
                         <span
@@ -806,6 +849,13 @@ const BuyCourse = () => {
                         </span>
                       ))}
                     </div>
+
+                    {paymentMode === "test" && (
+                      <p className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-xs font-medium text-destructive">
+                        Test mode is on, so real UPI apps will not appear on the
+                        payment sheet. Switch to live keys to accept UPI.
+                      </p>
+                    )}
 
                     <ul className="space-y-1.5 text-xs text-muted-foreground">
                       <li className="flex items-center gap-2">
@@ -853,7 +903,9 @@ const BuyCourse = () => {
                       ) : (
                         <>
                           <Shield className="mr-2 h-4 w-4" />
-                          Pay ₹{course.price} Securely
+                          {upiApps && upiApps.length > 0
+                            ? `Pay ₹${course.price} — UPI, Card`
+                            : `Pay ₹${course.price} Securely`}
                         </>
                       )}
                     </Button>
@@ -871,7 +923,7 @@ const BuyCourse = () => {
                       >
                         Browser checkout se pay karein
                       </Button>
-                      {(payStep || buildLabel) && (
+                      {isAdmin && (payStep || buildLabel) && (
                         <p className="mt-1.5 break-words text-center text-[11px] text-muted-foreground">
                           {payStep ? `step: ${payStep}` : null}
                           {payStep && payMode ? ` · mode: ${payMode}` : null}
