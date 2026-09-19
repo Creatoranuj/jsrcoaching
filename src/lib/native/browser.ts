@@ -123,6 +123,12 @@ export const openExternal = async (url: string, options: OpenExternalOptions = {
 
       throw new Error("No native in-app browser plugin is available");
     }
-  } catch { /* fall through */ }
+  } catch (err) {
+    // On native, `window.open` is a silent no-op inside the Capacitor WebView
+    // (no multiple-window support), so swallowing here made the Razorpay
+    // browser checkout look like "nothing happened". Surface the failure so
+    // the caller can show a real message / copyable link instead.
+    if (isNative) throw err instanceof Error ? err : new Error(String(err));
+  }
   if (typeof window !== "undefined") window.open(url, "_blank", "noopener,noreferrer");
 };

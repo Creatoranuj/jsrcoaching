@@ -22,7 +22,8 @@ import { Loader2, ShieldCheck, ArrowLeft } from "lucide-react";
 import {
   openRazorpayCheckout,
   formatRazorpayError,
-  UPI_FIRST_CHECKOUT_CONFIG,
+  buildUpiCheckoutConfig,
+  buildRazorpayPrefill,
 } from "@/utils/razorpay";
 // Return-link shape lives in one place so PaymentCallback always reads the
 // same param names this page writes. Do NOT hand-build the deep link here.
@@ -74,13 +75,17 @@ const PayBrowser = () => {
         name: "JSR COACHING",
         description: title,
         order_id: orderId,
-        prefill: {
-          name: params.get("n") || undefined,
-          email: params.get("e") || undefined,
-          contact: params.get("p") || undefined,
-        },
+        prefill: buildRazorpayPrefill({
+          name: params.get("n"),
+          email: params.get("e"),
+          contact: params.get("p"),
+        }),
         theme: { color: "#F97316" },
-        ...UPI_FIRST_CHECKOUT_CONFIG,
+        // Mode-aware layout. On a TEST key Razorpay has no UPI `intent`
+        // instruments, so asking for them renders an empty UPI block and the
+        // sheet looks "stuck"/broken. `buildUpiCheckoutConfig` asks for
+        // `collect` only in test mode and both flows in live mode.
+        ...buildUpiCheckoutConfig(keyId.startsWith("rzp_test_") ? "test" : "live"),
         handler: () => {
           // Enrollment is granted server-side by `razorpay-webhook`; the app
           // confirms it on resume. Nothing to verify from this page — it runs
