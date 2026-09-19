@@ -29,6 +29,14 @@ export interface NativeRazorpayOptions {
   config?: unknown;
   /** Shows a returning buyer their saved UPI ID under "Recommended". */
   remember_customer?: boolean;
+  /**
+   * Razorpay key mode. On a **test** key the custom `method` / `config.display`
+   * layout asks the Android sheet for instruments the test account does not
+   * have; the checkout Activity then aborts before it renders and no result
+   * ever comes back (the "Payment screen khul nahi payi" bug). Test mode is
+   * therefore launched with Razorpay's own default layout.
+   */
+  mode?: "test" | "live" | null;
 }
 
 
@@ -334,8 +342,11 @@ export const buildNativeCheckoutPayload = (
 ): Record<string, unknown> => {
   const payload: Record<string, unknown> = {
     key: options.key,
-    // The native SDK expects amount as a string of paise.
-    amount: String(options.amount),
+    // Razorpay's Android standard checkout expects `amount` as a NUMBER of
+    // paise, exactly like the documented `options.put("amount", 50000)`.
+    // Sending it as a string made the checkout Activity abort during option
+    // validation — it never rendered and never returned a result.
+    amount: Number(options.amount),
     currency: options.currency || "INR",
     name: options.name,
     description: options.description,
@@ -349,7 +360,16 @@ export const buildNativeCheckoutPayload = (
     if (options.prefill.contact) prefill.contact = options.prefill.contact;
     if (Object.keys(prefill).length > 0) payload.prefill = prefill;
   }
-  if (options.theme) payload.theme = options.theme;
+  // Android takes the theme colour as the FLAT key `theme.color`. Razorpay's
+  // own troubleshooting page lists the nested `{ theme: { color } }` object as
+  // a crash cause on the Android SDK ("theme color parameter is passed in
+  // curly braces"), so the nested form is never sent.
+  if (options.theme?.color) payload["theme.color"] = options.theme.color;
+
+  // On a test key, ship the plain documented payload only: no method map, no
+  // display blocks, no remember_customer. Those extras are what the test-mode
+  // sheet chokes on.
+  if (options.mode === "test") return payload;
 
   // UPI must be asked for explicitly. The Android standard-checkout Activity
   // accepts the same `method` / `config.display` options as the web checkout;
@@ -573,4 +593,36 @@ export const openNativeRazorpayCheckout = async (
     razorpay_order_id: parsed.razorpay_order_id,
     razorpay_signature: parsed.razorpay_signature,
   };
+};
+
+
+/**
+ * Human-readable one-block summary of a failed native checkout, for the
+ * on-screen diagnostics panel and for support copy-paste. Deliberately free of
+ * personal data: only order id, key mode, error name/code/step/description.
+ */
+export const describePayFailure = (
+  error: unknown,
+  ctx?: { order_id?: string; mode?: "test" | "live" | null },
+): string => {
+  const lines: string[] = [];
+  if (ctx?.order_id) lines.push(`order: ${ctx.order_id}`);
+  if (ctx?.mode) lines.push(`key mode: ${ctx.mode}`);
+  const name = error instanceof Error ? error.name : typeof error;
+  lines.push(`error: ${name}`);
+  if (error instanceof RazorpayNativeError) {
+    if (error.code) lines.push(`code: ${error.code}`);
+    if (error.step) lines.push(`step: ${error.step}`);
+    if (error.reason) lines.push(`reason: ${error.reason}`);
+    if (error.source) lines.push(`source: ${error.source}`);
+  } else {
+    const fields = normalizeNativeError(error);
+    if (fields.code) lines.push(`code: ${fields.code}`);
+    if (fields.step) lines.push(`step: ${fields.step}`);
+    if (fields.reason) lines.push(`reason: ${fields.reason}`);
+  }
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  if (message) lines.push(`message: ${message}`);
+  lines.push(`at: ${new Date().toISOString()}`);
+  return lines.join("\n");
 };
