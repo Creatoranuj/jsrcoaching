@@ -5,12 +5,21 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
-// Untyped on purpose: the edge runtime has no generated Database types, so the
-// rpc() overloads would infer `never` for these custom functions.
-let cachedAdmin: ReturnType<typeof createClient> | null = null;
-function admin() {
+// The edge runtime has no generated Database types, so supabase-js infers the
+// rpc() args as `undefined`/`never` for our custom SQL functions. Expose the
+// client through a minimal structural facade instead — same runtime object,
+// but `deno check` stays green for every function that imports this helper.
+interface RpcResult {
+  data: unknown;
+  error: { message: string } | null;
+}
+interface RpcClient {
+  rpc(fn: string, args?: Record<string, unknown>): PromiseLike<RpcResult>;
+}
+let cachedAdmin: RpcClient | null = null;
+function admin(): RpcClient {
   if (!cachedAdmin) {
-    cachedAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    cachedAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) as unknown as RpcClient;
   }
   return cachedAdmin;
 }

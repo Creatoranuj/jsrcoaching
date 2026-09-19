@@ -21,11 +21,21 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
-// The edge runtime has no generated Database types, so the untyped client is
-// deliberate here (same pattern as the other functions in this repo).
-let cached: ReturnType<typeof createClient> | null = null;
-function admin() {
-  if (!cached) cached = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+// The edge runtime has no generated Database types, so supabase-js would type
+// the error_logs insert row as `never[]`. Wrap the client in a minimal
+// structural facade (same runtime object) so every function importing this
+// helper stays `deno check` clean.
+interface InsertResult {
+  error: { message: string } | null;
+}
+interface ErrorLogsClient {
+  from(table: "error_logs"): {
+    insert(row: Record<string, unknown>): PromiseLike<InsertResult>;
+  };
+}
+let cached: ErrorLogsClient | null = null;
+function admin(): ErrorLogsClient {
+  if (!cached) cached = createClient(SUPABASE_URL, SERVICE_ROLE_KEY) as unknown as ErrorLogsClient;
   return cached;
 }
 

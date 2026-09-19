@@ -18,7 +18,6 @@
         "@capacitor/haptics": "^7.0.5",
         "@capacitor/inappbrowser": "2.5.5",
         "@capacitor/keyboard": "^7.0.6",
-        "@capacitor/local-notifications": "^7.0.6",
         "@capacitor/network": "^7.0.4",
         "@capacitor/preferences": "^7.0.4",
         "@capacitor/push-notifications": "^7.0.6",
@@ -26,7 +25,6 @@
         "@capacitor/share": "^7.0.4",
         "@capacitor/splash-screen": "^7.0.5",
         "@capacitor/status-bar": "^7.0.6",
-        "@capacitor/toast": "^7.0.4",
         "@dnd-kit/core": "^6.3.1",
         "@dnd-kit/modifiers": "^9.0.0",
         "@dnd-kit/sortable": "^10.0.0",
@@ -226,8 +224,6 @@
 
     "@capacitor/keyboard": ["@capacitor/keyboard@7.0.6", "", { "peerDependencies": { "@capacitor/core": ">=7.0.0" } }, "sha512-mH9EHo4EnBA9zJAi6domGVB/PdEkcm0h27nJDHG4Y3fd2oKsheCxDRXlYrbgj8hcyQPe0cGWqAfzfwKzkWQoFQ=="],
 
-    "@capacitor/local-notifications": ["@capacitor/local-notifications@7.0.7", "", { "peerDependencies": { "@capacitor/core": ">=7.0.0" } }, "sha512-3qSpa8PpVMONHqBOaJ4RbA/lB5vOdEngtep0myGmP3S56gShPScDCotbw7dwmQy3NCdY4Up9nH3ySrGvUh2jZg=="],
-
     "@capacitor/network": ["@capacitor/network@7.0.4", "", { "peerDependencies": { "@capacitor/core": ">=7.0.0" } }, "sha512-fNhN3968AQWMnzasPJ0B8e+nyk7+R6V9PWIBQWSQRHrKndDgWRHpxkjEzJPgnJr3EjnKLjbwO+UYy+EwBlGs3A=="],
 
     "@capacitor/preferences": ["@capacitor/preferences@7.0.4", "", { "peerDependencies": { "@capacitor/core": ">=7.0.0" } }, "sha512-TJhkwaI2RCs/iDC9PjNczZV4h6JM4gUtTuKMeFdy0OwGgFEHf4TrtW2mFMc1TnPDalYQ91p9NT+UKgiJs9/xtg=="],
@@ -243,8 +239,6 @@
     "@capacitor/status-bar": ["@capacitor/status-bar@7.0.6", "", { "peerDependencies": { "@capacitor/core": ">=7.0.0" } }, "sha512-7AVqj46b26QikImQzWfsJmzG8NUJZBGkrVSuoeTo+SX/YH3hXH0MqwwFgMqMGHfa/BICDgSvTjM9miVFlq0+RQ=="],
 
     "@capacitor/synapse": ["@capacitor/synapse@1.0.4", "", {}, "sha512-/C1FUo8/OkKuAT4nCIu/34ny9siNHr9qtFezu4kxm6GY1wNFxrCFWjfYx5C1tUhVGz3fxBABegupkpjXvjCHrw=="],
-
-    "@capacitor/toast": ["@capacitor/toast@7.0.4", "", { "peerDependencies": { "@capacitor/core": ">=7.0.0" } }, "sha512-0odSSzgKHhIyszjE9PhzQkYO+0ELNGm9HcZeO5hWYUXSYWlxkYIkzhDnK7h4QyJcgpL3/kwlLYGH2MahvYWSJw=="],
 
     "@csstools/color-helpers": ["@csstools/color-helpers@6.1.0", "", {}, "sha512-064IFJdjTfUqnjpCVpMOdbr8FLQBhinbZj6yRv2An2E41O/pLEXqfFRWqGq/SxlE5PEUYTlvWsG2r8MswAVvkg=="],
 

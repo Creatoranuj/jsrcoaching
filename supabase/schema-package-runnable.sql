@@ -1154,6 +1154,10 @@ CREATE INDEX user_subscriptions_status_idx ON public.user_subscriptions USING bt
 CREATE INDEX user_subscriptions_user_idx ON public.user_subscriptions USING btree (user_id);
 
 -- ==== FUNCTIONS ====
+-- Functions are emitted alphabetically; SQL-language bodies reference functions
+-- defined later (e.g. has_role), so skip body validation while creating them
+-- (same thing pg_dump does).
+SET check_function_bodies = off;
 CREATE OR REPLACE FUNCTION public.audit_leads_access()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -2092,6 +2096,8 @@ AS $function$
   )
 $function$
 ;
+
+RESET check_function_bodies;
 
 -- ==== TRIGGERS ====
 CREATE TRIGGER enforce_message_recipient_readonly_trg BEFORE UPDATE ON public.messages FOR EACH ROW EXECUTE FUNCTION enforce_message_recipient_readonly();

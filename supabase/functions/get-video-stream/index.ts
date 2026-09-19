@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { requireUser } from "../_shared/auth.ts";
+import { isRateLimited, rateLimitedResponse } from "../_shared/rateLimit.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { buildCorsHeaders } from "../_shared/cors.ts";
 
@@ -63,7 +64,7 @@ async function refreshInstances(): Promise<void> {
           .filter((d: PipedInstanceEntry) => d.api_url && (d.uptime_24h ?? 0) > 90)
           .sort((a: PipedInstanceEntry, b: PipedInstanceEntry) => (b.uptime_24h || 0) - (a.uptime_24h || 0))
           .map((d: PipedInstanceEntry) => {
-            try { return new URL(d.api_url).origin; } catch { return null; }
+            try { return new URL(d.api_url ?? "").origin; } catch { return null; }
           })
           .filter(Boolean) as string[];
         if (apis.length > 0) {
@@ -373,6 +374,15 @@ serve(async (req: Request) => {
 
   const auth = await requireUser(req, corsHeaders);
   if (!auth.ok) return auth.response;
+
+  // AUDIT 2026-09-19: per-user throttle. A logged-in student could otherwise
+  // hammer this endpoint to mint unlimited signed stream URLs (CDN bandwidth
+  // cost + bulk-download tooling). 20/min is far above real playback needs
+  // (one call per lesson open; the player caches the URL for its lifetime).
+  if (await isRateLimited({ bucket: "get_video_stream", userId: auth.userId, max: 20, windowSeconds: 60 })) {
+    return rateLimitedResponse(corsHeaders, 60);
+  }
+
 
 
   try {

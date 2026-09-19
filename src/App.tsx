@@ -122,6 +122,7 @@ const AdminLiveManager = lazyWithRetry(() => import("./pages/AdminLiveManager"))
 const AdminChatbotSettings = lazyWithRetry(() => import("./pages/AdminChatbotSettings"));
 const AdminAnalytics = lazyWithRetry(() => import("./pages/AdminAnalytics"));
 const AdminTrustedHosts = lazyWithRetry(() => import("./pages/AdminTrustedHosts"));
+const AdminAppUpdate = lazyWithRetry(() => import("./pages/AdminAppUpdate"));
 const AdminPdfHealth = lazyWithRetry(() => import("./pages/AdminPdfHealth"));
 const AdminAiHealth = lazyWithRetry(() => import("./pages/AdminAiHealth"));
 const AdminUsers = lazyWithRetry(() => import("./pages/AdminUsers"));
@@ -378,6 +379,7 @@ const App = () => (
                     <Route path="/admin/chatbot" element={<AdminRoute element={<AdminChatbotSettings />} />} />
                     <Route path="/admin/analytics" element={<AdminRoute element={<AdminAnalytics />} />} />
                     <Route path="/admin/trusted-hosts" element={<AdminRoute element={<AdminTrustedHosts />} />} />
+                    <Route path="/admin/app-update" element={<AdminRoute element={<AdminAppUpdate />} />} />
                     <Route path="/admin/pdf-health" element={<AdminRoute element={<AdminPdfHealth />} />} />
                     <Route path="/admin/ai-health" element={<AdminRoute element={<AdminAiHealth />} />} />
                     <Route path="/admin/security" element={<AdminRoute element={<AdminSecurity />} />} />

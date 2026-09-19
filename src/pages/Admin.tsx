@@ -841,6 +841,7 @@ const Admin = () => {
                   <Button variant="outline" onClick={() => navigate('/admin/quiz')} className="gap-2"><ExternalLink className="h-4 w-4" /> Quiz Manager</Button>
                   <Button variant="outline" onClick={() => navigate('/admin/study-materials')} className="gap-2"><Plus className="h-4 w-4" /> Study Materials</Button>
                   <Button variant="outline" onClick={() => navigate('/admin/trusted-hosts')} className="gap-2"><ShieldAlert className="h-4 w-4" /> Trusted Hosts / CSP</Button>
+                  <Button variant="outline" onClick={() => navigate('/admin/app-update')} className="gap-2"><ShieldAlert className="h-4 w-4" /> App Update & Notification</Button>
                   <Button variant="outline" onClick={() => navigate('/admin/pdf-health')} className="gap-2"><ShieldAlert className="h-4 w-4" /> PDF Source Health</Button>
                   <Button variant="outline" onClick={() => navigate('/admin/ai-health')} className="gap-2"><ShieldAlert className="h-4 w-4" /> AI Health / Diagnostics</Button>
                   <Button variant="outline" onClick={() => navigate('/admin/security')} className="gap-2"><ShieldAlert className="h-4 w-4" /> Dependency Security Scan</Button>

@@ -17,6 +17,7 @@ import { buildCorsHeaders } from "../_shared/cors.ts";
 import { errorResponse, internalError } from "../_shared/errors.ts";
 import { reportError } from "../_shared/errorReporting.ts";
 import { isSafeRelPath, isUuid, isOneOf, isText, readJson } from "../_shared/validate.ts";
+import { isRateLimited } from "../_shared/rateLimit.ts";
 
 const ALLOWED_PREFIXES = [
   "course-videos/",
@@ -142,6 +143,15 @@ serve(async (req) => {
     if (action === "stream-url") {
       const auth = await requireUser(req, corsHeaders);
       if (!auth.ok) return auth.response;
+
+      // AUDIT 2026-09-19: per-user throttle on signed-URL minting. Without it
+      // one account could script-download an entire course (CDN egress cost
+      // + content leak). 60/min comfortably covers PDF flip-through + video
+      // seeks; the client caches each URL until it expires.
+      if (await isRateLimited({ bucket: "bunny_stream_url", userId: auth.userId, max: 60, windowSeconds: 60 })) {
+        return errorResponse("RATE_LIMITED", corsHeaders);
+      }
+
 
       const { fileName } = body;
       if (!isSafeRelPath(fileName)) {
