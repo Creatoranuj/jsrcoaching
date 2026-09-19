@@ -63,24 +63,49 @@ export function useLessonChat(
       if (!currentLesson) throw new Error("No lesson context");
       const chapterNow = chapters.find((c) => c.id === currentLesson.chapter_id) || null;
 
-      const doCall = () =>
-        supabase.functions.invoke("resolve-doubt", {
-          body: {
-            message,
-            history,
-            lesson: {
-              id: currentLesson.id,
-              title: currentLesson.title,
-              videoUrl: currentLesson.video_url,
-              youtubeId: extractYouTubeId(currentLesson.video_url || ""),
-              description: currentLesson.description || undefined,
-              overview: currentLesson.overview || undefined,
-              transcript: currentLesson.transcript_md || undefined,
-              course: courseTitle || undefined,
-              chapter: chapterNow?.title || undefined,
-            },
-          },
-        });
+      // A silent hang is worse than a clear failure: each attempt gets its own
+      // ceiling and the whole ask gets a hard deadline, so the student never
+      // stares at a spinner forever.
+      const ATTEMPT_TIMEOUT_MS = 20_000;
+      const TOTAL_DEADLINE_MS = 45_000;
+      const startedAt = Date.now();
+      const timedOut = () => Date.now() - startedAt >= TOTAL_DEADLINE_MS;
+
+      type InvokeResult = { data: unknown; error: unknown };
+
+      const doCall = async (): Promise<InvokeResult> => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const remaining = Math.max(1_000, Math.min(ATTEMPT_TIMEOUT_MS, TOTAL_DEADLINE_MS - (Date.now() - startedAt)));
+        try {
+          return await Promise.race<InvokeResult>([
+            supabase.functions.invoke("resolve-doubt", {
+              body: {
+                message,
+                history,
+                lesson: {
+                  id: currentLesson.id,
+                  title: currentLesson.title,
+                  videoUrl: currentLesson.video_url,
+                  youtubeId: extractYouTubeId(currentLesson.video_url || ""),
+                  description: currentLesson.description || undefined,
+                  overview: currentLesson.overview || undefined,
+                  transcript: currentLesson.transcript_md || undefined,
+                  course: courseTitle || undefined,
+                  chapter: chapterNow?.title || undefined,
+                },
+              },
+            }) as Promise<InvokeResult>,
+            new Promise<InvokeResult>((_, reject) => {
+              timer = setTimeout(
+                () => reject(new Error("Answer time se nahi aaya. Thodi der baad dobara try karein.")),
+                remaining,
+              );
+            }),
+          ]);
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+      };
 
       let { data, error: fnErr } = await doCall();
 
@@ -91,8 +116,9 @@ export function useLessonChat(
         const status = (fnErr as { context?: { status?: number } })?.context?.status;
         const transient = apiCode !== "gateway_unauthorized" &&
           (status === undefined || status === 429 || status === 503 || status === 504);
-        if (!transient) break;
+        if (!transient || timedOut()) break;
         await new Promise((r) => setTimeout(r, 900 * 2 ** attempt));
+        if (timedOut()) break;
         ({ data, error: fnErr } = await doCall());
       }
 
