@@ -15,7 +15,7 @@ permissions:
 jobs:
   ping:
     name: Ping Supabase (read-only health check)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Read-only keepalive query
         id: ping
