@@ -1335,11 +1335,10 @@ jobs:
             # Mint a short-lived OIDC token bound to this run/ref/workflow.
             OIDC_JSON=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
               "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${RELEASE_OIDC_AUDIENCE}" || true)
-            OIDC_TOKEN=$(printf '%s' "$OIDC_JSON" | python3 -c 'import json,sys
-try:
-    print(json.load(sys.stdin).get("value",""))
-except Exception:
-    print("")' 2>/dev/null || true)
+            # Single-line python on purpose: a multi-line -c snippet at column 0
+            # breaks out of this YAML block scalar and makes the whole workflow
+            # file invalid (every run then fails to start with zero jobs).
+            OIDC_TOKEN=$(printf '%s' "$OIDC_JSON" | python3 -c 'import json,sys;print((json.load(sys.stdin) or {}).get("value",""))' 2>/dev/null || true)
             if [ -n "$OIDC_TOKEN" ]; then
               echo "::add-mask::$OIDC_TOKEN"
               AUTH_HEADER="x-github-oidc-token: $OIDC_TOKEN"
