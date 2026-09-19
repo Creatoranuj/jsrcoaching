@@ -67,12 +67,28 @@ afterEach(() => {
 });
 
 describe("native checkout launch guards", () => {
-  it("fails fast when the APK has no RazorpayNative bridge", async () => {
+  it("still attempts the native sheet when the availability map says false", async () => {
+    // A false availability reading is unreliable on some Android builds; the
+    // app must try the in-app sheet instead of demoting the student to a browser.
     isPluginAvailable.mockReturnValue(false);
+    openMock.mockResolvedValue({
+      response: {
+        razorpay_payment_id: "pay_1",
+        razorpay_order_id: opts.order_id,
+        razorpay_signature: "sig",
+      },
+    });
+    await expect(openNativeRazorpayCheckout(opts)).resolves.toMatchObject({
+      razorpay_payment_id: "pay_1",
+    });
+    expect(openMock).toHaveBeenCalledOnce();
+  });
+
+  it("reports a missing bridge only when the native call is unimplemented", async () => {
+    openMock.mockRejectedValue(new Error('RazorpayNative does not have an implementation of "open".'));
     await expect(openNativeRazorpayCheckout(opts)).rejects.toBeInstanceOf(
       RazorpayBridgeMissingError,
     );
-    expect(openMock).not.toHaveBeenCalled();
   });
 
   it("throws a launch timeout instead of hanging forever", async () => {
