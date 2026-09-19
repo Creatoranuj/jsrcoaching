@@ -1365,18 +1365,32 @@ jobs:
           # (JSRCoaching.apk) is attached by the release step below, and
           # set-latest-version only accepts URLs under this repo's releases.
           DOWNLOAD_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/JSRCoaching.apk"
-          code=$(curl -sS -o /tmp/setver.json -w '%{http_code}' -X POST \
-            "$BASE/set-latest-version" \
-            -H "Content-Type: application/json" \
-            -H "$AUTH_HEADER" \
-            -d "{\"version\":\"${APP_VERSION_NAME}\",\"platform\":\"android\",\"notes\":\"${NOTES}\",\"download_url\":\"${DOWNLOAD_URL}\"}")
-          echo "set-latest-version HTTP $code"
-          cat /tmp/setver.json || true; echo
+          # Two attempts: a cold edge-function boot or a transient 5xx should
+          # not cost a release its update announcement.
+          code=000
+          for attempt in 1 2; do
+            code=$(curl -sS -o /tmp/setver.json -w '%{http_code}' -X POST \
+              "$BASE/set-latest-version" \
+              -H "Content-Type: application/json" \
+              -H "$AUTH_HEADER" \
+              -d "{\"version\":\"${APP_VERSION_NAME}\",\"platform\":\"android\",\"notes\":\"${NOTES}\",\"download_url\":\"${DOWNLOAD_URL}\"}")
+            echo "set-latest-version attempt ${attempt}: HTTP $code"
+            cat /tmp/setver.json || true; echo
+            [ "$code" = "200" ] && break
+            [ "$attempt" = "1" ] && sleep 5
+          done
           echo "- app_config latest_android_version → ${APP_VERSION_NAME}: HTTP $code" >> "$GITHUB_STEP_SUMMARY"
           echo "- in-app download link → ${DOWNLOAD_URL}" >> "$GITHUB_STEP_SUMMARY"
+          # DELIBERATELY NON-FATAL (2026-09-19): publishing the version is an
+          # ANNOUNCEMENT, not part of producing the artifact. A signed, verified
+          # APK must still be released when this call fails — otherwise the
+          # whole job shows red for a healthy build (that is exactly what
+          # happened on v1.8.6, where set-latest-version was not deployed and
+          # returned HTTP 404). The warning below plus the step summary line
+          # make a missed announcement impossible to overlook.
           if [ "$code" != "200" ]; then
-            echo "::warning::set-latest-version returned HTTP $code — update prompt not refreshed for this release."
-            exit 1
+            echo "::warning::set-latest-version returned HTTP $code — update prompt NOT refreshed for this release. Release itself is unaffected; re-publish the version once the function is deployed (404 = function missing, add the SUPABASE_ACCESS_TOKEN secret so Deploy Functions can ship it)."
+            echo "- ⚠️ update prompt not refreshed (HTTP $code) — release artifacts are unaffected." >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: 🚀 Create GitHub Release
