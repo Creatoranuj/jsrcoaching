@@ -1125,7 +1125,7 @@ jobs:
       # it after an upload step.
       # ─────────────────────────────────────────────────────────────────────
       - name: 🧰 Set up Android build-tools for release verification
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
           packages: 'build-tools;35.0.0 platform-tools'
 
