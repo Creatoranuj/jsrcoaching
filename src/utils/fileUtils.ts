@@ -3,6 +3,7 @@
  * Supports Capacitor native downloads for APK builds
  */
 import { isResolvableStorageViewerUrl, resolveStorageBytes } from "@/lib/native/naveenStoragePdf";
+import { reportError } from "@/lib/sentry";
 
 /** Extract Google Drive file ID from various URL formats */
 export const extractDriveFileId = (url: string): string | null => {
@@ -293,7 +294,7 @@ export const downloadFile = async (
       return;
     } catch (blobErr) {
       const reason = blobErr instanceof Error ? blobErr.message : String(blobErr);
-      console.error("[downloadFile] Native blob fallback failed:", reason);
+      reportError(reason, { surface: "fileUtils.downloadFile.nativeBlobFallback" });
       // On native there is no "open in new tab" — surface a real error.
       throw blobErr instanceof Error ? blobErr : new Error(String(blobErr || lastErr || "Download failed"));
     }

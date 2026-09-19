@@ -1,5 +1,6 @@
 import { Component, ErrorInfo, ReactNode } from "react";
 import { AlertTriangle, RotateCcw } from "lucide-react";
+import { reportError } from "@/lib/sentry";
 
 interface Props {
   children: ReactNode;
@@ -34,7 +35,11 @@ export class PlayerErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
      
-    console.error("[PlayerErrorBoundary]", this.props.context ?? "", error, info.componentStack);
+    reportError(error, {
+      surface: "PlayerErrorBoundary",
+      context: this.props.context ?? "",
+      componentStack: info.componentStack,
+    });
     try {
       window.dispatchEvent(
         new CustomEvent("player-error", {

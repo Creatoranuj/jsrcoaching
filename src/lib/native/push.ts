@@ -1,28 +1,22 @@
 /**
  * Push notifications bootstrap.
  *
- * CURRENT STATE: DISABLED until Firebase is configured.
+ * Firebase project jsr-app-403f6 is configured
+ * (android/app/google-services.json present, package com.jsrcoaching.app),
+ * so PushNotifications.register() is safe to call.
  *
- * The Android app was crashing on "Allow" because `PushNotifications.register()`
- * initializes Firebase Cloud Messaging (FCM), but `android/app/google-services.json`
- * is missing. The native FCM init throws an unrecoverable exception that kills
- * the process — JS try/catch cannot save it. On next launch the OS permission
- * was already "granted", so register() ran again immediately and the app
- * appeared to "not open at all" (instant crash on boot).
- *
- * To re-enable:
- *   1. Create Firebase project at https://console.firebase.google.com
- *   2. Add Android app with package `com.jsrcoaching.app`
- *   3. Download google-services.json → place at android/app/google-services.json
- *   4. git pull → npx cap sync android → rebuild APK
- *   5. Set PUSH_ENABLED = true below
+ * History: before google-services.json existed, register() crashed the
+ * Android process on permission "Allow" (native FCM init throws — JS
+ * try/catch cannot catch it), and the already-granted permission made the
+ * crash loop on every launch. Keep google-services.json in the repo;
+ * removing it reintroduces that crash.
  *
  * See docs/PUSH-SETUP.md for the full walkthrough.
  */
 import { supabase } from "@/integrations/supabase/client";
 
-// Feature flag — flip to true ONLY after google-services.json is in place.
-const PUSH_ENABLED = false;
+// Feature flag — google-services.json is in place, so register() is safe.
+const PUSH_ENABLED = true;
 
 let registered = false;
 
