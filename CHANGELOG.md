@@ -7,6 +7,31 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [v1.8.2] — 2026-09-18
+
+### Fixed
+- **Storage-uploaded course thumbnails / banners / subject icons did not load.**
+  The `content` bucket is private (it also holds enrollment-gated lessons,
+  materials and notes), so the permanent `getPublicUrl()` links used for the
+  five presentation prefixes returned 400. Those paths are now signed like
+  every other object.
+- Storage RLS: added `content_presentation_read`, granting `anon` +
+  `authenticated` SELECT on exactly `courses/`, `thumbnails/`,
+  `hero-banners/`, `chapter-icons/`, `banners/` — so signed-out visitors can
+  load course cards while gated study material stays private.
+- Storage RLS: four admin-manage policies (`content`, `book-covers`,
+  `course-videos`, `notices`) targeted role `public`, so their `has_role()`
+  call was evaluated for `anon` and made **every** anonymous storage request
+  fail with `permission denied for function has_role`. Scoped to
+  `authenticated`.
+
+### Verified (live)
+- Anonymous sign + fetch of `thumbnails/course_35_*.jpg` → HTTP 200, 314 KB.
+- Anonymous sign of `lessons/*` → denied.
+- ESLint 0, `tsc --noEmit` clean, 712 tests passing, build OK, cap sync OK.
+
+---
+
 ## [v1.8.1] — 2026-09-18
 
 Maintenance release. Consolidates the merged audit work (PR #48, #49, #50) and

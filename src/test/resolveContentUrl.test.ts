@@ -53,18 +53,29 @@ describe("resolveContentUrl", () => {
     expect(mocks.__mocks.createSignedUrl).not.toHaveBeenCalled();
   });
 
-  it("returns permanent public URLs for presentation folders (no signing)", async () => {
+  // The `content` bucket is private (it also holds gated study material), so a
+  // getPublicUrl() link into it 400s. Presentation folders are signed instead;
+  // the `content_presentation_read` policy lets anon sign them too.
+  it("signs presentation folder paths instead of using a public CDN URL", async () => {
+    mocks.__mocks.createSignedUrl.mockResolvedValueOnce({
+      data: { signedUrl: "https://signed.example/hero-banners/a.png?token=abc" },
+      error: null,
+    });
     const url =
       "https://wegamscqtvqhxowlskfm.supabase.co/storage/v1/object/public/content/hero-banners/a.png";
     const r = await resolveContentUrl(url);
-    expect(r).toBe("https://cdn.example/public.png");
-    expect(mocks.__mocks.createSignedUrl).not.toHaveBeenCalled();
+    expect(r).toContain("token=abc");
+    expect(mocks.__mocks.getPublicUrl).not.toHaveBeenCalled();
   });
 
-  it("returns public URLs for storage:// presentation URIs", async () => {
+  it("signs storage:// presentation URIs", async () => {
+    mocks.__mocks.createSignedUrl.mockResolvedValueOnce({
+      data: { signedUrl: "https://signed.example/thumbnails/x.png?token=def" },
+      error: null,
+    });
     const r = await resolveContentUrl("storage://content/thumbnails/x.png");
-    expect(r).toBe("https://cdn.example/public.png");
-    expect(mocks.__mocks.createSignedUrl).not.toHaveBeenCalled();
+    expect(r).toContain("token=def");
+    expect(mocks.__mocks.getPublicUrl).not.toHaveBeenCalled();
   });
 
 

@@ -26,22 +26,21 @@ const BUCKET = "content";
 const SIGNED_TTL_SECONDS = 60 * 60; // 1h
 
 /**
- * Presentation-only folders in the `content` bucket. These hold course cards,
- * thumbnails, hero banners and chapter icons — no gated study material — and
- * the bucket serves them over the public CDN. Signing them is both unnecessary
- * and harmful: signing requires a session, so signed-out visitors (and any
- * transient signing failure) fell back to the red PDF placeholder. Return a
- * permanent public URL for these paths instead; gated folders still get signed.
+ * Presentation-only folders in the `content` bucket: course cards, thumbnails,
+ * hero banners and chapter icons — no gated study material.
+ *
+ * The bucket itself is PRIVATE (it also holds enrollment-gated lessons,
+ * materials and notes; a public bucket would serve those to anyone holding the
+ * URL). A `getPublicUrl()` link into a private bucket returns 400, which is why
+ * storage-uploaded thumbnails rendered as broken images. These folders are
+ * therefore signed like everything else; the `content_presentation_read`
+ * storage policy grants `anon` + `authenticated` SELECT on exactly these five
+ * prefixes, so signing succeeds for signed-out visitors too.
  */
 const PUBLIC_FOLDERS = ["courses", "thumbnails", "hero-banners", "chapter-icons", "banners"];
 
-function isPublicPath(path: string): boolean {
+export function isPresentationPath(path: string): boolean {
   return PUBLIC_FOLDERS.includes(path.split("/")[0]);
-}
-
-function publicUrlFor(path: string): string | null {
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
-  return data?.publicUrl || null;
 }
 
 /**
@@ -168,8 +167,9 @@ export async function resolveContentUrl(
   const path = extractContentPath(url);
   if (!path) return url; // Not a `content` bucket URL — pass through.
 
-  // Presentation images: permanent public CDN URL, no session required.
-  if (isPublicPath(path)) return (await contentBucketExists()) ? publicUrlFor(path) : null;
+  // Presentation images are signed like gated files, but must not fire a doomed
+  // request when the bucket itself is gone (post project-migration state).
+  if (isPresentationPath(path) && !(await contentBucketExists())) return null;
 
 
 
@@ -203,13 +203,13 @@ export async function resolveContentUrls(
   const out: Array<string | null> = new Array(urls.length).fill(null);
   const gatedIndexByPath = new Map<string, number[]>();
   const pathsToSign: string[] = [];
-  const publicSlots: Array<[number, string]> = [];
+  let hasPresentationPath = false;
 
   urls.forEach((url, i) => {
     if (!url) return;
     const path = extractContentPath(url);
     if (!path) { out[i] = url; return; }
-    if (isPublicPath(path)) { publicSlots.push([i, path]); return; }
+    if (isPresentationPath(path)) hasPresentationPath = true;
 
     const existing = gatedIndexByPath.get(path);
     if (existing) { existing.push(i); return; }
@@ -217,10 +217,9 @@ export async function resolveContentUrls(
     pathsToSign.push(path);
   });
 
-  // One bucket probe covers every public slot in this batch (cached per session).
-  if (publicSlots.length > 0 && (await contentBucketExists())) {
-    publicSlots.forEach(([i, path]) => { out[i] = publicUrlFor(path); });
-  }
+  // One bucket probe covers the whole batch (cached per session): a missing
+  // bucket means every card paints its placeholder with zero extra requests.
+  if (hasPresentationPath && !(await contentBucketExists())) return out;
 
 
   if (pathsToSign.length === 0) return out;
