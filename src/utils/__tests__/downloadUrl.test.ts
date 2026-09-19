@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   APP_DOWNLOAD_ENDPOINT,
+  LATEST_APK_FALLBACK,
   isAllowedUpdateUrl,
   isGitHubReleaseAsset,
   resolveUpdateDownloadUrl,
@@ -44,12 +45,11 @@ describe("update download URL allow-list", () => {
     }
   });
 
-  it("routes release assets through the stable endpoint", () => {
-    expect(
-      resolveUpdateDownloadUrl(
-        "https://github.com/Creatoranuj/jsrcoaching/releases/download/v1.8.4/JSRCoaching.apk",
-      ),
-    ).toBe(APP_DOWNLOAD_ENDPOINT);
+  it("uses the CI-published release asset for the announced version", () => {
+    const asset =
+      "https://github.com/Creatoranuj/jsrcoaching/releases/download/v1.8.4/JSRCoaching.apk";
+    expect(resolveUpdateDownloadUrl(asset)).toBe(asset);
+    expect(isGitHubReleaseAsset(asset)).toBe(true);
   });
 
   it("keeps an admin store link as-is", () => {
@@ -58,9 +58,13 @@ describe("update download URL allow-list", () => {
     expect(isGitHubReleaseAsset(store)).toBe(false);
   });
 
-  it("falls back to the stable endpoint for junk or missing config", () => {
-    expect(resolveUpdateDownloadUrl(null)).toBe(APP_DOWNLOAD_ENDPOINT);
-    expect(resolveUpdateDownloadUrl("javascript:alert(1)")).toBe(APP_DOWNLOAD_ENDPOINT);
-    expect(resolveUpdateDownloadUrl("https://evil.example.com/x.apk")).toBe(APP_DOWNLOAD_ENDPOINT);
+  it("falls back to the newest release for junk or missing config", () => {
+    expect(resolveUpdateDownloadUrl(null)).toBe(LATEST_APK_FALLBACK);
+    expect(resolveUpdateDownloadUrl("javascript:alert(1)")).toBe(LATEST_APK_FALLBACK);
+    expect(resolveUpdateDownloadUrl("https://evil.example.com/x.apk")).toBe(LATEST_APK_FALLBACK);
+  });
+
+  it("still exposes a stable public download endpoint", () => {
+    expect(APP_DOWNLOAD_ENDPOINT).toMatch(/\/functions\/v1\/app-download$/);
   });
 });
