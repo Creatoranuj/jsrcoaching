@@ -8,6 +8,7 @@ import { isUpdateRequired, isUpdateAvailable } from "@/utils/version";
 import { loadCapacitorApp } from "@/lib/native/app";
 import { openResource } from "@/lib/openResource";
 import { resolveUpdateDownloadUrl } from "@/utils/downloadUrl";
+import { fetchLatestReleaseVersion } from "@/utils/latestRelease";
 import { logger } from "@/lib/logger";
 
 interface AppConfigRow {
@@ -145,6 +146,19 @@ export const ForceUpdateGate = ({ children }: { children: ReactNode }) => {
     retry: 1,
   });
 
+  // Safety net: if CI could not publish the new version into app_config, the
+  // column goes stale and nobody gets nudged. GitHub's public "latest release"
+  // is the same fact from the source of truth, so we use it for the SOFT nudge
+  // only — a forced update still comes from the database.
+  const { data: releaseVersion } = useQuery<string | null>({
+    queryKey: ["latest_release_version"],
+    queryFn: () => fetchLatestReleaseVersion(),
+    enabled: isNative,
+    staleTime: 1000 * 60 * 60 * 6, // 6 hours
+    gcTime: 1000 * 60 * 60 * 24,
+    retry: 0,
+  });
+
   // Evaluate the gate whenever cfg or version changes.
   useEffect(() => {
     if (!isNative) return;
@@ -154,7 +168,12 @@ export const ForceUpdateGate = ({ children }: { children: ReactNode }) => {
     try {
       const platform = /iPad|iPhone|iPod/.test(navigator.userAgent) ? "ios" : "android";
       const min = platform === "ios" ? cfg.min_ios_version : cfg.min_android_version;
-      const latest = platform === "ios" ? cfg.latest_ios_version : cfg.latest_android_version;
+      const published = platform === "ios" ? cfg.latest_ios_version : cfg.latest_android_version;
+      // Prefer whichever is actually newer than the installed build.
+      const latest =
+        platform === "android" && releaseVersion && isUpdateAvailable(published || "0.0.0", releaseVersion)
+          ? releaseVersion
+          : published;
 
       setConfig(cfg);
       setTargetVersion(latest || min || "");
@@ -176,7 +195,7 @@ export const ForceUpdateGate = ({ children }: { children: ReactNode }) => {
       logger.warn("[ForceUpdateGate] version check failed, failing open", err);
       setMode("none");
     }
-  }, [fetchedCfg, currentVersion, isNative]);
+  }, [fetchedCfg, currentVersion, isNative, releaseVersion]);
 
   const openStore = useCallback(async () => {
     const { Capacitor } = await import("@capacitor/core").catch(() => ({
