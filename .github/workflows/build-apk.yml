@@ -53,6 +53,9 @@ env:
 
 permissions:
   contents: write
+  # Lets the "Publish latest version to app_config" step mint a GitHub OIDC
+  # token; set-latest-version verifies it instead of a shared RELEASE_TOKEN.
+  id-token: write
   # Needed by the "Auto-delete old artifacts" step. Without this the
   # cleanup step hits `gh: Resource not accessible by integration (HTTP 403)`
   # and the failure shows up as a job annotation even though the step is
@@ -124,14 +127,17 @@ jobs:
             echo "IS_MANUAL=false" >> $GITHUB_ENV
           fi
           # Numeric versionName for Android (consumed by build.gradle).
-          # MUST be in X.Y[.Z] form because ForceUpdateGate compares it
-          # numerically against app_config.min_android_version. Bump the
-          # patch segment with the CI run number so each build is unique.
-          # Prefer the tag (v1.2.3 → 1.2.3) so the installed APK's Settings
-          # → About version matches the GitHub Release tag. Fall back to
-          # run-number scheme for manual/main runs where VERSION is generated.
+          # MUST be dotted-numeric (2-4 segments) because ForceUpdateGate
+          # compares it segment-wise against app_config.min_android_version.
+          # Prefer the tag (v1.2.3 → 1.2.3, v2026.09.17.4 → 2026.09.17.4) so
+          # the installed APK's Settings → About version matches the GitHub
+          # Release tag AND the value set-latest-version publishes. Fall back
+          # to run-number scheme for manual/main runs where VERSION is generated.
+          # AUDIT 2026-09-19: calendar tags (v2026.09.17.4) used to fall through
+          # to "1.0.<run>" so the shipped APK never matched the announced
+          # latest version → the update prompt could loop. Fixed: 2-4 segments.
           RAW="${VERSION#v}"
-          if [[ "$RAW" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+          if [[ "$RAW" =~ ^[0-9]+(\.[0-9]+){1,3}$ ]]; then
             APP_VERSION_NAME="$RAW"
           else
             APP_VERSION_NAME="1.0.${GITHUB_RUN_NUMBER:-0}"
@@ -142,11 +148,12 @@ jobs:
           # wherever the value lands on a filesystem or an artifact `name:`.
           SAFE_VERSION="$(printf '%s' "${VERSION}" | tr '/\\:<>|*?"' '-')"
           echo "SAFE_VERSION=${SAFE_VERSION}" >> $GITHUB_ENV
-          # Guard: on a real vX.Y.Z tag, versionName MUST equal the tag.
-          if [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ && "v$APP_VERSION_NAME" != "$VERSION" ]]; then
+          # Guard: on a real numeric tag, versionName MUST equal the tag.
+          if [[ "$VERSION" =~ ^v[0-9]+(\.[0-9]+){1,3}$ && "v$APP_VERSION_NAME" != "$VERSION" ]]; then
             echo "❌ tag/versionName mismatch: tag=$VERSION, versionName=$APP_VERSION_NAME"
             exit 1
           fi
+          echo "- versionName: \`${APP_VERSION_NAME}\` (from ${VERSION})" >> "$GITHUB_STEP_SUMMARY"
 
       - name: 🔖 Create git tag (manual runs only)
         if: env.IS_MANUAL == 'true'
@@ -293,6 +300,26 @@ jobs:
       # which is ~10x slower on this codebase.
       - name: 🔎 TypeScript typecheck (tsgo)
         run: bun run typecheck
+
+      # AUDIT 2026-09-19: package.json "version" is inert at runtime (the APK,
+      # the update prompt and nb-build.json all use the tag) but it drifted to
+      # 1.8.2 while releases were v2026.09.x, which confused every audit tool
+      # that reads it. Stamp it with the shipped versionName for this build
+      # (workspace only — never committed) after install/lockfile checks so
+      # the lockfile gate is unaffected.
+      - name: 🔢 Stamp package.json version with the release versionName
+        run: |
+          node -e '
+            const fs = require("fs");
+            const p = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            const before = p.version;
+            p.version = process.env.APP_VERSION_NAME;
+            fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");
+            console.log(`package.json version: ${before} → ${p.version}`);
+          '
+          echo "- package.json version stamped: \`${APP_VERSION_NAME}\`" >> "$GITHUB_STEP_SUMMARY"
+
+
 
 
 
@@ -1266,6 +1293,84 @@ jobs:
           set -e
           python3 .github/scripts/gdrive_upload.py "$GDRIVE_FOLDER_ID" "$APK_FILE" "$AAB_FILE"
           echo "- Drive upload attempted for APK/AAB (JSR Coaching Builds folder)." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 📣 Publish latest version to app_config
+        # Tells the in-app update prompt which version is newest. Never touches
+        # force_update or the minimum supported version - a mandatory update
+        # stays a deliberate admin decision in /admin/app-update.
+        #
+        # AUDIT 2026-09-19: zero-secret flow. The workflow mints a GitHub OIDC
+        # token (permissions.id-token: write) and set-latest-version verifies it
+        # against GitHub's JWKS + pins repo/workflow/ref/tag. RELEASE_TOKEN is
+        # only a legacy fallback and no longer needs to exist as a secret.
+        # SUPABASE_FUNCTIONS_URL is optional too — derived from VITE_SUPABASE_URL.
+        continue-on-error: true
+        env:
+          SUPABASE_FUNCTIONS_URL: ${{ vars.SUPABASE_FUNCTIONS_URL }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          RELEASE_OIDC_AUDIENCE: ${{ vars.RELEASE_OIDC_AUDIENCE || 'jsr-coaching-release' }}
+          VERSION: ${{ env.VERSION }}
+          APP_VERSION_NAME: ${{ env.APP_VERSION_NAME }}
+        run: |
+          set -e
+          # Only real tag releases announce a new version. Manual/QA builds
+          # (VERSION like "manual-123") must never move the update prompt.
+          if [[ ! "$VERSION" =~ ^v[0-9]+(\.[0-9]+){1,3}$ ]]; then
+            echo "- app_config publish skipped: '$VERSION' is not a release tag (QA build)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          BASE="${SUPABASE_FUNCTIONS_URL:-}"
+          if [ -z "$BASE" ] && [ -n "${VITE_SUPABASE_URL:-}" ]; then
+            BASE="${VITE_SUPABASE_URL%/}/functions/v1"
+          fi
+          if [ -z "$BASE" ]; then
+            BASE="https://wegamscqtvqhxowlskfm.supabase.co/functions/v1"
+          fi
+          BASE="${BASE%/}"
+
+          AUTH_HEADER=""
+          if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] && [ -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
+            # Mint a short-lived OIDC token bound to this run/ref/workflow.
+            OIDC_JSON=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${RELEASE_OIDC_AUDIENCE}" || true)
+            OIDC_TOKEN=$(printf '%s' "$OIDC_JSON" | python3 -c 'import json,sys
+try:
+    print(json.load(sys.stdin).get("value",""))
+except Exception:
+    print("")' 2>/dev/null || true)
+            if [ -n "$OIDC_TOKEN" ]; then
+              echo "::add-mask::$OIDC_TOKEN"
+              AUTH_HEADER="x-github-oidc-token: $OIDC_TOKEN"
+              echo "Auth: GitHub OIDC (audience $RELEASE_OIDC_AUDIENCE)"
+            else
+              echo "::warning::Could not mint GitHub OIDC token (id-token permission missing?)"
+            fi
+          fi
+          if [ -z "$AUTH_HEADER" ] && [ -n "${RELEASE_TOKEN:-}" ]; then
+            AUTH_HEADER="x-release-token: $RELEASE_TOKEN"
+            echo "Auth: legacy RELEASE_TOKEN"
+          fi
+          if [ -z "$AUTH_HEADER" ]; then
+            echo "::warning::No OIDC token and no RELEASE_TOKEN; skipped app_config version publish."
+            echo "- app_config publish skipped: no credentials available." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          NOTES="Release ${VERSION} (build #${GITHUB_RUN_NUMBER})"
+          code=$(curl -sS -o /tmp/setver.json -w '%{http_code}' -X POST \
+            "$BASE/set-latest-version" \
+            -H "Content-Type: application/json" \
+            -H "$AUTH_HEADER" \
+            -d "{\"version\":\"${APP_VERSION_NAME}\",\"platform\":\"android\",\"notes\":\"${NOTES}\"}")
+          echo "set-latest-version HTTP $code"
+          cat /tmp/setver.json || true; echo
+          echo "- app_config latest_android_version → ${APP_VERSION_NAME}: HTTP $code" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" != "200" ]; then
+            echo "::warning::set-latest-version returned HTTP $code — update prompt not refreshed for this release."
+            exit 1
+          fi
 
       - name: 🚀 Create GitHub Release
         # No `if:` — VERSION is always set (tag ref OR generated in the

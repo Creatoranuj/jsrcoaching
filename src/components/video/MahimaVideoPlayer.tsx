@@ -6,6 +6,7 @@ import { lockOrientation, unlockOrientation } from '../../lib/screenOrientation'
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAutoHideControls } from './hooks/useAutoHideControls';
+import { usePauseWhenHidden } from '../../hooks/usePauseWhenHidden';
 import playButtonIcon from '../../assets/icons/play-button.svg';
 import { SkipIcon } from './SkipIcon';
 
@@ -37,6 +38,9 @@ const MahimaVideoPlayer: React.FC<MahimaVideoPlayerProps> = ({ videoUrl, onEnded
 
   // Player state
   const [playing, setPlaying] = useState(false);
+
+  // Pause when the tab/app goes to the background (mobile background-audio leak fix).
+  usePauseWhenHidden(useCallback(() => setPlaying(false), []));
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(0.8);
   const [watermarkFaded, setWatermarkFaded] = useState(false);

@@ -1,5 +1,6 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { buildCorsHeaders } from "../_shared/cors.ts";
+import { isRateLimited, rateLimitedResponse } from "../_shared/rateLimit.ts";
 
 Deno.serve(async (req) => {
   const corsHeaders = buildCorsHeaders(req);
@@ -37,6 +38,13 @@ Deno.serve(async (req) => {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // AUDIT 2026-09-19: per-user throttle. This resolves lesson media into
+    // signed URLs; unthrottled, one account could enumerate/download a whole
+    // course. 60/min is well above normal navigation.
+    if (await isRateLimited({ bucket: "get_lesson_url", userId: user.id, max: 60, windowSeconds: 60 })) {
+      return rateLimitedResponse(corsHeaders, 60);
     }
 
     const body = await req.json().catch(() => ({}));
@@ -162,7 +170,7 @@ Deno.serve(async (req) => {
  * Regular URLs pass through unchanged.
  */
 async function resolveUrls(
-  serviceClient: ReturnType<typeof createClient>,
+  serviceClient: SupabaseClient,
   videoUrl: string | null,
   classPdfUrl: string | null
 ): Promise<{ video_url: string | null; class_pdf_url: string | null }> {
@@ -173,7 +181,7 @@ async function resolveUrls(
 }
 
 async function resolveStoragePath(
-  serviceClient: ReturnType<typeof createClient>,
+  serviceClient: SupabaseClient,
   url: string
 ): Promise<string> {
   if (!url.startsWith("storage://")) {

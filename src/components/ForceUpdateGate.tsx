@@ -1,24 +1,34 @@
-import { useEffect, useState, ReactNode } from "react";
+import { useEffect, useState, ReactNode, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle } from "lucide-react";
-import { isUpdateRequired } from "@/utils/version";
+import { AlertTriangle, Sparkles } from "lucide-react";
+import { isUpdateRequired, isUpdateAvailable } from "@/utils/version";
 import { loadCapacitorApp } from "@/lib/native/app";
 import { openResource } from "@/lib/openResource";
-
+import { logger } from "@/lib/logger";
 
 interface AppConfigRow {
   min_android_version: string;
   min_ios_version: string;
+  latest_android_version: string;
+  latest_ios_version: string;
   android_store_url: string | null;
   ios_store_url: string | null;
   update_message: string;
+  update_notes: string | null;
+  force_update: boolean;
 }
 
-const LS_KEY = "nb:app_config:v1";
+const LS_KEY = "nb:app_config:v2";
 const LS_MAX_AGE_MS = 1000 * 60 * 60 * 24; // 24h
+/** Optional-update snooze, scoped per target version so a new release re-asks. */
+const SNOOZE_PREFIX = "nb:update_snooze:";
+const SNOOZE_MS = 1000 * 60 * 60 * 24; // 24h
+
+/** none = up to date, optional = dismissible nudge, required = hard block. */
+type UpdateMode = "none" | "optional" | "required";
 
 const isNativePlatform = async () => {
   try {
@@ -49,9 +59,29 @@ const writeCachedConfig = (data: AppConfigRow) => {
   }
 };
 
+const isSnoozed = (version: string): boolean => {
+  try {
+    const raw = localStorage.getItem(SNOOZE_PREFIX + version);
+    if (!raw) return false;
+    const ts = Number(raw);
+    return Number.isFinite(ts) && Date.now() - ts < SNOOZE_MS;
+  } catch {
+    return false;
+  }
+};
+
+const snooze = (version: string) => {
+  try {
+    localStorage.setItem(SNOOZE_PREFIX + version, String(Date.now()));
+  } catch {
+    /* ignore quota errors */
+  }
+};
+
 export const ForceUpdateGate = ({ children }: { children: ReactNode }) => {
-  const [blocked, setBlocked] = useState(false);
+  const [mode, setMode] = useState<UpdateMode>("none");
   const [config, setConfig] = useState<AppConfigRow | null>(null);
+  const [targetVersion, setTargetVersion] = useState<string>("");
   // null = not yet loaded. We MUST NOT evaluate the version gate until this
   // resolves, otherwise the dialog flashes for one frame on cold start.
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
@@ -76,7 +106,6 @@ export const ForceUpdateGate = ({ children }: { children: ReactNode }) => {
       .then(({ plugin: App }) => App.getInfo())
       .then((info) => setCurrentVersion(info.version || "0.0.0"))
       .catch(() => setCurrentVersion("0.0.0"));
-
   }, [isNative]);
 
   // Fetch + cache app_config via React Query (1h staleTime, 24h gc).
@@ -86,7 +115,7 @@ export const ForceUpdateGate = ({ children }: { children: ReactNode }) => {
       const { data, error } = await supabase
         .from("app_config")
         .select(
-          "min_android_version,min_ios_version,android_store_url,ios_store_url,update_message"
+          "min_android_version,min_ios_version,latest_android_version,latest_ios_version,android_store_url,ios_store_url,update_message,update_notes,force_update"
         )
         .eq("id", 1)
         .maybeSingle();
@@ -101,7 +130,7 @@ export const ForceUpdateGate = ({ children }: { children: ReactNode }) => {
     retry: 1,
   });
 
-  // Evaluate block whenever cfg or version changes.
+  // Evaluate the gate whenever cfg or version changes.
   useEffect(() => {
     if (!isNative) return;
     if (currentVersion === null) return; // wait for real version
@@ -110,36 +139,55 @@ export const ForceUpdateGate = ({ children }: { children: ReactNode }) => {
     try {
       const platform = /iPad|iPhone|iPod/.test(navigator.userAgent) ? "ios" : "android";
       const min = platform === "ios" ? cfg.min_ios_version : cfg.min_android_version;
-      if (isUpdateRequired(currentVersion, min)) {
-        setConfig(cfg);
-        setBlocked(true);
-      } else {
-        setBlocked(false);
+      const latest = platform === "ios" ? cfg.latest_ios_version : cfg.latest_android_version;
+
+      setConfig(cfg);
+      setTargetVersion(latest || min || "");
+
+      // Hard block: below the minimum supported build, or the admin flipped
+      // force_update on while a newer build exists.
+      if (isUpdateRequired(currentVersion, min) || (cfg.force_update && isUpdateAvailable(currentVersion, latest))) {
+        setMode("required");
+        return;
       }
+      // Soft nudge: a newer build exists and the user has not snoozed it.
+      if (isUpdateAvailable(currentVersion, latest) && !isSnoozed(latest)) {
+        setMode("optional");
+        return;
+      }
+      setMode("none");
     } catch (err) {
-      console.warn("[ForceUpdateGate] Version check failed, failing open:", err);
+      // Never let a version-check bug lock students out of the app.
+      logger.warn("[ForceUpdateGate] version check failed, failing open", err);
+      setMode("none");
     }
   }, [fetchedCfg, currentVersion, isNative]);
 
-  const openStore = async () => {
-    const { Capacitor } = await import("@capacitor/core").catch(() => ({ Capacitor: null as typeof import("@capacitor/core").Capacitor | null }));
+  const openStore = useCallback(async () => {
+    const { Capacitor } = await import("@capacitor/core").catch(() => ({
+      Capacitor: null as typeof import("@capacitor/core").Capacitor | null,
+    }));
     const platform = Capacitor?.getPlatform?.() ?? (/iPad|iPhone|iPod/.test(navigator.userAgent) ? "ios" : "android");
-    const url =
-      platform === "ios"
-        ? config?.ios_store_url
-        : config?.android_store_url;
+    const url = platform === "ios" ? config?.ios_store_url : config?.android_store_url;
     // Scheme allowlist — store URLs live in DB and must never be javascript:/data:.
     if (typeof url === "string" && url.startsWith("https://")) {
       void openResource({ url, kind: "link" });
     } else {
-      console.warn("[ForceUpdateGate] Blocked non-https store URL:", url);
+      logger.warn("[ForceUpdateGate] blocked non-https store URL", undefined, { url });
     }
-  };
+  }, [config]);
+
+  const dismissOptional = useCallback(() => {
+    if (targetVersion) snooze(targetVersion);
+    setMode("none");
+  }, [targetVersion]);
 
   return (
     <>
       {children}
-      <Dialog open={blocked}>
+
+      {/* Mandatory update — no way out except updating. */}
+      <Dialog open={mode === "required"}>
         <DialogContent
           className="max-w-sm sm:max-w-md [&>button]:hidden"
           onPointerDownOutside={(e) => e.preventDefault()}
@@ -159,6 +207,32 @@ export const ForceUpdateGate = ({ children }: { children: ReactNode }) => {
           <Button className="w-full" size="lg" onClick={openStore}>
             Update Now
           </Button>
+        </DialogContent>
+      </Dialog>
+
+      {/* Optional update — dismissible, snoozed for 24h per version. */}
+      <Dialog open={mode === "optional"} onOpenChange={(open) => { if (!open) dismissOptional(); }}>
+        <DialogContent className="max-w-sm sm:max-w-md">
+          <DialogHeader>
+            <div className="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
+              <Sparkles className="w-6 h-6 text-primary" />
+            </div>
+            <DialogTitle className="text-center">
+              Naya version {targetVersion ? `(${targetVersion})` : ""} aa gaya hai
+            </DialogTitle>
+            <DialogDescription className="text-center">
+              {config?.update_notes ||
+                "Nayi suvidhaen aur zaroori sudhaar. Behtar experience ke liye update karein."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-2">
+            <Button className="w-full" size="lg" onClick={openStore}>
+              Update karein
+            </Button>
+            <Button className="w-full" variant="ghost" onClick={dismissOptional}>
+              Baad me
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </>

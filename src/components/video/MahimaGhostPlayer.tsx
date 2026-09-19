@@ -11,6 +11,7 @@ import SeekBar from "./SeekBar";
 import birdLogo from "../../assets/branding/jsr-mark.webp";
 const nbBirdLogo = birdLogo;
 import { useOrientation } from "../../hooks/useOrientation";
+import { usePauseWhenHidden } from "../../hooks/usePauseWhenHidden";
 import RotatePhoneIcon from "../icons/RotatePhoneIcon";
 import { PlayerTopOverlay } from "./PlayerTopOverlay";
 import { PlayerBrandMasks } from "./PlayerBrandMasks";
@@ -318,6 +319,10 @@ const MahimaGhostPlayer = memo(({
       }
     }
   }, []);
+
+  // Pause when the tab/app goes to the background (mobile background-audio
+  // leak fix). sendCommand no-ops safely when the iframe isn't mounted.
+  usePauseWhenHidden(useCallback(() => sendCommand("pauseVideo"), [sendCommand]));
 
   const playVideo = useCallback(() => {
     if (!playerReady) return;
