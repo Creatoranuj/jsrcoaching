@@ -18,28 +18,40 @@ export type Database = {
         Row: {
           android_store_url: string | null
           id: number
+          force_update: boolean
           ios_store_url: string | null
+          latest_android_version: string
+          latest_ios_version: string
           min_android_version: string
           min_ios_version: string
           update_message: string
+          update_notes: string | null
           updated_at: string
         }
         Insert: {
           android_store_url?: string | null
           id?: number
+          force_update?: boolean
           ios_store_url?: string | null
+          latest_android_version?: string
+          latest_ios_version?: string
           min_android_version?: string
           min_ios_version?: string
           update_message?: string
+          update_notes?: string | null
           updated_at?: string
         }
         Update: {
           android_store_url?: string | null
           id?: number
+          force_update?: boolean
           ios_store_url?: string | null
+          latest_android_version?: string
+          latest_ios_version?: string
           min_android_version?: string
           min_ios_version?: string
           update_message?: string
+          update_notes?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -2656,6 +2668,39 @@ export type Database = {
           id?: string
           is_blocked?: boolean
           mobile?: string | null
+        }
+        Relationships: []
+      }
+      push_notifications_log: {
+        Row: {
+          body: string
+          created_at: string
+          failed_count: number
+          id: string
+          sent_by: string | null
+          sent_count: number
+          target_path: string | null
+          title: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          failed_count?: number
+          id?: string
+          sent_by?: string | null
+          sent_count?: number
+          target_path?: string | null
+          title: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          failed_count?: number
+          id?: string
+          sent_by?: string | null
+          sent_count?: number
+          target_path?: string | null
+          title?: string
         }
         Relationships: []
       }

@@ -1267,6 +1267,31 @@ jobs:
           python3 .github/scripts/gdrive_upload.py "$GDRIVE_FOLDER_ID" "$APK_FILE" "$AAB_FILE"
           echo "- Drive upload attempted for APK/AAB (JSR Coaching Builds folder)." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: 📣 Publish latest version to app_config
+        # Tells the in-app update prompt which version is newest. Never touches
+        # force_update or the minimum supported version - a mandatory update
+        # stays a deliberate admin decision in /admin/app-update.
+        if: ${{ env.SUPABASE_FUNCTIONS_URL != '' }}
+        continue-on-error: true
+        env:
+          SUPABASE_FUNCTIONS_URL: ${{ vars.SUPABASE_FUNCTIONS_URL }}
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          VERSION: ${{ env.VERSION }}
+        run: |
+          set -e
+          if [ -z "$RELEASE_TOKEN" ]; then
+            echo "- RELEASE_TOKEN not set; skipped app_config version publish." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          code=$(curl -s -o /tmp/setver.json -w '%{http_code}' -X POST \
+            "$SUPABASE_FUNCTIONS_URL/set-latest-version" \
+            -H "Content-Type: application/json" \
+            -H "x-release-token: $RELEASE_TOKEN" \
+            -d "{\"version\":\"${VERSION#v}\",\"platform\":\"android\"}")
+          echo "set-latest-version HTTP $code"
+          cat /tmp/setver.json || true
+          echo "- app_config latest_android_version publish: HTTP $code" >> "$GITHUB_STEP_SUMMARY"
+
       - name: 🚀 Create GitHub Release
         # No `if:` — VERSION is always set (tag ref OR generated in the
         # Set version step), so the release step should always run. The old

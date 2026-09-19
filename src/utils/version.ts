@@ -39,3 +39,12 @@ export function isUpdateRequired(current: string, min: string): boolean {
   }
   return false;
 }
+
+/**
+ * True when `latest` is strictly newer than `current` — i.e. an update exists
+ * but is not necessarily mandatory. Same fail-open rules as isUpdateRequired:
+ * an unknown/unparseable version on either side returns false.
+ */
+export function isUpdateAvailable(current: string, latest: string): boolean {
+  return isUpdateRequired(current, latest);
+}
