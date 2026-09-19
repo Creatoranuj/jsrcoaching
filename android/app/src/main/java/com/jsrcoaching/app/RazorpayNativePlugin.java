@@ -2,6 +2,13 @@ package com.jsrcoaching.app;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
+import android.net.Uri;
+
+import com.getcapacitor.JSArray;
+
+import java.util.List;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -114,6 +121,48 @@ public class RazorpayNativePlugin extends Plugin {
         final PluginCall call = takePending();
         if (call == null) return;
         rejectCall(call, code, description);
+    }
+
+    /**
+     * Lists the UPI apps installed on this device that can handle a
+     * `upi://pay` intent (Google Pay, PhonePe, Paytm, BHIM, ...).
+     *
+     * Razorpay's own sheet renders those tiles itself, but the JS layer needs
+     * this list for two reasons:
+     *  1. show the student BEFORE paying which UPI apps will be offered, and
+     *  2. distinguish "no UPI app installed" (offer the UPI-ID/VPA flow) from
+     *     "UPI disabled on the Razorpay account / test key" (owner action).
+     *
+     * Android 11+ package visibility is satisfied by the <queries> block in
+     * AndroidManifest.xml — without it this returns an empty list.
+     */
+    @PluginMethod
+    public void getUpiApps(PluginCall call) {
+        final JSObject out = new JSObject();
+        final JSArray apps = new JSArray();
+        try {
+            final PackageManager pm = getContext().getPackageManager();
+            final Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("upi://pay"));
+            final List<ResolveInfo> matches = pm.queryIntentActivities(intent, 0);
+            for (ResolveInfo info : matches) {
+                if (info == null || info.activityInfo == null) continue;
+                final JSObject app = new JSObject();
+                app.put("packageName", info.activityInfo.packageName);
+                CharSequence label = null;
+                try {
+                    label = info.loadLabel(pm);
+                } catch (Exception ignored) {
+                    // A hostile/broken package must not break the whole list.
+                }
+                app.put("label", label != null ? label.toString() : info.activityInfo.packageName);
+                apps.put(app);
+            }
+        } catch (Exception e) {
+            // Never fail the purchase flow over a diagnostic read.
+            out.put("error", e.getMessage() != null ? e.getMessage() : "upi_query_failed");
+        }
+        out.put("apps", apps);
+        call.resolve(out);
     }
 
     @PluginMethod
