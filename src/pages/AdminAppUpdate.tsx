@@ -225,6 +225,11 @@ export default function AdminAppUpdate() {
                   placeholder="https://jsrcoaching.vercel.app/install"
                   disabled={loading}
                 />
+                <p className="text-xs text-muted-foreground">
+                  Naya APK release hote hi ye link apne aap set ho jata hai. App ka
+                  "Update karein" button hamesha ek sthir link kholta hai jo nayi
+                  release par pahunchata hai — isse haath se badalne ki zaroorat nahi.
+                </p>
               </div>
 
               <div className="space-y-1.5">
