@@ -4,6 +4,7 @@ import { MahimaGhostPlayer, BunnyStreamPlayer, isBunnyStreamUrl, PlayerErrorBoun
 import nbLogo from "../../assets/branding/jsr-mark.webp";
 import birdLogo from "../../assets/branding/jsr-mark.webp";
 import { useOrientation } from "../../hooks/useOrientation";
+import { usePauseWhenHidden } from "../../hooks/usePauseWhenHidden";
 import DriveEmbedViewer from "../course/DriveEmbedViewer";
 import { cn } from "../../lib/utils";
 import { toast } from "sonner";
@@ -64,7 +65,20 @@ const UnifiedVideoPlayer = ({
 }: UnifiedVideoPlayerProps) => {
   const platform = detectPlatform(url);
   const containerRef = useRef<HTMLDivElement>(null);
+  const directVideoRef = useRef<HTMLVideoElement>(null);
+  const vimeoIframeRef = useRef<HTMLIFrameElement>(null);
   const isYouTube = platform === "youtube" || platform === "youtube-live";
+
+  // Pause when the tab/app goes to the background (mobile background-audio
+  // leak fix). Covers the direct <video> and Vimeo iframe paths rendered
+  // below; YouTube/Bunny have their own in-player handling.
+  usePauseWhenHidden(useCallback(() => {
+    directVideoRef.current?.pause();
+    vimeoIframeRef.current?.contentWindow?.postMessage(
+      JSON.stringify({ method: "pause" }),
+      "https://player.vimeo.com",
+    );
+  }, []));
 
   const handleTimeUpdate = useCallback((currentTime: number, duration: number) => {
     if (onProgress) onProgress({ played: currentTime / duration, playedSeconds: currentTime });
@@ -129,6 +143,7 @@ const UnifiedVideoPlayer = ({
     return (
       <div className="relative aspect-video w-full bg-black rounded-xl overflow-hidden" ref={containerRef}>
         <iframe
+          ref={vimeoIframeRef}
           src={`https://player.vimeo.com/video/${getVimeoId(url)}?title=0&byline=0&portrait=0&badge=0&dnt=1`}
           className="w-full h-full border-0"
           allow="autoplay; fullscreen; picture-in-picture"
@@ -147,6 +162,7 @@ const UnifiedVideoPlayer = ({
     return (
       <div className="relative aspect-video w-full bg-black rounded-xl overflow-hidden">
         <video
+          ref={directVideoRef}
           src={url} controls controlsList="nodownload" className="w-full h-full"
           preload="metadata" playsInline
           onContextMenu={(e) => e.preventDefault()} onEnded={onEnded} onCanPlay={() => onReady?.()}

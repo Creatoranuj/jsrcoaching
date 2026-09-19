@@ -32,9 +32,9 @@ export async function requireUser(
   // Fall back to getUser() for older supabase-js versions without getClaims.
   let userId: string | undefined;
   try {
-    // @ts-expect-error - getClaims exists on supabase-js >= 2.45
+    // getClaims is typed on supabase-js >= 2.45 (npm:@supabase/supabase-js@2
+    // resolves well past that); the runtime guard stays for older pins.
     if (typeof client.auth.getClaims === "function") {
-      // @ts-expect-error - getClaims exists on supabase-js >= 2.45
       const { data, error } = await client.auth.getClaims(token);
       if (!error && data?.claims?.sub) userId = data.claims.sub as string;
     }

@@ -1,55 +1,238 @@
 name: Migration Drift Check
 
+# Verifies that the database schema in this repo is reproducible:
+#
+#   1. `supabase/schema-package.sql` (the schema baseline) loads cleanly on the
+#      same Postgres build the live project runs (supabase/postgres 17.6.x),
+#      with the real auth/storage/realtime/graphql schemas and extensions
+#      (pgvector, pg_net, pg_cron, vault) — no hand-made stubs.
+#   2. Migrations are replayed on top of it in order, each in its own
+#      transaction. Files older than the `strict=` marker in `supabase/BASELINE`
+#      are historical (already live) and only reported; files at/after it must
+#      apply cleanly.
+#   3. Security invariants hold on the result (RLS enabled on every public
+#      table; anon cannot write outside the explicit allowlist).
+#
+# Why a baseline instead of replaying the whole `supabase/migrations/` folder:
+# the folder starts mid-history (the very first file already assumes
+# `courses`, `profiles`, … exist), so a from-scratch replay can never pass.
+# Migrations older than the `package=` marker are already contained in the
+# schema package and are intentionally skipped.
+#
+# When you regenerate `supabase/schema-package.sql` from the live project,
+# bump both markers in `supabase/BASELINE`.
+
 on:
   push:
     branches: [main]
-    paths: ['supabase/migrations/**', '.github/workflows/migration-drift.yml']
+    paths:
+      - 'supabase/migrations/**'
+      - 'supabase/schema-package.sql'
+      - 'supabase/BASELINE'
+      - '.github/workflows/migration-drift.yml'
   pull_request:
-    paths: ['supabase/migrations/**']
+    paths:
+      - 'supabase/migrations/**'
+      - 'supabase/schema-package.sql'
+      - 'supabase/BASELINE'
+      - '.github/workflows/migration-drift.yml'
   schedule:
     - cron: '0 3 * * 1' # weekly Monday 03:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: migration-drift-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   migrations-apply:
-    name: Verify migrations apply to a scratch database
+    name: Baseline + migrations apply on Supabase Postgres
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Informational for now: flags drift without blocking merges.
-    # Flip to blocking once the baseline is verified clean.
-    continue-on-error: true
     services:
       postgres:
-        image: postgres:15
+        # Same major/minor as the live project (PostgreSQL 17.6, Supabase build).
+        image: supabase/postgres:17.6.1.173
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: postgres
         ports: ['5432:5432']
         options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s --health-timeout 5s --health-retries 10
+          --health-cmd "pg_isready -U supabase_admin -h localhost"
+          --health-interval 5s --health-timeout 5s --health-retries 30
+    env:
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGUSER: supabase_admin
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+      PGOPTIONS: '-c client_min_messages=warning'
+      BASELINE_FILE: supabase/schema-package.sql
+      CUTOFF_FILE: supabase/BASELINE
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Apply migrations in order
-        env:
-          PGHOST: localhost
-          PGUSER: postgres
-          PGPASSWORD: postgres
-          PGDATABASE: postgres
+      - name: Wait for Postgres
         run: |
           set -u
-          failed=0
-          applied=0
+          for i in $(seq 1 60); do
+            if psql -X -Atc 'select 1' >/dev/null 2>&1; then
+              echo "Postgres ready: $(psql -X -Atc 'show server_version')"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Postgres service did not become ready"
+          exit 1
+
+      - name: Read baseline markers
+        id: cutoff
+        run: |
+          set -eu
+          pkg="$(grep -Eo '^package=[0-9]{14}' "$CUTOFF_FILE" | cut -d= -f2 | head -n1 || true)"
+          strict="$(grep -Eo '^strict=[0-9]{14}' "$CUTOFF_FILE" | cut -d= -f2 | head -n1 || true)"
+          if [ -z "$pkg" ] || [ -z "$strict" ] || [ "$strict" \< "$pkg" ]; then
+            echo "::error file=$CUTOFF_FILE::Expected 'package=<14 digits>' and 'strict=<14 digits>' with strict >= package"
+            exit 1
+          fi
+          echo "package=$pkg" >> "$GITHUB_OUTPUT"
+          echo "strict=$strict" >> "$GITHUB_OUTPUT"
+          echo "Schema package snapshot marker: $pkg (older migrations are inside $BASELINE_FILE and skipped)"
+          echo "Strict marker: $strict (migrations at/after this must apply cleanly)"
+
+      - name: Platform prelude (idempotent)
+        run: |
+          set -eu
+          # The supabase/postgres image already ships auth/storage/extensions/
+          # graphql_public and the supabase_realtime publication. These guards
+          # only exist so the check keeps working if the image layout changes.
+          psql -X -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE SCHEMA IF NOT EXISTS extensions;
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+              CREATE PUBLICATION supabase_realtime;
+            END IF;
+          END $$;
+          GRANT USAGE ON SCHEMA extensions TO anon, authenticated, service_role;
+          SQL
+
+      - name: Load schema baseline
+        run: |
+          set -u
+          if psql -X -v ON_ERROR_STOP=1 -q -c 'SET ROLE postgres' -f "$BASELINE_FILE" >/tmp/baseline.log 2>&1; then
+            echo "Baseline loaded: $BASELINE_FILE"
+          else
+            echo "::error file=$BASELINE_FILE::Schema baseline failed to load on a fresh Supabase Postgres"
+            grep -E 'ERROR|FATAL|DETAIL|LINE' /tmp/baseline.log | head -n 20
+            exit 1
+          fi
+          tables=$(psql -X -Atc "select count(*) from pg_tables where schemaname = 'public'")
+          policies=$(psql -X -Atc "select count(*) from pg_policies where schemaname = 'public'")
+          funcs=$(psql -X -Atc "select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public'")
+          echo "Baseline objects: $tables tables, $policies policies, $funcs functions"
+          {
+            echo "### Migration drift check"
+            echo ""
+            echo "| Step | Result |"
+            echo "|---|---|"
+            echo "| Baseline (\`$BASELINE_FILE\`) | loaded — $tables tables, $policies policies, $funcs functions |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Apply migrations on top of the baseline
+        env:
+          PACKAGE_TS: ${{ steps.cutoff.outputs.package }}
+          STRICT_TS: ${{ steps.cutoff.outputs.strict }}
+        run: |
+          set -u
+          # Three phases, by file timestamp:
+          #   ts <  PACKAGE_TS : already inside schema-package.sql          -> skipped
+          #   ts <  STRICT_TS  : historical, applied live long ago           -> replayed, failures reported only
+          #   ts >= STRICT_TS  : must apply cleanly on top of the above      -> blocking
+          skipped=0; hist_ok=0; hist_fail=0; applied=0; failed=0; failed_file=""
           for f in $(ls supabase/migrations/*.sql | sort); do
-            if psql -v ON_ERROR_STOP=1 -q -f "$f" >/tmp/mig.log 2>&1; then
-              applied=$((applied+1))
+            name=$(basename "$f")
+            ts="${name%%_*}"
+            if ! printf '%s' "$ts" | grep -Eq '^[0-9]{14}$'; then
+              echo "::error file=$f::Migration file name must start with a 14-digit timestamp"
+              failed=1; failed_file="$f"; break
+            fi
+            if [ "$ts" \< "$PACKAGE_TS" ]; then skipped=$((skipped+1)); continue; fi
+            if psql -X -v ON_ERROR_STOP=1 -q --single-transaction -c 'SET ROLE postgres' -f "$f" >/tmp/mig.log 2>&1; then
+              if [ "$ts" \< "$STRICT_TS" ]; then hist_ok=$((hist_ok+1)); else applied=$((applied+1)); echo "ok   $name"; fi
             else
-              echo "::error file=$f::Migration failed to apply on a scratch database"
-              tail -n 20 /tmp/mig.log
-              failed=$((failed+1))
-              break
+              if [ "$ts" \< "$STRICT_TS" ]; then
+                hist_fail=$((hist_fail+1))
+                echo "::notice file=$f::Historical migration did not replay on the baseline (already live; not blocking): $(grep -m1 -E 'ERROR|FATAL' /tmp/mig.log | sed -E 's#^psql:[^:]+:[0-9]+: ##')"
+              else
+                echo "FAIL $name"
+                echo "::error file=$f::Migration failed to apply on top of the schema baseline"
+                grep -E 'ERROR|FATAL|DETAIL|LINE' /tmp/mig.log | head -n 20
+                failed=1; failed_file="$f"; break
+              fi
             fi
           done
-          echo "Applied $applied migrations cleanly."
+          echo "Skipped $skipped (inside baseline); historical replay ok=$hist_ok fail=$hist_fail; strict applied=$applied."
+          {
+            echo "| Historical replay (\`$PACKAGE_TS\` … \`$STRICT_TS\`) | $hist_ok ok, $hist_fail already-live failures (informational) |"
+            if [ "$failed" -eq 0 ]; then
+              echo "| Migrations at/after \`$STRICT_TS\` | $applied applied cleanly |"
+            else
+              echo "| Migrations at/after \`$STRICT_TS\` | **FAILED** at \`$(basename "$failed_file")\` ($applied applied before it) |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
           [ "$failed" -eq 0 ]
+
+      - name: Security invariants
+        run: |
+          set -u
+          status=0
+
+          # 1. Every table in public must have RLS enabled.
+          no_rls=$(psql -X -Atc "
+            select string_agg(c.relname, ', ' order by c.relname)
+            from pg_class c join pg_namespace n on n.oid = c.relnamespace
+            where n.nspname = 'public' and c.relkind in ('r','p') and not c.relrowsecurity")
+          if [ -n "$no_rls" ]; then
+            echo "::error::Tables without row level security: $no_rls"
+            status=1
+          else
+            echo "RLS enabled on every public table."
+          fi
+
+          # 2. anon must not be able to write anywhere except the explicit allowlist
+          #    (public lead/contact capture). Deny-all policies (USING false) are ignored.
+          allow_regex='^(leads|contact_messages|contact_submissions|newsletter_subscribers)$'
+          anon_write=$(psql -X -Atc "
+            select string_agg(distinct tablename || ' (' || lower(cmd) || ')', ', ')
+            from pg_policies
+            where schemaname = 'public'
+              and cmd in ('INSERT','UPDATE','DELETE','ALL')
+              and 'anon' = any(roles)
+              and coalesce(qual, '') <> 'false' and coalesce(with_check, '') <> 'false'
+              and tablename !~ '$allow_regex'")
+          if [ -n "$anon_write" ]; then
+            echo "::error::Policies that let anonymous users write: $anon_write"
+            status=1
+          else
+            echo "No anonymous write policies outside the allowlist."
+          fi
+
+          # 3. Report (informational): tables with RLS on but zero policies —
+          #    fully locked, which is usually intended for service-role-only tables.
+          locked=$(psql -X -Atc "
+            select coalesce(string_agg(c.relname, ', ' order by c.relname), '—')
+            from pg_class c join pg_namespace n on n.oid = c.relnamespace
+            where n.nspname = 'public' and c.relkind in ('r','p') and c.relrowsecurity
+              and not exists (select 1 from pg_policies p where p.schemaname = 'public' and p.tablename = c.relname)")
+          echo "Tables locked to service role (RLS on, no policies): $locked"
+
+          {
+            echo "| RLS on every public table | $([ -z "$no_rls" ] && echo ok || echo "**missing on** $no_rls") |"
+            echo "| No anon write policies outside allowlist | $([ -z "$anon_write" ] && echo ok || echo "**found**: $anon_write") |"
+            echo "| Service-role-only tables | $locked |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
