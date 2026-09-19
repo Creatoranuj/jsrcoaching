@@ -69,7 +69,7 @@ concurrency:
 jobs:
   build:
     name: Build APK and Create Release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Cold Gradle + web build averages ~18min. 40min = ~2x safety before a
     # hung Gradle process starts eating GitHub Actions minutes.
     timeout-minutes: 40
