@@ -37,7 +37,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useHero } from "@/hooks/useHero";
 import { useLandingCourses } from "@/hooks/useLandingCourses";
 import { supabase } from "@/integrations/supabase/client";
-import WhatsAppFab, { useWhatsAppLink } from "@/components/common/WhatsAppFab";
+import WhatsAppFab from "@/components/common/WhatsAppFab";
 import { WHATSAPP_NUMBER } from "@/components/common/WhatsAppButton";
 import { openResource } from "@/lib/openResource";
 
@@ -116,14 +116,12 @@ function AuthButtons({ stacked = false }: { stacked?: boolean }) {
 const FAB_MESSAGE = "Namaste JSR COACHING, mujhe admission aur batch details chahiye.";
 
 /**
- * Phone-only bottom action bar: WhatsApp + Signup/Login (or Dashboard).
+ * Phone-only bottom action bar: Signup/Login (or Dashboard).
  *
- * One row instead of three stacked floating layers. Before this the homepage
- * mounted a centred auth bar (bottom 1rem), the JSR Agent bubble (5rem) and a
- * separate WhatsApp FAB (9.5rem) — ~208px of a 844px viewport covered by fixed
- * controls, and the bubble sat on top of the "Regular practice / Doubt support"
- * hero copy. WhatsApp now lives in the bar, so the only FAB left above it is
- * the chat bubble, which already clears the bar via `FAB_BASE_REM`.
+ * WhatsApp used to sit at the left end of this centred bar, where it collided
+ * with the Signup pill and read as part of the auth row. It now lives in the
+ * right-hand FAB column (`raised` slot) directly above the JSR Agent bubble,
+ * matching every other screen in the app.
  *
  * The full-width wrapper is `pointer-events-none` so footer links behind the
  * strip stay tappable; only the pills themselves take taps. Every control is
@@ -131,21 +129,9 @@ const FAB_MESSAGE = "Namaste JSR COACHING, mujhe admission aur batch details cha
  */
 function MobileActionBar() {
   const { user } = useAuth();
-  const { href, onClick } = useWhatsAppLink(WHATSAPP_NUMBER, FAB_MESSAGE);
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] sm:hidden">
       <div className="pointer-events-auto flex items-center gap-2">
-        <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={onClick}
-          aria-label="WhatsApp par baat karein"
-          title="WhatsApp par baat karein"
-          className="grid size-12 shrink-0 place-items-center rounded-full bg-whatsapp text-whatsapp-foreground shadow-lg shadow-whatsapp/30 transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transform-none motion-reduce:transition-none"
-        >
-          <WhatsAppIcon className="size-6" />
-        </a>
         {user ? (
           <Button
             asChild
@@ -608,8 +594,8 @@ export default function Index() {
         </div>
       </footer>
 
-      {/* Tablet/desktop only — on phones WhatsApp lives inside MobileActionBar. */}
-      <WhatsAppFab phone={WHATSAPP_NUMBER} message={FAB_MESSAGE} className="max-sm:hidden" />
+      {/* Right-hand FAB column: WhatsApp sits one slot above the JSR Agent bubble. */}
+      <WhatsAppFab phone={WHATSAPP_NUMBER} message={FAB_MESSAGE} />
 
       <MobileActionBar />
     </div>
