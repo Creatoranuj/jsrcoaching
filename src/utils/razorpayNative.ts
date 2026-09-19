@@ -475,9 +475,17 @@ export const openNativeRazorpayCheckout = async (
       BRIDGE_LOAD_TIMEOUT_MS,
       () => new RazorpayBridgeMissingError(),
     );
+    // NOTE: a `false` from isPluginAvailable() is NOT treated as fatal any
+    // more. On some Android builds the availability map is populated after the
+    // first bridge round-trip, so an early `false` used to demote a perfectly
+    // working APK to the browser checkout — the "app se browser me chala gaya"
+    // bug students reported. We only record it and still attempt open(); a real
+    // missing bridge rejects with UNIMPLEMENTED and is handled below.
     if (typeof Capacitor.isPluginAvailable === "function"
       && !Capacitor.isPluginAvailable("RazorpayNative")) {
-      throw new RazorpayBridgeMissingError();
+      addBreadcrumb("payment", "razorpay:plugin-availability-false", {
+        note: "attempting open() anyway",
+      });
     }
 
     const RazorpayNative = await withTimeout(
@@ -500,6 +508,10 @@ export const openNativeRazorpayCheckout = async (
     const errObj = e as { message?: string; errorMessage?: string } | null | undefined;
     const msg = errObj?.message || errObj?.errorMessage || String(e ?? "");
     if (looksLikeCancel(msg)) throw new RazorpayCancelledError();
+    // A genuinely absent native bridge rejects with Capacitor's
+    // "not implemented" / UNIMPLEMENTED error. Only THAT means the APK has no
+    // RazorpayNative plugin.
+    if (/not implemented|unimplemented|implementation of|not available|plugin is not implemented/i.test(msg)) throw new RazorpayBridgeMissingError();
     // Preserve Razorpay's structured error (step / reason / code) so the
     // caller can render an actionable message instead of "undefined".
     const fields = extractRazorpayError(e);
