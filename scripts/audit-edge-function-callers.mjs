@@ -27,6 +27,8 @@ const BACKEND_ONLY_ALLOWLIST = new Set([
   "send-phone-otp",           // phone OTP feature temp-disabled (PhoneLogin.tsx); keep for re-enable
   "verify-phone-otp",         // pair of send-phone-otp
   "fetch-youtube-transcript", // called server-side by resolve-doubt edge fn (no direct UI caller)
+  "reconcile-pending-payments", // scheduled reconciliation, no UI caller
+  "set-latest-version",       // called by the release workflow after a build, not by the app
 ]);
 
 
