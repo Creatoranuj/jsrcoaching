@@ -53,7 +53,7 @@ env:
 jobs:
   plan-smoke-matrix:
     name: Plan smoke matrix
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     outputs:
       include: ${{ steps.matrix.outputs.include }}
@@ -80,16 +80,16 @@ jobs:
     # cleanup). Ubuntu with /dev/kvm boots deterministically in ~2 min.
     #
     # Runner tier (current state, 2026-07-15):
-    #   - ALL legs → ubuntu-latest (2 vCPU / 7GB). API 33 hard-gates; API 28 /
+    #   - ALL legs → ubuntu-24.04 (2 vCPU / 7GB). API 33 hard-gates; API 28 /
     #     API 35 are advisory (continue-on-error).
-    # NOTE: `ubuntu-latest-4-cores` was previously tried for API 28 to shorten
+    # NOTE: `ubuntu-24.04-4-cores` was previously tried for API 28 to shorten
     # Chromium 66 cold-parse, but larger runners require org-level provisioning
     # (Settings → Actions → Runners → Larger runners). Without it the job sits
     # in Queued until the 60-min timeout. To compensate, `maestro/smoke.yaml`
     # raises the first-paint `extendedWaitUntil` to 300s. Re-enable the 4-core
     # tier only after provisioning it at the org level; then promote API 28 to
     # hard gate only after ≥5 consecutive greens.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     # Release tags run ONLY the stable hard gate (API 33 + Maestro 1.39.0).
     # API 28 / API 35 A/B legs are useful lab signal but repeatedly produce
@@ -783,7 +783,7 @@ jobs:
     name: Flake telemetry rollup
     needs: smoke-signed-apk
     if: always() && needs.smoke-signed-apk.result != 'cancelled'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     continue-on-error: true
     steps:
@@ -895,7 +895,7 @@ jobs:
     name: Secondary flows (pdf-back, back-button) — non-blocking
     needs: smoke-signed-apk
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_secondary_flows && needs.smoke-signed-apk.result != 'cancelled' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     continue-on-error: true
     steps:
@@ -1054,7 +1054,7 @@ jobs:
     if: |
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
       (github.event_name == 'workflow_dispatch' && inputs.promote_dry_run == true)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - name: 🔍 Check Play service-account secret
