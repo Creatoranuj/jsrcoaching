@@ -18,9 +18,17 @@ export interface RazorpayNativeCancelResult {
   dismissed?: boolean;
 }
 
+/** One installed UPI app as reported by Android's PackageManager. */
+export interface RazorpayNativeUpiApps {
+  apps?: Array<{ packageName?: string; label?: string }>;
+  error?: string;
+}
+
 export interface RazorpayNativePlugin {
   open(options: Record<string, unknown>): Promise<RazorpayNativeSuccess>;
   cancel(): Promise<RazorpayNativeCancelResult | void>;
+  /** Optional: absent on APKs built before UPI app discovery shipped. */
+  getUpiApps?(): Promise<RazorpayNativeUpiApps>;
 }
 
 let cached: RazorpayNativePlugin | null = null;
