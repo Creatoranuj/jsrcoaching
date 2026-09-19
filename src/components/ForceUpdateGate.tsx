@@ -1,5 +1,5 @@
 import { useEffect, useState, ReactNode, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { AlertTriangle, Sparkles } from "lucide-react";
 import { isUpdateRequired, isUpdateAvailable } from "@/utils/version";
 import { loadCapacitorApp } from "@/lib/native/app";
 import { openResource } from "@/lib/openResource";
+import { resolveUpdateDownloadUrl } from "@/utils/downloadUrl";
 import { logger } from "@/lib/logger";
 
 interface AppConfigRow {
@@ -86,6 +87,20 @@ export const ForceUpdateGate = ({ children }: { children: ReactNode }) => {
   // resolves, otherwise the dialog flashes for one frame on cold start.
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
   const [isNative, setIsNative] = useState(false);
+  const queryClient = useQueryClient();
+
+  // A student who keeps the app in the background for days would otherwise sit
+  // on a 1-hour-stale config and never see a new release. Re-check on resume so
+  // a freshly published version shows its prompt within seconds of reopening.
+  useEffect(() => {
+    if (!isNative) return;
+    const onResumed = () => {
+      void queryClient.invalidateQueries({ queryKey: ["app_config"] });
+    };
+    window.addEventListener("app:resumed", onResumed);
+    return () => window.removeEventListener("app:resumed", onResumed);
+  }, [isNative, queryClient]);
+
 
   useEffect(() => {
     let cancelled = false;
@@ -168,13 +183,15 @@ export const ForceUpdateGate = ({ children }: { children: ReactNode }) => {
       Capacitor: null as typeof import("@capacitor/core").Capacitor | null,
     }));
     const platform = Capacitor?.getPlatform?.() ?? (/iPad|iPhone|iPod/.test(navigator.userAgent) ? "ios" : "android");
-    const url = platform === "ios" ? config?.ios_store_url : config?.android_store_url;
-    // Scheme allowlist — store URLs live in DB and must never be javascript:/data:.
-    if (typeof url === "string" && url.startsWith("https://")) {
-      void openResource({ url, kind: "link" });
-    } else {
-      logger.warn("[ForceUpdateGate] blocked non-https store URL", undefined, { url });
+    const configured = platform === "ios" ? config?.ios_store_url : config?.android_store_url;
+    // Never navigate to a raw DB value: only our own release assets or a real
+    // store listing are allowed, and anything else falls back to the stable
+    // download endpoint (which itself serves the newest release).
+    const url = resolveUpdateDownloadUrl(configured);
+    if (url !== configured) {
+      logger.warn("[ForceUpdateGate] using stable download endpoint", undefined, { configured });
     }
+    void openResource({ url, kind: "link" });
   }, [config]);
 
   const dismissOptional = useCallback(() => {
