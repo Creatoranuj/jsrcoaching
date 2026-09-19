@@ -1,1 +1,7 @@
 project_id = "wegamscqtvqhxowlskfm"
+
+# The APK download link is opened in a browser / by the Android downloader, so
+# it cannot send a Supabase key. It must stay public. It only reads one
+# non-sensitive column (the current release link) and returns a redirect.
+[functions.app-download]
+verify_jwt = false
