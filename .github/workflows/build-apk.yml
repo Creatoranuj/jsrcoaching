@@ -1358,14 +1358,19 @@ jobs:
           fi
 
           NOTES="Release ${VERSION} (build #${GITHUB_RUN_NUMBER})"
+          # Download link for this exact release. The fixed-name asset
+          # (JSRCoaching.apk) is attached by the release step below, and
+          # set-latest-version only accepts URLs under this repo's releases.
+          DOWNLOAD_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/JSRCoaching.apk"
           code=$(curl -sS -o /tmp/setver.json -w '%{http_code}' -X POST \
             "$BASE/set-latest-version" \
             -H "Content-Type: application/json" \
             -H "$AUTH_HEADER" \
-            -d "{\"version\":\"${APP_VERSION_NAME}\",\"platform\":\"android\",\"notes\":\"${NOTES}\"}")
+            -d "{\"version\":\"${APP_VERSION_NAME}\",\"platform\":\"android\",\"notes\":\"${NOTES}\",\"download_url\":\"${DOWNLOAD_URL}\"}")
           echo "set-latest-version HTTP $code"
           cat /tmp/setver.json || true; echo
           echo "- app_config latest_android_version → ${APP_VERSION_NAME}: HTTP $code" >> "$GITHUB_STEP_SUMMARY"
+          echo "- in-app download link → ${DOWNLOAD_URL}" >> "$GITHUB_STEP_SUMMARY"
           if [ "$code" != "200" ]; then
             echo "::warning::set-latest-version returned HTTP $code — update prompt not refreshed for this release."
             exit 1
