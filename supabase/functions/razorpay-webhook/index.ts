@@ -108,7 +108,11 @@ Deno.serve(async (req) => {
     const payload = JSON.parse(rawBody);
     const event = payload.event;
 
-    console.log('Razorpay webhook event:', event);
+    console.log('Razorpay webhook accepted', {
+      event,
+      event_id: req.headers.get('x-razorpay-event-id') ?? payload.id ?? null,
+      source_ip: sourceIp,
+    });
 
     // ── REPLAY PROTECTION: check event_id, INSERT only AFTER success. ──
     // Previous version inserted the dedupe row immediately after signature
@@ -136,7 +140,18 @@ Deno.serve(async (req) => {
       }
     }
 
+    // OBS: record every accepted delivery, not only the enrolling ones, so an
+    // empty webhook_events table unambiguously means "Razorpay never called us"
+    // rather than "only non-captured events arrived".
     if (event !== 'payment.captured') {
+      if (eventId) {
+        const { error: markErr } = await supabaseAdmin
+          .from('webhook_events')
+          .insert({ event_id: eventId, source: 'razorpay', event_type: event ?? 'unknown' });
+        if (markErr && (markErr as { code?: string }).code !== '23505') {
+          console.error('Failed to record ignored webhook_event (non-fatal):', markErr);
+        }
+      }
       return new Response(JSON.stringify({ status: 'ignored', event }), {
         status: 200, headers: jsonHeaders
       });
