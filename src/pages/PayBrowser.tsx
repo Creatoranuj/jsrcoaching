@@ -148,7 +148,7 @@ const PayBrowser = () => {
       {(phase === "cancelled" || phase === "error") && (
         <div className="flex w-full flex-col gap-2">
           <Button
-            className="h-auto min-h-11 w-full whitespace-normal break-words leading-snug"
+            className="h-auto min-h-11 w-full whitespace-normal break-words leading-snug active:scale-[0.97] transition-transform duration-150 ease-out"
             onClick={() => {
               startedRef.current = true;
               void start();
@@ -158,7 +158,7 @@ const PayBrowser = () => {
           </Button>
           <Button
             variant="outline"
-            className="h-auto min-h-11 w-full whitespace-normal break-words leading-snug"
+            className="h-auto min-h-11 w-full whitespace-normal break-words leading-snug active:scale-[0.97] transition-transform duration-150 ease-out"
             onClick={() => backToApp("cancelled")}
           >
             <ArrowLeft className="mr-2 h-4 w-4 shrink-0" />

@@ -13,7 +13,7 @@ import { useAdminEnrollment } from "../hooks/useAdminEnrollment";
 import { openRazorpayCheckout, formatRazorpayError, buildRazorpayPrefill, UPI_FIRST_CHECKOUT_CONFIG, type RazorpaySuccessResponse } from "../utils/razorpay";
 import { openNativeRazorpayCheckout, type NativeCheckoutStep, RazorpayCancelledError, RazorpayNativeError, RazorpayBridgeMissingError, RazorpayLaunchTimeoutError, RazorpayInvalidResponseError, RazorpaySheetUnresponsiveError } from "../utils/razorpayNative";
 import { invokePaymentFunction, recoverEnrollment, PaymentApiError } from "../utils/paymentApi";
-import { tapMedium, notifySuccess, notifyError } from "../lib/nativeChrome";
+import { tapLight, tapMedium, notifySuccess, notifyError } from "../lib/nativeChrome";
 import { LoadingSpinner } from "../components/ui/loading-spinner";
 import { resolveContentUrl } from "../lib/resolveContentUrl";
 import { safeGet, safeSet, safeRemove } from "../lib/storage";
@@ -748,8 +748,9 @@ const BuyCourse = () => {
               <Card>
                 <CardContent className="pt-6">
                   <Button
-                    className="h-12 w-full text-base"
+                    className="h-12 w-full text-base active:scale-[0.97] transition-transform duration-150 ease-out"
                     onClick={async () => {
+                      void tapLight();
                       if (!user) {
                         toast.error("Please login first");
                         navigate("/login", { state: { from: location.pathname + location.search } });
@@ -830,9 +831,9 @@ const BuyCourse = () => {
                     </div>
                   ) : (
                     <Button
-                      onClick={() => { void handleRazorpayPayment(); }}
+                      onClick={() => { void tapLight(); void handleRazorpayPayment(); }}
                       disabled={isRazorpayLoading}
-                      className="h-12 w-full text-base font-semibold"
+                      className="h-12 w-full text-base font-semibold active:scale-[0.97] transition-transform duration-150 ease-out"
                     >
                       {isRazorpayLoading ? (
                         <>
@@ -856,7 +857,7 @@ const BuyCourse = () => {
                         type="button"
                         variant="outline"
                         onClick={() => { void tapMedium(); void handleRazorpayPayment({ forceWeb: true }); }}
-                        className="mt-2 h-auto min-h-11 w-full whitespace-normal break-words px-3 py-2.5 text-sm font-medium leading-snug"
+                        className="mt-2 h-auto min-h-11 w-full whitespace-normal break-words px-3 py-2.5 text-sm font-medium leading-snug active:scale-[0.97] transition-transform duration-150 ease-out"
                       >
                         Browser checkout se pay karein
                       </Button>
@@ -897,7 +898,7 @@ const BuyCourse = () => {
 
               <p className="text-muted-foreground text-sm mb-6">Redirecting you to your course...</p>
 
-              <Button onClick={() => navigate('/my-courses')} className="w-full max-w-xs bg-green-600 hover:bg-green-700">
+              <Button onClick={() => { void tapLight(); navigate('/my-courses'); }} className="w-full max-w-xs bg-green-600 hover:bg-green-700 active:scale-[0.97] transition-transform duration-150 ease-out">
                 Go to My Courses 🎉
               </Button>
             </CardContent>

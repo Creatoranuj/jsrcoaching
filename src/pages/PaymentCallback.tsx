@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Loader2, CheckCircle, XCircle, Clock } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
-import { notifySuccess, notifyError } from "../lib/nativeChrome";
+import { notifySuccess, notifyError, tapLight } from "../lib/nativeChrome";
 import { getErrorMessage } from "@/lib/errorMessage";
 import { recoverEnrollment } from "../utils/paymentApi";
 import {
@@ -205,8 +205,8 @@ const PaymentCallback = () => {
               </p>
               <div className="pb-[max(env(safe-area-inset-bottom),16px)]">
                 <Button
-                  onClick={() => navigate("/my-courses", { replace: true })}
-                  className="w-full bg-green-600 hover:bg-green-700"
+                  onClick={() => { void tapLight(); navigate("/my-courses", { replace: true }); }}
+                  className="w-full bg-green-600 hover:bg-green-700 active:scale-[0.97] transition-transform duration-150 ease-out"
                 >
                   Go to My Courses 🎉
                 </Button>
@@ -226,8 +226,8 @@ const PaymentCallback = () => {
               </p>
               <div className="space-y-2 pb-[max(env(safe-area-inset-bottom),16px)]">
                 <Button
-                  onClick={() => navigate("/my-courses", { replace: true })}
-                  className="w-full"
+                  onClick={() => { void tapLight(); navigate("/my-courses", { replace: true }); }}
+                  className="w-full active:scale-[0.97] transition-transform duration-150 ease-out"
                 >
                   Check My Courses
                 </Button>
@@ -246,15 +246,15 @@ const PaymentCallback = () => {
               </p>
               <div className="space-y-2 pb-[max(env(safe-area-inset-bottom),16px)]">
                 <Button
-                  onClick={() => navigate(`/buy-course?id=${courseId ?? ""}`, { replace: true })}
-                  className="w-full"
+                  onClick={() => { void tapLight(); navigate(`/buy-course?id=${courseId ?? ""}`, { replace: true }); }}
+                  className="w-full active:scale-[0.97] transition-transform duration-150 ease-out"
                 >
                   Dobara koshish karein
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={() => navigate("/my-courses", { replace: true })}
-                  className="w-full"
+                  onClick={() => { void tapLight(); navigate("/my-courses", { replace: true }); }}
+                  className="w-full active:scale-[0.97] transition-transform duration-150 ease-out"
                 >
                   Check My Courses
                 </Button>
@@ -271,15 +271,15 @@ const PaymentCallback = () => {
               <p className="text-muted-foreground text-sm">{errorMsg}</p>
               <div className="space-y-2 pb-[max(env(safe-area-inset-bottom),16px)]">
                 <Button
-                  onClick={() => navigate(`/buy-course?id=${courseId ?? ""}`, { replace: true })}
-                  className="w-full"
+                  onClick={() => { void tapLight(); navigate(`/buy-course?id=${courseId ?? ""}`, { replace: true }); }}
+                  className="w-full active:scale-[0.97] transition-transform duration-150 ease-out"
                 >
                   Go Back to Course
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={() => navigate("/my-courses", { replace: true })}
-                  className="w-full"
+                  onClick={() => { void tapLight(); navigate("/my-courses", { replace: true }); }}
+                  className="w-full active:scale-[0.97] transition-transform duration-150 ease-out"
                 >
                   Check My Courses
                 </Button>
