@@ -76,10 +76,22 @@ const EnrollmentManagerImpl = ({ coursesList, usersList }: Props) => {
       toast.error("Select both a student and a course"); return;
     }
     setGranting(true);
-    const { error } = await supabase.from("enrollments").upsert(
+    // NOTE: user_id / course_id are not updatable by the `authenticated` role
+    // (column-level REVOKE blocks enrollment re-targeting). So insert-or-ignore
+    // first, then re-activate the existing row via the status column only.
+    const { error: insertError } = await supabase.from("enrollments").upsert(
       { user_id: selectedUserId, course_id: Number(selectedCourseId), status: "active" },
-      { onConflict: "user_id,course_id", ignoreDuplicates: false }
+      { onConflict: "user_id,course_id", ignoreDuplicates: true }
     );
+    let error = insertError;
+    if (!error) {
+      const res = await supabase
+        .from("enrollments")
+        .update({ status: "active" })
+        .eq("user_id", selectedUserId)
+        .eq("course_id", Number(selectedCourseId));
+      error = res.error;
+    }
     if (error) toast.error(error.message);
     else {
       toast.success("Course access granted!");
