@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { tapHaptic } from "@/lib/native/haptics";
+import { logger } from "@/lib/logger";
 
 const grades = ["9", "10", "11", "12"];
 
@@ -45,7 +46,7 @@ const LeadForm = memo(() => {
         setGrade("");
       } catch (err) {
         toast.error("Kuchh galat ho gaya. Dobara koshish karein.");
-        console.error(err);
+        logger.error("lead form submit failed", err);
       } finally {
         setLoading(false);
       }

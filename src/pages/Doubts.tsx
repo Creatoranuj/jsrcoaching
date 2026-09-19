@@ -182,7 +182,7 @@ const Doubts = () => {
           // student saw "taiyar kar raha hai..." forever with no AI answer and
           // no explanation. The doubt itself is already saved, so this is a
           // soft failure — but say so.
-          console.error("resolve-doubt failed", aiErr);
+          reportError(aiErr, { surface: "Doubts.resolveDoubt" });
           toast.info(
             "Aapka doubt save ho gaya hai. AI jawab abhi nahi mil paya — teacher jaldi reply karenge."
           );

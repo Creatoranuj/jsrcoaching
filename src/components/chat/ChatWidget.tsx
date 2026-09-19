@@ -462,7 +462,7 @@ const ChatWidget = forwardRef<HTMLDivElement>(() => {
       // AUDIT 2026-08-03 [M3]: feedback failures stay non-blocking for the
       // user (the thumb stays lit), but must not vanish — without a log we
       // cannot tell "nobody rates answers" from "every rating 500s".
-      console.error("chatbot feedback submit failed", err);
+      logger.error("chatbot feedback submit failed", err);
     }
   }, [messages, user, sessionId]);
 

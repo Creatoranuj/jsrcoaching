@@ -9,6 +9,7 @@ import { Loader2, Plus, Trash2, Youtube } from "lucide-react";
 import { supabase } from "../../integrations/supabase/client";
 import { toast } from "sonner";
 import { v4 as uuidv4 } from "uuid";
+import { logger } from "@/lib/logger";
 
 interface SocialLink {
   id: string;
@@ -73,7 +74,7 @@ export default function SocialLinksManager() {
       toast.success("Social links saved");
     } catch (err) {
       toast.error("Failed to save social links");
-      console.error(err);
+      logger.error("social links save failed", err);
     } finally {
       setSaving(false);
     }
