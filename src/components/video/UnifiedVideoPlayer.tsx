@@ -1,6 +1,12 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from "react";
 import { Skeleton } from "../ui/skeleton";
-import { MahimaGhostPlayer, BunnyStreamPlayer, isBunnyStreamUrl, PlayerErrorBoundary } from ".";
+// Import the sibling modules directly, never through "./index". The barrel
+// re-exports this file, so importing from it forms a cycle that the minified
+// production bundle resolves as a TDZ crash ("Cannot access 'X' before
+// initialization") the moment the lesson viewer loads.
+import MahimaGhostPlayer from "./MahimaGhostPlayer";
+import BunnyStreamPlayer, { isBunnyStreamUrl } from "./BunnyStreamPlayer";
+import PlayerErrorBoundary from "./PlayerErrorBoundary";
 import nbLogo from "../../assets/branding/jsr-mark.webp";
 import birdLogo from "../../assets/branding/jsr-mark.webp";
 import { useOrientation } from "../../hooks/useOrientation";

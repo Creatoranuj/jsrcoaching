@@ -552,7 +552,7 @@ const BuyCourse = () => {
           // scared and abandons, and the in-WebView web checkout hides the UPI
           // app tiles anyway. Retry the SAME order in the app once, then stop
           // and offer the browser only as an explicit choice.
-          if (nativeRetryRef.current < 1) {
+          if (!(e instanceof RazorpayBridgeMissingError) && nativeRetryRef.current < 1) {
             nativeRetryRef.current += 1;
             logger.warn("Native Razorpay sheet did not open — retrying in-app");
             toast.info("Payment screen dobara khol rahe hain…");
@@ -562,7 +562,14 @@ const BuyCourse = () => {
           logger.warn("Native Razorpay sheet failed twice — offering manual browser option");
           void notifyError();
           if (isMountedRef.current) setShowBrowserEscape(true);
-          toast.error("Payment screen khul nahi payi. Dobara 'Pay Securely' dabaein — paisa nahi kata hai.");
+          // A missing bridge means the INSTALLED APK predates the payment
+          // plugin — retrying in-app can never work, so say so plainly and
+          // point at the browser checkout instead of a generic failure.
+          toast.error(
+            e instanceof RazorpayBridgeMissingError
+              ? "Aapka app purana hai — payment screen is version me nahi hai. Play Store se app update karein, ya neeche 'Browser checkout se pay karein' dabaein. Paisa nahi kata hai."
+              : "Payment screen khul nahi payi. Dobara 'Pay Securely' dabaein — paisa nahi kata hai.",
+          );
           return;
         }
         if (e instanceof RazorpayCancelledError) {
