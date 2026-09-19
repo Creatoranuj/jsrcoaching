@@ -42,16 +42,15 @@ export function isGitHubReleaseAsset(url: unknown): url is string {
 /**
  * Resolves the URL the update button should open.
  *
- * - Store listing configured by an admin → use it as-is (Play Store wins, it
- *   handles its own updates).
- * - GitHub release asset (the CI default) → use the stable `app-download`
- *   endpoint so the link keeps working across releases and can be changed or
- *   switched off in one place.
- * - Anything missing or not allow-listed → stable endpoint as well, which
- *   itself falls back to the newest release.
+ * - Allow-listed link (CI-published release asset, or a store listing an admin
+ *   set by hand) → use it as-is. CI publishes the exact asset for the version
+ *   the prompt announces, so this is always the right APK.
+ * - Anything missing, junk, or off-site → the fixed-name asset of the newest
+ *   release, which always exists. Deliberately NOT the app-download endpoint:
+ *   the fallback must work even if that function is unavailable.
  */
 export function resolveUpdateDownloadUrl(configuredUrl: unknown): string {
   const trimmed = typeof configuredUrl === "string" ? configuredUrl.trim() : "";
-  if (isAllowedUpdateUrl(trimmed) && !isGitHubReleaseAsset(trimmed)) return trimmed;
-  return APP_DOWNLOAD_ENDPOINT;
+  if (isAllowedUpdateUrl(trimmed)) return trimmed;
+  return LATEST_APK_FALLBACK;
 }
