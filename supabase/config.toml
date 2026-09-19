@@ -1,1 +1,12 @@
 project_id = "wegamscqtvqhxowlskfm"
+
+# Razorpay calls these endpoints server-to-server and cannot send a Supabase
+# JWT. Without verify_jwt = false the CLI deploy (deploy-functions.yml) would
+# publish them with auth on and every webhook delivery would get 401 —
+# silently breaking the enrollment safety net. Both handlers verify the
+# Razorpay HMAC signature themselves before touching any data.
+[functions.razorpay-webhook]
+verify_jwt = false
+
+[functions.razorpay-refund-webhook]
+verify_jwt = false
