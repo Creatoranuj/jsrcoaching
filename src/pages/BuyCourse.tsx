@@ -10,7 +10,7 @@ import {
   CheckCircle, Shield, Loader2, CreditCard, Zap
 } from "lucide-react";
 import { useAdminEnrollment } from "../hooks/useAdminEnrollment";
-import { openRazorpayCheckout, formatRazorpayError, buildRazorpayPrefill, UPI_FIRST_CHECKOUT_CONFIG, type RazorpaySuccessResponse } from "../utils/razorpay";
+import { openRazorpayCheckout, formatRazorpayError, buildRazorpayPrefill, buildUpiCheckoutConfig, type RazorpaySuccessResponse } from "../utils/razorpay";
 import { openNativeRazorpayCheckout, type NativeCheckoutStep, RazorpayCancelledError, RazorpayNativeError, RazorpayBridgeMissingError, RazorpayLaunchTimeoutError, RazorpayInvalidResponseError, RazorpaySheetUnresponsiveError } from "../utils/razorpayNative";
 import { invokePaymentFunction, recoverEnrollment, PaymentApiError } from "../utils/paymentApi";
 import { listUpiApps, type UpiApp } from "../utils/upiApps";
@@ -490,7 +490,10 @@ const BuyCourse = () => {
         contact: profile?.mobile,
       }),
       theme: { color: primaryHex },
-      ...UPI_FIRST_CHECKOUT_CONFIG,
+      // UPI sabse upar. Test mode me sirf UPI ID (collect) flow maanga jaata
+      // hai — intent flow test keys par exist nahi karta aur usse UPI ka block
+      // khaali dikh jaata hai.
+      ...buildUpiCheckoutConfig(orderData.mode ?? null),
     };
 
     // Native Capacitor (Android/iOS) → open native Razorpay SDK so UPI
@@ -817,7 +820,7 @@ const BuyCourse = () => {
                     {upiApps && upiApps.length > 0 && (
                       <div className="rounded-xl border bg-muted/30 p-3">
                         <p className="mb-2 text-xs font-medium">
-                          UPI apps on your phone — tap UPI on the payment sheet
+                          Aapke phone ke UPI apps — payment sheet par UPI chunein
                         </p>
                         <div className="flex flex-wrap gap-2">
                           {upiApps.slice(0, 6).map((app) => (
@@ -834,8 +837,8 @@ const BuyCourse = () => {
 
                     {upiApps && upiApps.length === 0 && (
                       <p className="rounded-xl border border-dashed bg-muted/30 p-3 text-xs text-muted-foreground">
-                        No UPI app found on this phone. You can still pay by
-                        entering your UPI ID, or use a card / netbanking.
+                        Is phone me koi UPI app nahi mila. UPI ID daal kar,
+                        ya card / netbanking se bhi pay kar sakte hain.
                       </p>
                     )}
 
@@ -851,10 +854,14 @@ const BuyCourse = () => {
                     </div>
 
                     {paymentMode === "test" && (
-                      <p className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-xs font-medium text-destructive">
-                        Test mode is on, so real UPI apps will not appear on the
-                        payment sheet. Switch to live keys to accept UPI.
-                      </p>
+                      <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-700 dark:text-amber-400">
+                        <p className="font-semibold">Test mode chal raha hai</p>
+                        <p className="mt-1">
+                          Payment sheet par UPI ka section dikhega, par sirf UPI ID
+                          se — test ke liye <span className="font-mono">success@razorpay</span>{" "}
+                          daal dein. GPay / PhonePe / Paytm ke tiles live keys par aate hain.
+                        </p>
+                      </div>
                     )}
 
                     <ul className="space-y-1.5 text-xs text-muted-foreground">
