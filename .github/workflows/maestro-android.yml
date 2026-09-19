@@ -54,7 +54,7 @@ jobs:
 
       # Ubuntu runners ship a full Android SDK preinstalled; just ensure the
       # exact platform/build-tools we compile against are present.
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
