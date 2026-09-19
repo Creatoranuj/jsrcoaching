@@ -18,10 +18,17 @@ export interface NativeRazorpayOptions {
   order_id: string;
   prefill?: { name?: string; email?: string; contact?: string; method?: string };
   theme?: { color?: string };
-  /** Web-checkout method toggles — forwarded to the native SDK as-is. */
+  /** Method toggles (upi / card / netbanking / wallet). Forwarded. */
   method?: Record<string, boolean>;
-  /** Web-only `config.display` blocks — stripped before the native call. */
+  /**
+   * `config.display` blocks — forwarded to the native SDK. Razorpay's Android
+   * standard checkout reads the same options JSON as the web checkout, so this
+   * is what pins the UPI block to the top of the sheet. Dropping it (the old
+   * behaviour) left UPI buried under the default block order.
+   */
   config?: unknown;
+  /** Shows a returning buyer their saved UPI ID under "Recommended". */
+  remember_customer?: boolean;
 }
 
 
@@ -343,6 +350,23 @@ export const buildNativeCheckoutPayload = (
     if (Object.keys(prefill).length > 0) payload.prefill = prefill;
   }
   if (options.theme) payload.theme = options.theme;
+
+  // UPI must be asked for explicitly. The Android standard-checkout Activity
+  // accepts the same `method` / `config.display` options as the web checkout;
+  // when they are omitted the sheet falls back to Razorpay's default ordering
+  // and the UPI section sits below cards/netbanking (or is skipped entirely on
+  // accounts where UPI is not the primary method).
+  const methods = options.method
+    ? Object.fromEntries(
+        Object.entries(options.method).filter(([, v]) => typeof v === "boolean"),
+      )
+    : undefined;
+  if (methods && Object.keys(methods).length > 0) payload.method = methods;
+
+  const display = (options.config as { display?: unknown } | null | undefined)?.display;
+  if (display && typeof display === "object") payload.config = { display };
+
+  if (options.remember_customer) payload.remember_customer = true;
 
   return payload;
 };
