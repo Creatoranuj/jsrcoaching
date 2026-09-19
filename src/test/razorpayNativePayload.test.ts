@@ -11,10 +11,10 @@ const base: NativeRazorpayOptions = {
 };
 
 describe("buildNativeCheckoutPayload", () => {
-  it("sends the amount as a string of paise", () => {
+  it("sends the amount as a number of paise", () => {
     const payload = buildNativeCheckoutPayload(base);
-    expect(payload.amount).toBe("49900");
-    expect(typeof payload.amount).toBe("string");
+    expect(payload.amount).toBe(49900);
+    expect(typeof payload.amount).toBe("number");
   });
 
   it("keeps the server-created order id and key", () => {
@@ -69,9 +69,36 @@ describe("buildNativeCheckoutPayload", () => {
     expect(payload.prefill).toBeUndefined();
   });
 
-  it("forwards theme when provided", () => {
+  it("sends the theme colour as the flat Android key", () => {
     const payload = buildNativeCheckoutPayload({ ...base, theme: { color: "#123456" } });
-    expect(payload.theme).toEqual({ color: "#123456" });
+    expect(payload["theme.color"]).toBe("#123456");
+    // The nested object form is a documented Android crash cause.
+    expect(payload.theme).toBeUndefined();
+  });
+
+  it("drops the custom UPI layout on a test key", () => {
+    const payload = buildNativeCheckoutPayload({
+      ...base,
+      mode: "test",
+      method: { upi: true },
+      remember_customer: true,
+      config: { display: { sequence: ["block.upi"] } },
+    });
+    expect(payload.config).toBeUndefined();
+    expect(payload.method).toBeUndefined();
+    expect(payload.remember_customer).toBeUndefined();
+    expect(payload.order_id).toBe("order_ABC123XYZ");
+  });
+
+  it("keeps the custom UPI layout on a live key", () => {
+    const payload = buildNativeCheckoutPayload({
+      ...base,
+      mode: "live",
+      method: { upi: true },
+      config: { display: { sequence: ["block.upi"] } },
+    });
+    expect(payload.method).toEqual({ upi: true });
+    expect(payload.config).toEqual({ display: { sequence: ["block.upi"] } });
   });
 
   it("never forwards unknown web-only keys", () => {
