@@ -26,6 +26,40 @@ export interface WhatsAppFabProps {
 }
 
 /**
+ * Shared "open WhatsApp" behaviour for any anchor in the app.
+ *
+ * Returns the `wa.me` href plus an onClick that, inside the Capacitor WebView,
+ * hands the URL to the system (so the installed WhatsApp app opens) instead of
+ * letting `target="_blank"` land on a dead blank tab. Plain web builds keep the
+ * normal anchor behaviour. Used by the round FAB below and by the homepage
+ * mobile action bar, so both stay behaviour-identical.
+ */
+export function useWhatsAppLink(phone: string, message?: string) {
+  const href = `https://wa.me/${phone}${
+    message ? `?text=${encodeURIComponent(message)}` : ""
+  }`;
+
+  const onClick = useCallback(
+    (e: React.MouseEvent<HTMLAnchorElement>) => {
+      void tapHaptic("light");
+      // Let plain web builds use the normal anchor behaviour.
+      const isNative =
+        typeof window !== "undefined" &&
+        Boolean((window as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.());
+      if (!isNative) return;
+      e.preventDefault();
+      void openExternal(href, { preferWebView: false }).catch((err) => {
+        console.warn("[WhatsAppFab] openExternal failed", err);
+        void openResource({ url: href, kind: "link" });
+      });
+    },
+    [href],
+  );
+
+  return { href, onClick };
+}
+
+/**
  * Single floating WhatsApp action used across the app.
  *
  * Capacitor notes:
@@ -54,26 +88,14 @@ export default function WhatsAppFab({
     return () => clearTimeout(t);
   }, [pulseOnMount]);
 
-  const href = `https://wa.me/${phone}${
-    message ? `?text=${encodeURIComponent(message)}` : ""
-  }`;
+  const { href, onClick: openWhatsApp } = useWhatsAppLink(phone, message);
 
   const onClick = useCallback(
     (e: React.MouseEvent<HTMLAnchorElement>) => {
       setPulse(false);
-      void tapHaptic("light");
-      // Let plain web builds use the normal anchor behaviour.
-      const isNative =
-        typeof window !== "undefined" &&
-        Boolean((window as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.());
-      if (!isNative) return;
-      e.preventDefault();
-      void openExternal(href, { preferWebView: false }).catch((err) => {
-        console.warn("[WhatsAppFab] openExternal failed", err);
-        void openResource({ url: href, kind: "link" });
-      });
+      openWhatsApp(e);
     },
-    [href],
+    [openWhatsApp],
   );
 
   return (
