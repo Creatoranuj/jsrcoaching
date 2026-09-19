@@ -159,6 +159,13 @@ const BuyCourse = () => {
   // the user dismisses/closes mid-flow — produces a spurious navigation
   // and a setState-on-unmounted warning.
   const isMountedRef = useRef(true);
+  // One silent native retry per purchase attempt. A failed sheet launch must
+  // retry IN THE APP — never hand the student off to a browser automatically.
+  const nativeRetryRef = useRef(0);
+  // The browser checkout is now an explicit, opt-in escape hatch that only
+  // appears after in-app payment failed twice. Students must never be pushed
+  // out of the app by default.
+  const [showBrowserEscape, setShowBrowserEscape] = useState(false);
   const redirectTimerRef = useRef<number | null>(null);
   useEffect(() => {
     return () => {
@@ -372,7 +379,10 @@ const BuyCourse = () => {
     // Re-entrancy guard: one tap === one payment attempt. Without this, every
     // extra tap while the sheet was still opening minted another Razorpay
     // order, which is how the orders table filled up with orphan rows.
-    const isFallbackAttempt = Boolean(opts?.forceWeb && opts.existingOrder);
+    // Any attempt that reuses an already-created order is a retry/fallback of
+    // the current purchase, so it must be allowed through the re-entrancy guard
+    // even though the CTA is still in its loading state.
+    const isFallbackAttempt = Boolean(opts?.existingOrder);
     if (isRazorpayLoading && !isFallbackAttempt) return;
 
     setIsRazorpayLoading(true);
@@ -506,26 +516,26 @@ const BuyCourse = () => {
         });
         await verifyRazorpayPayment(resp);
       } catch (e: unknown) {
-        if (e instanceof RazorpayBridgeMissingError) {
-          // Old APK without the native bridge — silently use the in-app web
-          // checkout instead of dead-ending the purchase.
-          logger.warn("Native Razorpay bridge missing — falling back to web checkout");
-          setPayStep("web");
-          setPayMode("web");
-          await handleRazorpayPayment({ forceWeb: true, existingOrder: orderData });
+        if (e instanceof RazorpayBridgeMissingError || e instanceof RazorpayLaunchTimeoutError) {
+          // The native sheet did not open. NEVER auto-redirect to a browser
+          // here: a student who suddenly lands on a website mid-purchase gets
+          // scared and abandons, and the in-WebView web checkout hides the UPI
+          // app tiles anyway. Retry the SAME order in the app once, then stop
+          // and offer the browser only as an explicit choice.
+          if (nativeRetryRef.current < 1) {
+            nativeRetryRef.current += 1;
+            logger.warn("Native Razorpay sheet did not open — retrying in-app");
+            toast.info("Payment screen dobara khol rahe hain…");
+            await handleRazorpayPayment({ existingOrder: orderData });
+            return;
+          }
+          logger.warn("Native Razorpay sheet failed twice — offering manual browser option");
+          void notifyError();
+          if (isMountedRef.current) setShowBrowserEscape(true);
+          toast.error("Payment screen khul nahi payi. Dobara 'Pay Securely' dabaein — paisa nahi kata hai.");
           return;
         }
-        if (e instanceof RazorpayLaunchTimeoutError) {
-          // The native sheet never appeared. Instead of dead-ending the
-          // purchase with an "update the app" message, silently retry through
-          // the in-app web checkout so the user can always pay.
-          logger.warn("Native Razorpay sheet did not open — falling back to web checkout");
-          toast.info("Payment screen khul nahi payi — browser checkout se khol rahe hain…");
-          setPayStep("web");
-          setPayMode("web");
-          await handleRazorpayPayment({ forceWeb: true, existingOrder: orderData });
-          return;
-        } else if (e instanceof RazorpayCancelledError) {
+        if (e instanceof RazorpayCancelledError) {
           toast.info("Payment cancelled. You can try again whenever you're ready.");
         } else if (e instanceof RazorpaySheetUnresponsiveError) {
           // The native sheet stayed on top for the whole wait ceiling without
@@ -848,7 +858,7 @@ const BuyCourse = () => {
                       )}
                     </Button>
                   )}
-                  {isNative && !isIosNative && (
+                  {isNative && !isIosNative && showBrowserEscape && (
                     <>
                       {/* Always tappable — even mid-attempt. If the native sheet
                           misbehaves the user must never be trapped behind a
