@@ -291,6 +291,49 @@ export const UPI_FIRST_CHECKOUT_CONFIG = {
 } as const;
 
 /**
+ * Mode-aware UPI-first config.
+ *
+ * Razorpay ke **test mode** me UPI ka `intent` flow (GPay / PhonePe / Paytm
+ * tiles) available hi nahi hota — us flow ko maangne par checkout ka UPI block
+ * khaali reh jaata hai aur student ko lagta hai "UPI hi nahi hai". Test mode me
+ * isliye sirf `collect` (UPI ID / VPA) maangte hain: block dikhta hai aur
+ * `success@razorpay` jaise test VPA se poora flow verify ho jaata hai.
+ *
+ * Live mode me dono flows jaate hain, taaki installed app tiles bhi aayen.
+ */
+export const buildUpiCheckoutConfig = (
+  mode?: "test" | "live" | null,
+): {
+  method: Record<string, boolean>;
+  remember_customer: boolean;
+  config: { display: Record<string, unknown> };
+} => {
+  const testMode = mode === "test";
+  const instruments = testMode
+    ? [{ method: "upi", flows: ["collect"] }]
+    : [
+        { method: "upi", flows: ["intent"] },
+        { method: "upi", flows: ["collect"] },
+      ];
+  return {
+    method: { ...UPI_FIRST_CHECKOUT_CONFIG.method },
+    remember_customer: true,
+    config: {
+      display: {
+        blocks: {
+          upi: {
+            name: testMode ? "UPI ID se pay karein" : "Pay using UPI",
+            instruments,
+          },
+        },
+        sequence: ["block.upi"],
+        preferences: { show_default_blocks: true },
+      },
+    },
+  };
+};
+
+/**
  * Razorpay `prefill.contact` ke liye Indian mobile number normalise karta hai.
  *
  * Razorpay ka "Recommended" / preferred-methods block poori tarah customer ke
