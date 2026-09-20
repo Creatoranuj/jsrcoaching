@@ -4,14 +4,17 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { supabase } from "../integrations/supabase/client";
 import { useAuth } from "../contexts/AuthContext";
 import { toast } from "sonner";
-import { Loader2, CheckCircle, XCircle, Clock, LogIn, ShieldCheck } from "lucide-react";
+import { Loader2, CheckCircle, XCircle, Clock, LogIn, ShieldCheck, Smartphone } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
 import { notifySuccess, notifyError, tapLight } from "../lib/nativeChrome";
 import { getErrorMessage } from "@/lib/errorMessage";
 import { waitForEnrollment } from "@/utils/reconcileEnrollment";
 import { clearPendingPayment, rememberPendingPayment } from "@/lib/pendingPayment";
-import { PAYMENT_RETURN_PARAMS } from "@/config/paymentReturn";
+import {
+  PAYMENT_RETURN_PARAMS,
+  buildPaymentReturnIntentUrl,
+} from "@/config/paymentReturn";
 
 type Status =
   | "verifying"
@@ -32,6 +35,15 @@ const PaymentCallback = () => {
   // Without this guard we'd fire the verification Edge Function twice and risk
   // duplicate enrollment rows / confusing UI flicker.
   const verifiedRef = useRef(false);
+
+  // A student who paid in the phone's browser can land here on the WEBSITE
+  // instead of inside the app (Chrome blocks gesture-less app hand-offs). In
+  // that case the fastest route to the unlocked course is to reopen the app —
+  // the session already lives there, so no second login is needed.
+  const isAndroidWeb =
+    typeof navigator !== "undefined" &&
+    /Android/i.test(navigator.userAgent) &&
+    !/\bwv\b/i.test(navigator.userAgent);
 
   // Course id comes either from the web redirect (`course_id`) or from the
   // browser-return deep link (`course`).
@@ -214,7 +226,22 @@ const PaymentCallback = () => {
                 login kar lijiye &#8212; uske baad course apne aap khul jayega.
               </p>
               <div className="space-y-2 pb-[max(env(safe-area-inset-bottom),16px)]">
+                {isAndroidWeb && (
+                  <Button
+                    onClick={() => {
+                      void tapLight();
+                      window.location.href = buildPaymentReturnIntentUrl("success", {
+                        courseId,
+                        orderId: searchParams.get(PAYMENT_RETURN_PARAMS.order),
+                      });
+                    }}
+                    className="w-full gap-2 active:scale-[0.97] transition-transform duration-150 ease-out"
+                  >
+                    <Smartphone className="h-5 w-5" /> App me kholein
+                  </Button>
+                )}
                 <Button
+                  variant={isAndroidWeb ? "outline" : "default"}
                   onClick={() => {
                     void tapLight();
                     navigate("/login", {

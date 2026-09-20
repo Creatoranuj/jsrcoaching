@@ -80,16 +80,25 @@ const PayBrowser = () => {
       handoffTimersRef.current = [];
 
       const opts = { courseId, orderId };
+      // Order matters. `intent://` with an explicit package is the documented
+      // Android hand-off and is the one Chrome honours most often, so it goes
+      // first; the custom scheme is the follow-up.
+      //
+      // The https App Link is deliberately NOT fired automatically: when the
+      // tab is already on that same host, Android reuses the tab instead of
+      // opening the app, which strands a paying student on the website and
+      // makes them log in a second time. It is only reachable through the
+      // visible "App me wapas jayein" button below (a real user gesture).
       const hops = [
-        buildPaymentReturnUrl(status, opts),
         buildPaymentReturnIntentUrl(status, opts),
-        buildPaymentReturnWebUrl(status, opts),
+        buildPaymentReturnUrl(status, opts),
       ];
 
       hops.forEach((url, i) => {
         const go = () => {
           // Tab already backgrounded → the app has focus, stop navigating.
           if (typeof document !== "undefined" && document.hidden) return;
+          addBreadcrumb("payment", "browser-return:hop", { step: i, order_id: orderId });
           try {
             window.location.href = url;
           } catch {
@@ -102,6 +111,15 @@ const PayBrowser = () => {
     },
     [courseId, orderId]
   );
+
+  /** Last resort, gesture-only: the verified https link. */
+  const openWebFallback = useCallback(() => {
+    addBreadcrumb("payment", "browser-return:web-fallback", { order_id: orderId });
+    window.location.href = buildPaymentReturnWebUrl(lastStatusRef.current, {
+      courseId,
+      orderId,
+    });
+  }, [courseId, orderId]);
 
   const start = useCallback(async () => {
     if (!orderId || !keyId || !Number.isFinite(amountPaise) || amountPaise <= 0) {
@@ -197,6 +215,16 @@ const PayBrowser = () => {
             <ArrowLeft className="mr-2 h-4 w-4 shrink-0" />
             App me wapas jayein
           </Button>
+          <button
+            type="button"
+            onClick={openWebFallback}
+            className="text-xs text-muted-foreground underline underline-offset-4"
+          >
+            App nahi khul raha? Website par kholein
+          </button>
+          <p className="text-xs text-muted-foreground">
+            Aap app khud bhi khol sakte hain &#8212; course apne aap unlock ho jayega.
+          </p>
         </div>
       )}
 
@@ -223,6 +251,16 @@ const PayBrowser = () => {
             <ArrowLeft className="mr-2 h-4 w-4 shrink-0" />
             App me wapas jayein
           </Button>
+          <button
+            type="button"
+            onClick={openWebFallback}
+            className="text-xs text-muted-foreground underline underline-offset-4"
+          >
+            App nahi khul raha? Website par kholein
+          </button>
+          <p className="text-xs text-muted-foreground">
+            Aap app khud bhi khol sakte hain &#8212; course apne aap unlock ho jayega.
+          </p>
         </div>
       )}
 

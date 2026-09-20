@@ -21,9 +21,16 @@
  */
 import { recoverEnrollmentDetailed, type RecoverOutcome } from "@/utils/paymentApi";
 
-/** Delay BEFORE each attempt, in ms. Attempt times: 0, 6s, 24s, 48s, 78s, … */
+/**
+ * Delay BEFORE each attempt, in ms. Attempt times: 0, 5s, 17s, 47s, 107s, …
+ *
+ * The first three attempts are front-loaded because a UPI capture webhook
+ * usually lands within ~10 s — that is the window a student is actually
+ * staring at the screen. Still ≤4 calls in any rolling 60 s window, so the
+ * server's 5/60 s limit is never tripped, and coverage still reaches ~5 min.
+ */
 export const RECONCILE_SCHEDULE_MS = [
-  0, 6000, 18000, 24000, 30000, 45000, 60000, 60000, 60000,
+  0, 5000, 12000, 30000, 60000, 60000, 60000, 60000,
 ] as const;
 
 /** Extra wait after a 429 so the rate-limit window can drain. */
