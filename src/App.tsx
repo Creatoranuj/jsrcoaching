@@ -112,6 +112,7 @@ const Doubts = lazyWithRetry(() => import("./pages/Doubts"));
 const Privacy = lazyWithRetry(() => import("./pages/Privacy"));
 const DeleteAccountPublic = lazyWithRetry(() => import("./pages/DeleteAccountPublic"));
 const AppUpdate = lazyWithRetry(() => import("./pages/AppUpdate"));
+const Releases = lazyWithRetry(() => import("./pages/Releases"));
 const ExamLanding = lazyWithRetry(() => import("./pages/ExamLanding"));
 
 const Admin = lazyWithRetry(() => import("./pages/Admin"));
@@ -125,6 +126,7 @@ const AdminChatbotSettings = lazyWithRetry(() => import("./pages/AdminChatbotSet
 const AdminAnalytics = lazyWithRetry(() => import("./pages/AdminAnalytics"));
 const AdminTrustedHosts = lazyWithRetry(() => import("./pages/AdminTrustedHosts"));
 const AdminAppUpdate = lazyWithRetry(() => import("./pages/AdminAppUpdate"));
+const AdminReleases = lazyWithRetry(() => import("./pages/AdminReleases"));
 const AdminPdfHealth = lazyWithRetry(() => import("./pages/AdminPdfHealth"));
 const AdminAiHealth = lazyWithRetry(() => import("./pages/AdminAiHealth"));
 const AdminUsers = lazyWithRetry(() => import("./pages/AdminUsers"));
@@ -381,6 +383,8 @@ const App = () => (
                     <Route path="/delete-account" element={<DeleteAccountPublic />} />
                     {/* Public update page — opened in the phone's real browser so the APK can download. */}
                     <Route path="/update" element={<AppUpdate />} />
+                    {/* Public release history — purane versions, notes, current supported version. */}
+                    <Route path="/releases" element={<Releases />} />
 
                     {/* SEO Exam Landing Routes */}
                     <Route path="/up-board-english" element={<ExamLanding />} />
@@ -404,6 +408,7 @@ const App = () => (
                     <Route path="/admin/analytics" element={<AdminRoute element={<AdminAnalytics />} />} />
                     <Route path="/admin/trusted-hosts" element={<AdminRoute element={<AdminTrustedHosts />} />} />
                     <Route path="/admin/app-update" element={<AdminRoute element={<AdminAppUpdate />} />} />
+                    <Route path="/admin/releases" element={<AdminRoute element={<AdminReleases />} />} />
                     <Route path="/admin/pdf-health" element={<AdminRoute element={<AdminPdfHealth />} />} />
                     <Route path="/admin/ai-health" element={<AdminRoute element={<AdminAiHealth />} />} />
                     <Route path="/admin/security" element={<AdminRoute element={<AdminSecurity />} />} />

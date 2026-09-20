@@ -11,6 +11,7 @@ import { isAllowedUpdateUrl, isStoreListingUrl } from "@/utils/downloadUrl";
 import { UPDATE_PAGE_URL } from "@/config/updatePage";
 import { openInSystemBrowser } from "@/lib/native/browser";
 import { fetchLatestReleaseVersion } from "@/utils/latestRelease";
+import { fetchReleases, getCurrentReleaseVersion, getInstalledVersionState, type AppRelease } from "@/lib/releases";
 import { logger } from "@/lib/logger";
 
 interface AppConfigRow {
@@ -161,6 +162,18 @@ export const ForceUpdateGate = ({ children }: { children: ReactNode }) => {
     retry: 0,
   });
 
+  // Release history override: an admin can retire the installed build in
+  // app_releases (status forced_update) without republishing app_config.
+  // Fails open — if the table is missing or empty, nothing changes.
+  const { data: releases } = useQuery<AppRelease[]>({
+    queryKey: ["app_releases_gate"],
+    queryFn: fetchReleases,
+    enabled: isNative,
+    staleTime: 1000 * 60 * 5, // 5 minutes — forced_update must reach devices fast
+    gcTime: 1000 * 60 * 60 * 24,
+    retry: 0,
+  });
+
   // Evaluate the gate whenever cfg or version changes.
   useEffect(() => {
     if (!isNative) return;
@@ -178,16 +191,30 @@ export const ForceUpdateGate = ({ children }: { children: ReactNode }) => {
           : published;
 
       setConfig(cfg);
-      setTargetVersion(latest || min || "");
+      // app_config.latest_* goes stale when CI didn't republish it; the
+      // release marked current in app_releases is the fresher fallback.
+      const latestFromReleases = getCurrentReleaseVersion(releases);
+      const effectiveLatest =
+        latestFromReleases && isUpdateAvailable(latest || "0.0.0", latestFromReleases)
+          ? latestFromReleases
+          : latest;
+      setTargetVersion(effectiveLatest || min || "");
+
+      // Release history says this installed build is retired outright.
+      const installed = getInstalledVersionState(currentVersion, releases);
+      if (installed.status === "forced_update") {
+        setMode("required");
+        return;
+      }
 
       // Hard block: below the minimum supported build, or the admin flipped
       // force_update on while a newer build exists.
-      if (isUpdateRequired(currentVersion, min) || (cfg.force_update && isUpdateAvailable(currentVersion, latest))) {
+      if (isUpdateRequired(currentVersion, min) || (cfg.force_update && isUpdateAvailable(currentVersion, effectiveLatest))) {
         setMode("required");
         return;
       }
       // Soft nudge: a newer build exists and the user has not snoozed it.
-      if (isUpdateAvailable(currentVersion, latest) && !isSnoozed(latest)) {
+      if (isUpdateAvailable(currentVersion, effectiveLatest) && !isSnoozed(effectiveLatest)) {
         setMode("optional");
         return;
       }
@@ -197,7 +224,7 @@ export const ForceUpdateGate = ({ children }: { children: ReactNode }) => {
       logger.warn("[ForceUpdateGate] version check failed, failing open", err);
       setMode("none");
     }
-  }, [fetchedCfg, currentVersion, isNative, releaseVersion]);
+  }, [fetchedCfg, currentVersion, isNative, releaseVersion, releases]);
 
   const openStore = useCallback(async () => {
     const { Capacitor } = await import("@capacitor/core").catch(() => ({

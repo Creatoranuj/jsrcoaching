@@ -573,7 +573,12 @@ export default function Index() {
       <footer className="border-t border-ink-foreground/10 bg-ink py-10 pb-28 text-ink-foreground sm:pb-10">
         <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
           <JSRMark inverse />
-          <div className="text-sm text-ink-foreground/65">Class 9–12 · SSC · Railway</div>
+          <div className="text-sm text-ink-foreground/65">
+            <p>Class 9–12 · SSC · Railway</p>
+            <Link to="/releases" className="mt-1 inline-block underline-offset-2 hover:text-gold hover:underline">
+              App versions &amp; release notes
+            </Link>
+          </div>
           <div className="flex gap-2">
             <Button variant="ghost" size="icon" asChild className="text-ink-foreground hover:bg-ink-foreground/10 hover:text-gold">
               <a href={YOUTUBE_URL} target="_blank" rel="noreferrer" aria-label="JSR COACHING on YouTube">

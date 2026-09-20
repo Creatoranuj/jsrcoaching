@@ -49,7 +49,7 @@ import {
   Trash2, Plus, BookOpen, ExternalLink, ShieldAlert, Search,
   Download, Filter, RefreshCw, Eye, IndianRupee, Loader2, Library, Calendar,
   GraduationCap, UserCheck, UserX, Radio, ImageIcon, MessageSquare, Monitor, MonitorPlay, SlidersHorizontal, Smartphone, LogOut,
-  FileText, Link as LinkIcon, LayoutDashboard,
+  FileText, Link as LinkIcon, LayoutDashboard, History,
 } from "lucide-react";
 
 // Admin tab panels are route-heavy leaves that only one operator tab shows at a
@@ -897,6 +897,7 @@ const Admin = () => {
                   <Button variant="outline" onClick={() => navigate('/admin/study-materials')} className="gap-2"><Plus className="h-4 w-4" /> Study Materials</Button>
                   <Button variant="outline" onClick={() => navigate('/admin/trusted-hosts')} className="gap-2"><ShieldAlert className="h-4 w-4" /> Trusted Hosts / CSP</Button>
                   <Button variant="outline" onClick={() => navigate('/admin/app-update')} className="gap-2"><ShieldAlert className="h-4 w-4" /> App Update & Notification</Button>
+                  <Button variant="outline" onClick={() => navigate('/admin/releases')} className="gap-2"><History className="h-4 w-4" /> App Releases</Button>
                   <Button variant="outline" onClick={() => navigate('/admin/pdf-health')} className="gap-2"><ShieldAlert className="h-4 w-4" /> PDF Source Health</Button>
                   <Button variant="outline" onClick={() => navigate('/admin/ai-health')} className="gap-2"><ShieldAlert className="h-4 w-4" /> AI Health / Diagnostics</Button>
                   <Button variant="outline" onClick={() => navigate('/admin/security')} className="gap-2"><ShieldAlert className="h-4 w-4" /> Dependency Security Scan</Button>
