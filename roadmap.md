@@ -44,3 +44,9 @@
 
 ## 2026-09-20 — Final consolidated audit
 - [x] Compiled `docs/observer/2026-09-20-final-audit.md` — Sentry triage (7/8 resolved), architect audit 4/5, crash-shield, bandwidth baseline, payments status, verification (771 tests green), owner checklist.
+
+## 2026-09-20 — chatbot redeploy + PDF flow verification
+- [x] Chatbot edge function redeployed via `deploy-functions.yml` workflow_dispatch on main (a565b56) — deploy + live health gate success. Chatbot code was already latest (last change 03c22df5, included in the Sep-19 deploy).
+- [x] PDF download flow verified in code (see final audit reply): pdf-proxy enrollment gate → `downloadFile()` → native Filesystem streaming with progress on APK, fetch-blob fallback on web; HTML-instead-of-PDF guard.
+- [ ] OWNER: Sentry pdf-proxy 403 issue — manually Resolve (no Sentry connection in this workspace).
+- [ ] OWNER: update `LOVABLE_API_KEY` in Supabase Edge Functions secrets if chat still shows "server key issue" after this redeploy.
