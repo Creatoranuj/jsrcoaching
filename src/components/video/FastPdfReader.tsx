@@ -33,6 +33,7 @@ import { usePlayerReaderControls } from "../../hooks/usePlayerReaderControls";
 import ReaderZoomControls from "../library/reader/ReaderZoomControls";
 import PageIndicatorPill from "../viewer/PageIndicatorPill";
 import { validatePdfBlob } from "../../lib/validatePdfBlob";
+import { getNetworkStatus, onNetworkChange } from "../../lib/native/network";
 
 // Guard worker assignment for SSR / non-browser execution.
 
@@ -150,6 +151,16 @@ export { computeFitPageWidth };
 import { measureContentBox, fitToContent, measureInkBox, fitToMargins, type ContentBox, type ContentFit } from "../../lib/pdfContentBox";
 
 import { isSheetsSource, isArchiveSource, pdfSizeProbeRange } from "../../lib/pdfSourceKind";
+
+/**
+ * Hard cap on the whole-file byte fallback. The 3s heartbeat keeps the
+ * parent's error timer from firing, so a stalled socket would otherwise spin
+ * the overlay forever (the reported "Opening Class PDF — 33%" freeze).
+ */
+const FALLBACK_DEADLINE_MS = 45_000;
+
+/** Shown when the device has no connectivity at all. */
+const OFFLINE_MESSAGE = "Internet connection nahi hai. Online aakar Retry karein.";
 
 function abortErrorForReader(): Error {
   const e = new Error("Aborted");
@@ -692,6 +703,21 @@ const FastPdfReader = forwardRef<FastPdfReaderHandle, Props>(
 
     const fetchWholeFileFallback = useCallback(async () => {
       if (!src || !/^https?:/i.test(src) || triedByteFallback.current || data || fallbackData) return false;
+
+      // Offline guard: the heartbeat below keeps the parent's error timer
+      // alive forever, so with no network the reader used to sit on
+      // "Stabilizing PDF stream…" at a frozen percentage indefinitely.
+      // Fail fast with an honest message instead.
+      try {
+        const net = await getNetworkStatus();
+        if (!net.connected) {
+          setError(OFFLINE_MESSAGE);
+          try { window.dispatchEvent(new CustomEvent("pdf-error", { detail: OFFLINE_MESSAGE })); } catch {}
+          traceReader(route, "error", "byte-fallback-offline", {});
+          return false;
+        }
+      } catch { /* status unknown — continue and let the deadline guard it */ }
+
       triedByteFallback.current = true;
       setFallbackLoading(true);
       fallbackAbortRef.current?.abort();
@@ -707,8 +733,21 @@ const FastPdfReader = forwardRef<FastPdfReaderHandle, Props>(
       // resetting until either the fetch resolves (`pdf-ready` via
       // onLoadSuccess) or rejects (`pdf-error`).
       try { window.dispatchEvent(new CustomEvent("pdf-first-byte", { detail: { fallback: true } })); } catch {}
+      // Hard deadline: without one, a stalled (but not failed) socket keeps
+      // the heartbeat running and the overlay spins forever.
+      const startedAt = Date.now();
       const heartbeat = window.setInterval(() => {
         if (controller.signal.aborted) return;
+        if (Date.now() - startedAt > FALLBACK_DEADLINE_MS) {
+          traceReader(route, "error", "byte-fallback-deadline", {
+            ms: Date.now() - startedAt,
+          });
+          controller.abort();
+          const slowMsg = "Network bahut slow hai. Retry karein.";
+          setError(slowMsg);
+          try { window.dispatchEvent(new CustomEvent("pdf-error", { detail: slowMsg })); } catch {}
+          return;
+        }
         try {
           window.dispatchEvent(new CustomEvent("pdf-progress", {
             detail: { percent: -1, phase: "downloading", fallback: true, measured: false },
@@ -777,6 +816,28 @@ const FastPdfReader = forwardRef<FastPdfReaderHandle, Props>(
       setFallbackLoading(false);
       setRetryNonce((n) => n + 1);
     }, [url]);
+
+    // Auto-retry once when connectivity returns after an offline failure.
+    // Without this the user is stuck staring at the offline message even
+    // after WiFi / data comes back.
+    const offlineRetryDoneRef = useRef(false);
+    useEffect(() => {
+      if (error !== OFFLINE_MESSAGE || offlineRetryDoneRef.current) return;
+      let dispose: (() => void) | undefined;
+      let cancelled = false;
+      void onNetworkChange((status) => {
+        if (cancelled || !status.connected || offlineRetryDoneRef.current) return;
+        offlineRetryDoneRef.current = true;
+        restartLoading();
+      }).then((off) => {
+        if (cancelled) off();
+        else dispose = off;
+      });
+      return () => {
+        cancelled = true;
+        dispose?.();
+      };
+    }, [error, restartLoading]);
 
     const onLoadError = useCallback(
       async (err: Error) => {
