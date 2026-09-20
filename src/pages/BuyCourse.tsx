@@ -104,7 +104,7 @@ const openWebsiteCheckout = async (courseId: string | number | null): Promise<vo
   const { openExternal } = await import("@/lib/native/browser");
   try {
     await openExternal(target, { preferWebView: false });
-    toast.info("Website khul gayi — wahan login karke payment poora karein.");
+    toast.info("Website khul gayi — wahan login karke UPI se payment poora karein.");
   } catch (err) {
     logger.error("Website checkout handoff failed:", err);
     toast.error("Website khul nahi payi. Internet check karke dobara koshish karein.");
@@ -614,7 +614,7 @@ const BuyCourse = () => {
           // point at the browser checkout instead of a generic failure.
           toast.error(
             e instanceof RazorpayBridgeMissingError
-              ? "Aapka app purana hai — payment screen is version me nahi hai. Play Store se app update karein, ya neeche 'Website par login karke pay karein' dabaein. Paisa nahi kata hai."
+              ? "Aapka app purana hai — payment screen is version me nahi hai. Play Store se app update karein, ya neeche 'UPI ke liye website se payment karein' dabaein. Paisa nahi kata hai."
               : "Payment screen khul nahi payi. Dobara 'Pay Securely' dabaein — paisa nahi kata hai.",
           );
           return;
@@ -1032,11 +1032,12 @@ const BuyCourse = () => {
                         className="mt-2 h-auto min-h-12 w-full whitespace-normal break-words px-3 py-2.5 text-sm font-semibold leading-snug active:scale-[0.97] transition-transform duration-150 ease-out"
                       >
                         <ExternalLink className="mr-2 h-4 w-4 shrink-0" />
-                        Website par login karke pay karein
+                        UPI ke liye website se payment karein
                       </Button>
                       <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
-                        Website par apne isi account se login karein — payment ke baad course
-                        app me apne aap khul jayega.
+                        UPI (PhonePe / Google Pay / Paytm / BHIM) website par sabse
+                        bharosemand chalta hai. Wahan isi account se login karein —
+                        payment ke baad course app me apne aap khul jayega.
                       </p>
                       <Button
                         type="button"
@@ -1044,7 +1045,7 @@ const BuyCourse = () => {
                         onClick={() => { void tapMedium(); void handleRazorpayPayment({ forceWeb: true }); }}
                         className="mt-1 h-auto min-h-10 w-full whitespace-normal break-words px-3 py-2 text-xs font-normal leading-snug text-muted-foreground active:scale-[0.97] transition-transform duration-150 ease-out"
                       >
-                        Ya sidha browser checkout kholein
+                        Ya sidha browser checkout kholein (card/netbanking)
                       </Button>
                       {(isAdmin || paymentMode === "test") && (
                         <div className="mt-2 rounded-lg border border-dashed bg-muted/40 p-2.5 text-left">
