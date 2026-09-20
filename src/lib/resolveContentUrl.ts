@@ -26,6 +26,34 @@ const BUCKET = "content";
 const SIGNED_TTL_SECONDS = 60 * 60; // 1h
 
 /**
+ * Hard ceiling on every storage round-trip made from here (audit 2026-09-20,
+ * HIGH). Screens await these calls before painting; on a dying radio the
+ * storage request can hang with no reply at all, which used to leave course
+ * lists on an endless skeleton. A capped call degrades to "no signed URL" —
+ * the card paints its placeholder — instead of freezing the page.
+ */
+const STORAGE_CALL_TIMEOUT_MS = 6000;
+
+async function capped<T>(work: Promise<T>, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<T>((resolve) => {
+        timer = setTimeout(() => {
+          console.warn("[resolveContentUrl] storage call timed out");
+          resolve(fallback);
+        }, STORAGE_CALL_TIMEOUT_MS);
+      }),
+    ]);
+  } catch {
+    return fallback;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
  * Presentation-only folders in the `content` bucket: course cards, thumbnails,
  * hero banners and chapter icons — no gated study material.
  *
@@ -169,13 +197,18 @@ export async function resolveContentUrl(
 
   // Presentation images are signed like gated files, but must not fire a doomed
   // request when the bucket itself is gone (post project-migration state).
-  if (isPresentationPath(path) && !(await contentBucketExists())) return null;
+  if (isPresentationPath(path) && !(await capped(contentBucketExists(), false))) return null;
 
 
 
 
 
-  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, ttlSeconds);
+  const { data, error } = await capped(
+    supabase.storage.from(BUCKET).createSignedUrl(path, ttlSeconds),
+    { data: null, error: { message: "timeout" } } as Awaited<
+      ReturnType<ReturnType<typeof supabase.storage.from>["createSignedUrl"]>
+    >,
+  );
   if (error) {
     void reportFailure(classifyStorageError(error.message), path, error.message);
     return null;
@@ -219,14 +252,17 @@ export async function resolveContentUrls(
 
   // One bucket probe covers the whole batch (cached per session): a missing
   // bucket means every card paints its placeholder with zero extra requests.
-  if (hasPresentationPath && !(await contentBucketExists())) return out;
+  if (hasPresentationPath && !(await capped(contentBucketExists(), false))) return out;
 
 
   if (pathsToSign.length === 0) return out;
 
-  const { data, error } = await supabase.storage
-    .from(BUCKET)
-    .createSignedUrls(pathsToSign, ttlSeconds);
+  const { data, error } = await capped(
+    supabase.storage.from(BUCKET).createSignedUrls(pathsToSign, ttlSeconds),
+    { data: null, error: { message: "timeout" } } as Awaited<
+      ReturnType<ReturnType<typeof supabase.storage.from>["createSignedUrls"]>
+    >,
+  );
 
   if (error || !data) {
     void reportFailure(classifyStorageError(error?.message), pathsToSign[0] ?? null, error?.message);

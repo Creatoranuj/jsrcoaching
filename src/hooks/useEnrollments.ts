@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "../integrations/supabase/client";
 import { useAuth } from "../contexts/AuthContext";
 import { toast } from "sonner";
-import { resolveContentUrl } from "../lib/resolveContentUrl";
+import { resolveContentUrls } from "../lib/resolveContentUrl";
 import type { Course } from "./useCourses";
 import { logger } from "@/lib/logger";
 import { getErrorMessage } from "@/lib/errorMessage";
@@ -58,34 +58,37 @@ export const useEnrollments = () => {
 
       if (dbError) throw dbError;
 
-      // Audit F4: use allSettled so one bad signed-URL doesn't nuke the
-      // whole enrollments list. Fall back to the raw stored URL on failure.
-      const safeResolve = async (u: string | null | undefined) => {
-        if (!u) return u ?? undefined;
-        try { return await resolveContentUrl(u); } catch { return null; }
-      };
-      const settled = await Promise.allSettled(
-        (data || []).map(async (e: EnrollmentRow): Promise<EnrollmentWithCourse> => ({
-          id: e.id,
-          userId: e.user_id,
-          courseId: e.course_id,
-          purchasedAt: e.purchased_at,
-          status: e.status,
-          course: e.courses ? {
-            id: e.courses.id,
-            title: e.courses.title,
-            description: e.courses.description,
-            grade: e.courses.grade,
-            price: e.courses.price,
-            imageUrl: await safeResolve(e.courses.image_url),
-            thumbnailUrl: await safeResolve(e.courses.thumbnail_url),
-            createdAt: e.courses.created_at,
-          } : undefined,
-        }))
-      );
-      const formatted: EnrollmentWithCourse[] = settled
-        .filter((r): r is PromiseFulfilledResult<EnrollmentWithCourse> => r.status === "fulfilled")
-        .map((r) => r.value);
+      // Audit 2026-09-20 (HIGH): this used to await TWO sequential signing
+      // round-trips PER enrolment before the list could render. One batched,
+      // time-capped call now covers the whole list, and a failure only means
+      // the card keeps its stored URL / placeholder — never a stuck screen.
+      const rows = (data || []) as EnrollmentRow[];
+      let signed: Array<string | null> = [];
+      try {
+        signed = await resolveContentUrls(
+          rows.flatMap((e) => [e.courses?.image_url ?? null, e.courses?.thumbnail_url ?? null]),
+        );
+      } catch {
+        signed = [];
+      }
+
+      const formatted: EnrollmentWithCourse[] = rows.map((e, i) => ({
+        id: e.id,
+        userId: e.user_id,
+        courseId: e.course_id,
+        purchasedAt: e.purchased_at,
+        status: e.status,
+        course: e.courses ? {
+          id: e.courses.id,
+          title: e.courses.title,
+          description: e.courses.description,
+          grade: e.courses.grade,
+          price: e.courses.price,
+          imageUrl: signed[i * 2] ?? e.courses.image_url ?? undefined,
+          thumbnailUrl: signed[i * 2 + 1] ?? e.courses.thumbnail_url ?? undefined,
+          createdAt: e.courses.created_at,
+        } : undefined,
+      }));
 
       if (!aliveRef.current) return;
       setEnrollments(formatted);

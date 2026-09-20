@@ -104,11 +104,9 @@ export const useCourses = () => {
 
       if (dbError || !data) return null;
       const c = mapCourse(data);
-      return {
-        ...c,
-        imageUrl: await resolveContentUrl(c.imageUrl),
-        thumbnailUrl: await resolveContentUrl(c.thumbnailUrl),
-      };
+      // One batched, time-capped storage call instead of two sequential ones.
+      const [imageUrl, thumbnailUrl] = await resolveContentUrls([c.imageUrl, c.thumbnailUrl]);
+      return { ...c, imageUrl, thumbnailUrl };
 
     } catch (err: unknown) {
       logger.error("Error fetching course:", err);
