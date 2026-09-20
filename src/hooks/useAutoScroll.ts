@@ -104,6 +104,10 @@ export function useAutoScroll({ targetRef, iframeRef, docKey }: AutoScrollOption
   const activeRef = useRef(false);
   /** True while the user holds to pause (engine stopped, state stays active). */
   const pausedRef = useRef(false);
+  /** Poll used while a bounded reader's scroller is still mounting. */
+  const attachTimerRef = useRef<number | null>(null);
+  /** Latest `start` — lets the attach poll re-enter without a circular dep. */
+  const startRef = useRef<() => void>(() => {});
   /** Live speed for the running loop — avoids restarting the engine on change. */
   const speedRef = useRef(speed);
   /** ms spent parked at the bottom — guards against premature auto-stop. */
@@ -318,6 +322,17 @@ export function useAutoScroll({ targetRef, iframeRef, docKey }: AutoScrollOption
     if (typeof document === "undefined") return null;
     const rawEl = targetRef?.current ?? null;
     if (canScroll(rawEl)) return rawEl;
+
+    // A reader that declares a boundary (`data-reader-surface`, e.g. the inline
+    // lesson PDF box) owns autoscroll entirely: nothing OUTSIDE that box may be
+    // scrolled. Previously the ancestor walk escaped the box and grabbed the
+    // lesson page's <main>, so pressing play scrolled the whole page — video,
+    // title and chip strip slid away instead of the PDF pages moving.
+    const boundary =
+      rawEl && typeof rawEl.closest === "function"
+        ? (rawEl.closest("[data-reader-surface]") as HTMLElement | null)
+        : null;
+
     if (rawEl) {
       // 1) a scrollable descendant that mounted after the FAB did
       const inner = Array.from(
@@ -326,13 +341,18 @@ export function useAutoScroll({ targetRef, iframeRef, docKey }: AutoScrollOption
         ),
       ).find(canScroll);
       if (inner) return inner;
-      // 2) nearest scrollable ancestor (reader shells wrap the content)
+      // 2) nearest scrollable ancestor (reader shells wrap the content), never
+      //    walking past the reader boundary.
       let node: HTMLElement | null = rawEl.parentElement;
       while (node && node !== document.body && node !== document.documentElement) {
         if (canScroll(node)) return node;
+        if (boundary && node === boundary) break;
         node = node.parentElement;
       }
     }
+    // Inside a bounded reader: no scroller yet (pages still rendering) — wait
+    // for it rather than hijacking the page scroller.
+    if (boundary) return null;
     // 3) the page itself — inline Smart Notes / inline PDF inside a normal
     //    (non-overflow) lesson section scroll the document, not a box.
     const doc = (document.scrollingElement ?? document.documentElement) as HTMLElement | null;
@@ -388,6 +408,10 @@ export function useAutoScroll({ targetRef, iframeRef, docKey }: AutoScrollOption
     if (supportTimerRef.current != null) {
       window.clearTimeout(supportTimerRef.current);
       supportTimerRef.current = null;
+    }
+    if (attachTimerRef.current != null) {
+      window.clearInterval(attachTimerRef.current);
+      attachTimerRef.current = null;
     }
   }, []);
 
@@ -719,8 +743,33 @@ export function useAutoScroll({ targetRef, iframeRef, docKey }: AutoScrollOption
         }
 
       }, 1500);
+      return;
     }
+
+    // Neither a scroller nor an iframe yet — a bounded reader (inline lesson
+    // PDF) whose pages are still rendering. Poll briefly and re-enter instead
+    // of silently doing nothing (and never hijack the lesson page scroller).
+    if (attachTimerRef.current != null) window.clearInterval(attachTimerRef.current);
+    let tries = 0;
+    attachTimerRef.current = window.setInterval(() => {
+      if (!activeRef.current || tries++ > 40) {
+        if (attachTimerRef.current != null) window.clearInterval(attachTimerRef.current);
+        attachTimerRef.current = null;
+        return;
+      }
+      if (resolveTarget() || iframeRef?.current) {
+        if (attachTimerRef.current != null) window.clearInterval(attachTimerRef.current);
+        attachTimerRef.current = null;
+        startRef.current();
+      }
+    }, 150);
   }, [stop, deactivate, iframeRef, pushDwellToIframe, noteShuffleVisit, closeShuffleVisit, resolveTarget]);
+
+  useEffect(() => {
+    startRef.current = start;
+  }, [start]);
+
+
 
 
   const toggle = useCallback(() => {
