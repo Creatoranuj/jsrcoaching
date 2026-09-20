@@ -26,7 +26,8 @@ vi.mock("@/lib/sentry", () => ({
 vi.mock("@/lib/nativeChrome", () => ({
   tapLight: vi.fn(), tapMedium: vi.fn(), notifySuccess: vi.fn(), notifyError: vi.fn(),
 }));
-vi.mock("@/lib/resolveContentUrl", () => ({ resolveContentUrl: async () => null }));
+let resolveImpl: () => Promise<string | null> = async () => null;
+vi.mock("@/lib/resolveContentUrl", () => ({ resolveContentUrl: () => resolveImpl() }));
 vi.mock("@/utils/upiApps", () => ({ listUpiApps: async () => [] }));
 vi.mock("@/hooks/useCourseAvailability", () => ({
   useCourseAvailability: () => ({ availability: null, loading: false }),
@@ -62,6 +63,7 @@ const setOnline = (v: boolean) =>
 
 beforeEach(() => {
   setOnline(true);
+  resolveImpl = async () => null;
   singleImpl = async () => ({ data: { id: 7, title: "Test", price: 499 }, error: null });
 });
 
@@ -87,6 +89,17 @@ describe("BuyCourse load states", () => {
     renderPage();
     expect(await screen.findByText(/Internet slow lag raha hai/i)).toBeTruthy();
     expect(screen.queryByText(/Course not found/i)).toBeNull();
+  });
+
+  it("shows the course even when image signing never answers", async () => {
+    // Storage signing is a second round-trip; it must never gate the Buy button.
+    resolveImpl = () => new Promise<string | null>(() => {});
+    singleImpl = async () => ({
+      data: { id: 7, title: "Physics Crash Course", price: 499 },
+      error: null,
+    });
+    renderPage();
+    expect(await screen.findByText(/Physics Crash Course/i)).toBeTruthy();
   });
 
   it("time-boxes the course fetch at 12s instead of waiting forever", () => {
