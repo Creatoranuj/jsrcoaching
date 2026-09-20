@@ -12,6 +12,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { toast } from "sonner";
 import { ArrowLeft, BellRing, RefreshCw, Save, Smartphone } from "lucide-react";
 import { reportError } from "@/lib/sentry";
+import { UPDATE_PAGE_URL } from "@/config/updatePage";
+import { openInSystemBrowser } from "@/lib/native/browser";
 
 interface ConfigForm {
   latest_android_version: string;
@@ -49,6 +51,7 @@ export default function AdminAppUpdate() {
   const [pushTitle, setPushTitle] = useState("App update available");
   const [pushBody, setPushBody] = useState("Naya version aa gaya hai. Abhi update karein.");
   const [sending, setSending] = useState(false);
+  const [attachUpdateLink, setAttachUpdateLink] = useState(true);
   const [deviceCount, setDeviceCount] = useState<number | null>(null);
   const [logs, setLogs] = useState<LogRow[]>([]);
 
@@ -142,7 +145,14 @@ export default function AdminAppUpdate() {
     setSending(true);
     try {
       const { data, error } = await supabase.functions.invoke("send-push", {
-        body: { title: pushTitle.trim(), body: pushBody.trim(), path: "/install" },
+        body: {
+          title: pushTitle.trim(),
+          body: pushBody.trim(),
+          path: "/install",
+          // Tap opens the public update page in the phone's real browser, where
+          // the APK can actually download.
+          ...(attachUpdateLink ? { url: UPDATE_PAGE_URL } : {}),
+        },
       });
       if (error) throw error;
       const res = data as { sent?: number; failed?: number; total?: number; error?: string } | null;
@@ -294,6 +304,28 @@ export default function AdminAppUpdate() {
               <div className="space-y-1.5">
                 <Label htmlFor="pbody">Message</Label>
                 <Textarea id="pbody" value={pushBody} onChange={(e) => setPushBody(e.target.value)} rows={3} maxLength={500} />
+              </div>
+              <div className="flex items-start gap-3 rounded-lg border p-3">
+                <Switch
+                  id="attach-update"
+                  checked={attachUpdateLink}
+                  onCheckedChange={setAttachUpdateLink}
+                  className="mt-0.5"
+                />
+                <div className="min-w-0">
+                  <Label htmlFor="attach-update" className="cursor-pointer">Update page link jodein</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Notification tap karne par phone ka asli browser khulega aur wahan se
+                    naya APK download + install ho jayega.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void openInSystemBrowser(UPDATE_PAGE_URL)}
+                    className="mt-1 text-xs font-medium text-primary underline underline-offset-2"
+                  >
+                    Update page dekhein
+                  </button>
+                </div>
               </div>
               <Button onClick={broadcast} disabled={sending} className="gap-2">
                 <BellRing className="h-4 w-4" /> {sending ? "Bhej rahe hain…" : "Sabko bhejein"}

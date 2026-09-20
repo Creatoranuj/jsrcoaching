@@ -21,6 +21,9 @@ interface ServiceAccount {
 
 const TOKEN_BATCH = 100;
 
+/** Public update page — the only external link a push notification may carry. */
+const UPDATE_PAGE_URL = "https://jsrcoaching.vercel.app/update";
+
 function base64url(bytes: Uint8Array): string {
   let s = "";
   for (const b of bytes) s += String.fromCharCode(b);
@@ -124,7 +127,7 @@ Deno.serve(async (req) => {
       return json(503, { error: "PUSH_NOT_CONFIGURED" });
     }
 
-    let body: { title?: unknown; body?: unknown; path?: unknown } = {};
+    let body: { title?: unknown; body?: unknown; path?: unknown; url?: unknown } = {};
     try { body = await req.json(); } catch { /* empty */ }
     const title = typeof body.title === "string" ? body.title.trim().slice(0, 120) : "";
     const message = typeof body.body === "string" ? body.body.trim().slice(0, 500) : "";
@@ -132,6 +135,12 @@ Deno.serve(async (req) => {
     const path = typeof body.path === "string" && /^\/[A-Za-z0-9\-_/]*$/.test(body.path)
       ? body.path
       : "/install";
+    // The ONLY external URL a push may carry is our own update page: the app
+    // opens it in the phone's real browser, so anything else would be an open
+    // redirect straight out of a notification. Exact match, no prefix check.
+    const url = typeof body.url === "string" && body.url.trim() === UPDATE_PAGE_URL
+      ? UPDATE_PAGE_URL
+      : "";
     if (!title || !message) return json(400, { error: "INVALID_INPUT" });
 
     const admin = createClient(
@@ -182,7 +191,7 @@ Deno.serve(async (req) => {
               message: {
                 token,
                 notification: { title, body: message },
-                data: { path },
+                data: url ? { path, url } : { path },
                 android: { priority: "HIGH", notification: { channel_id: "nb_default" } },
               },
             }),

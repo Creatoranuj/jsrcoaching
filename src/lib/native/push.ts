@@ -14,6 +14,8 @@
  * See docs/PUSH-SETUP.md for the full walkthrough.
  */
 import { supabase } from "@/integrations/supabase/client";
+import { isUpdatePageUrl } from "@/config/updatePage";
+import { openInSystemBrowser } from "@/lib/native/browser";
 
 // Feature flag — google-services.json is in place, so register() is safe.
 const PUSH_ENABLED = true;
@@ -67,7 +69,14 @@ export async function initPushNotifications(userId: string): Promise<void> {
     });
 
     PushNotifications.addListener("pushNotificationActionPerformed", (action) => {
-      const path = (action.notification.data as Record<string, unknown> | undefined)?.path;
+      const data = action.notification.data as Record<string, unknown> | undefined;
+      // An "update available" push carries our public update page. It must open
+      // in the phone's real browser: an APK cannot download inside the app.
+      if (isUpdatePageUrl(data?.url)) {
+        void openInSystemBrowser(data.url as string);
+        return;
+      }
+      const path = data?.path;
       if (typeof path === "string" && path.startsWith("/")) {
         // Route through React Router (see usePushNav) instead of reloading the WebView.
         window.dispatchEvent(new CustomEvent("nb:push-nav", { detail: { path } }));

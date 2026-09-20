@@ -132,3 +132,49 @@ export const openExternal = async (url: string, options: OpenExternalOptions = {
   }
   if (typeof window !== "undefined") window.open(url, "_blank", "noopener,noreferrer");
 };
+
+/**
+ * Open a URL in the phone's REAL browser (Chrome), outside the app.
+ *
+ * Why not `openExternal`: that keeps the page inside the app (in-app WebView /
+ * Custom Tab), and neither surface can download an APK — the update button
+ * looked dead. `AppLauncher.openUrl` fires a plain ACTION_VIEW intent, so the
+ * default browser takes over, downloads normally, and tapping the downloaded
+ * file opens Android's installer.
+ *
+ * Fallback chain (a dead button is worse than a less-ideal surface):
+ *   AppLauncher → Capacitor Browser (Custom Tab) → openExternal → window.open
+ */
+export const openInSystemBrowser = async (url: string): Promise<void> => {
+  let isNative = false;
+  try {
+    const { Capacitor } = await import(/* @vite-ignore */ "@capacitor/core");
+    isNative = Capacitor.isNativePlatform();
+  } catch {
+    isNative = false;
+  }
+
+  if (!isNative) {
+    if (typeof window !== "undefined") window.open(url, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  try {
+    const { AppLauncher } = await import(/* @vite-ignore */ "@capacitor/app-launcher");
+    const { completed } = await AppLauncher.openUrl({ url });
+    if (completed) return;
+    console.warn("[openInSystemBrowser] AppLauncher reported not completed", url);
+  } catch (err) {
+    console.warn("[openInSystemBrowser] AppLauncher unavailable", err);
+  }
+
+  try {
+    const { Browser } = await import(/* @vite-ignore */ "@capacitor/browser");
+    await Browser.open({ url, presentationStyle: "fullscreen" });
+    return;
+  } catch (err) {
+    console.warn("[openInSystemBrowser] Browser plugin unavailable", err);
+  }
+
+  await openExternal(url, { preferWebView: false });
+};

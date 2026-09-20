@@ -50,3 +50,5 @@
 - [x] PDF download flow verified in code (see final audit reply): pdf-proxy enrollment gate → `downloadFile()` → native Filesystem streaming with progress on APK, fetch-blob fallback on web; HTML-instead-of-PDF guard.
 - [x] pdf-proxy 403/404 hard-closed in code (commit 4e34bfc): `HANDLED_NOISE_RE` drops `Unexpected server response (403|404)` at the Sentry transport, so no code path can re-open issue 7634304049; regression test `src/test/sentryNoise.test.ts` (4 tests green). OWNER: click Resolve on issue 7634304049 in Sentry UI once (no Sentry token in this workspace).
 - [ ] OWNER: update `LOVABLE_API_KEY` in Supabase Edge Functions secrets if chat still shows "server key issue" after this redeploy.
+
+- [ ] Supabase project "Creatoranuj's Project" connect karna (chat se possible nahi — user ko Lovable UI: Project Settings > Connectors > Supabase)
