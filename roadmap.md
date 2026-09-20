@@ -40,3 +40,4 @@
 - [ ] Bandwidth (after Egress-report baseline): `useSiteSettings()` consolidation (4 hooks → 1 query); visibility-driven `user_sessions` flush instead of tab-count × 5-min PATCH.
 - [ ] Polish backlog: diagnostics panel `text-xs`; browser-escape button as `variant="link"`; Eruda `beforeSend` filter.
 - [ ] Decide: bump `app_config.min_android_version` to force pre-plugin APKs to update.
+- [ ] Playwright E2E (CI) — same 5 failures on every run since at least 7a46bef (pre-dates today's fixes): `auth.spec.ts:136` existing-email signup lands on /my-courses; `learning-journey.spec.ts:70` + `lesson-completion.spec.ts:35` `lesson-card` never visible for the E2E account's `E2E_COURSE_ID`; `pdf-offline.spec.ts:61/86` uploaded `test.pdf` never listed. 39 pass / 20 skip. Needs the live E2E account + course IDs (env secrets) to reproduce — check the account is still enrolled in `E2E_COURSE_ID` and that the course has published lessons before treating as a code bug.
