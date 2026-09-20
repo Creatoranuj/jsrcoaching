@@ -54,3 +54,8 @@ export function resolveUpdateDownloadUrl(configuredUrl: unknown): string {
   if (isAllowedUpdateUrl(trimmed)) return trimmed;
   return LATEST_APK_FALLBACK;
 }
+
+/** True when the link is a real Play Store / App Store listing (not an APK). */
+export function isStoreListingUrl(url: unknown): url is string {
+  return typeof url === "string" && STORE_RE.test(url.trim());
+}

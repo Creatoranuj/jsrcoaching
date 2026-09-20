@@ -7,7 +7,9 @@ import { AlertTriangle, Sparkles } from "lucide-react";
 import { isUpdateRequired, isUpdateAvailable } from "@/utils/version";
 import { loadCapacitorApp } from "@/lib/native/app";
 import { openResource } from "@/lib/openResource";
-import { resolveUpdateDownloadUrl } from "@/utils/downloadUrl";
+import { isAllowedUpdateUrl, isStoreListingUrl } from "@/utils/downloadUrl";
+import { UPDATE_PAGE_URL } from "@/config/updatePage";
+import { openInSystemBrowser } from "@/lib/native/browser";
 import { fetchLatestReleaseVersion } from "@/utils/latestRelease";
 import { logger } from "@/lib/logger";
 
@@ -203,14 +205,21 @@ export const ForceUpdateGate = ({ children }: { children: ReactNode }) => {
     }));
     const platform = Capacitor?.getPlatform?.() ?? (/iPad|iPhone|iPod/.test(navigator.userAgent) ? "ios" : "android");
     const configured = platform === "ios" ? config?.ios_store_url : config?.android_store_url;
-    // Never navigate to a raw DB value: only our own release assets or a real
-    // store listing are allowed, and anything else falls back to the stable
-    // download endpoint (which itself serves the newest release).
-    const url = resolveUpdateDownloadUrl(configured);
-    if (url !== configured) {
-      logger.warn("[ForceUpdateGate] using stable download endpoint", undefined, { configured });
+
+    // A real store listing (admin override / iOS) is handled by the store app,
+    // so keep the existing in-app open path for it.
+    if (isStoreListingUrl(configured)) {
+      void openResource({ url: configured, kind: "link" });
+      return;
     }
-    void openResource({ url, kind: "link" });
+
+    // Android sideload: an APK link CANNOT download inside an in-app WebView or
+    // Custom Tab — the tap looks dead. Send the student to our public update
+    // page in the phone's real browser, where download + install works.
+    if (configured && !isAllowedUpdateUrl(configured)) {
+      logger.warn("[ForceUpdateGate] configured url rejected, using update page", undefined, { configured });
+    }
+    void openInSystemBrowser(UPDATE_PAGE_URL);
   }, [config]);
 
   const dismissOptional = useCallback(() => {

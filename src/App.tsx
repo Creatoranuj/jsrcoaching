@@ -111,6 +111,7 @@ const PayBrowser = lazyWithRetry(() => import("./pages/PayBrowser"));
 const Doubts = lazyWithRetry(() => import("./pages/Doubts"));
 const Privacy = lazyWithRetry(() => import("./pages/Privacy"));
 const DeleteAccountPublic = lazyWithRetry(() => import("./pages/DeleteAccountPublic"));
+const AppUpdate = lazyWithRetry(() => import("./pages/AppUpdate"));
 const ExamLanding = lazyWithRetry(() => import("./pages/ExamLanding"));
 
 const Admin = lazyWithRetry(() => import("./pages/Admin"));
@@ -378,6 +379,8 @@ const App = () => (
                     <Route path="/pay" element={<PayBrowser />} />
                     <Route path="/privacy" element={<Privacy />} />
                     <Route path="/delete-account" element={<DeleteAccountPublic />} />
+                    {/* Public update page — opened in the phone's real browser so the APK can download. */}
+                    <Route path="/update" element={<AppUpdate />} />
 
                     {/* SEO Exam Landing Routes */}
                     <Route path="/up-board-english" element={<ExamLanding />} />
