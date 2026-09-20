@@ -18,6 +18,7 @@ import { tapLight, tapMedium, notifySuccess, notifyError } from "../lib/nativeCh
 import { LoadingSpinner } from "../components/ui/loading-spinner";
 import { resolveContentUrl } from "../lib/resolveContentUrl";
 import { safeGet, safeSet, safeRemove } from "../lib/storage";
+import { rememberPendingPayment } from "../lib/pendingPayment";
 import { logger } from "@/lib/logger";
 import { loadBuildStamp, formatBuildStamp } from "@/lib/buildStamp";
 import successSound from "@/assets/success.mp3.asset.json";
@@ -561,6 +562,15 @@ const BuyCourse = () => {
       try {
         setPayStep("browser");
         setPayMode("browser");
+        // The browser tab has no session, so remember the purchase on THIS
+        // device. Whenever the student next signs in — same tab, new tab,
+        // hours later — `usePaymentResume` finishes the job for them.
+        rememberPendingPayment({
+          courseId: Number(courseId),
+          courseTitle: orderData.course_title ?? null,
+          orderId: orderData.order_id,
+        });
+        toast.info("Payment window khul raha hai — UPI apps wahan dikhenge.");
         await openBrowserCheckout(
           { ...orderData, course_id: courseId },
           {
@@ -569,7 +579,10 @@ const BuyCourse = () => {
             contact: profile?.mobile ?? undefined,
           }
         );
-        toast.info("Payment browser me khul gaya — UPI wahan dikhega. Payment ke baad app me wapas aayein.");
+        toast.success(
+          "Browser me checkout khul gaya. Payment ke baad seedha app/website par wapas aa jaana — course apne aap unlock ho jayega. Dobara pay mat karna.",
+          { duration: 8000 },
+        );
       } catch (err) {
         logger.error("Browser checkout handoff failed:", err);
         toast.error("Browser checkout khul nahi paya. Internet check karke dobara koshish karein.");

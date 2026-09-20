@@ -5,7 +5,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { toast } from "sonner";
-import { Eye, EyeOff, LogIn, AlertCircle, WifiOff, RefreshCw } from "lucide-react";
+import { Eye, EyeOff, LogIn, AlertCircle, WifiOff, RefreshCw, ShieldCheck } from "lucide-react";
 import logo from "../assets/branding/jsr-mark.webp";
 import { tapHaptic } from "@/lib/native/haptics";
 import { validateEmailDomain } from "../lib/emailBlocklist";
@@ -32,6 +32,13 @@ const Login = () => {
       navigate(destination, { replace: true });
     }
   }, [isAuthenticated, authLoading, navigate, location.state]);
+
+  // Student paid in the phone's browser and got bounced here. Say so, loudly
+  // and calmly — a bare login form after a debit is what makes people panic
+  // and pay twice.
+  const returningFromPayment = String(
+    (location.state as { from?: string } | null)?.from ?? "",
+  ).startsWith("/payment-callback");
 
   const mapError = (msg: string): string => {
     const lower = msg.toLowerCase();
@@ -105,6 +112,16 @@ const Login = () => {
           <h1 className="text-3xl font-bold text-foreground mb-2">Welcome Back</h1>
           <p className="text-muted-foreground mb-8">Sign in to access your courses</p>
 
+          {returningFromPayment && (
+            <div className="mb-4 p-3 rounded-lg bg-green-50 border border-green-200 flex items-start gap-2 dark:bg-green-950/30 dark:border-green-900">
+              <ShieldCheck className="h-5 w-5 text-green-600 shrink-0 mt-0.5" />
+              <p className="text-sm text-green-800 dark:text-green-300">
+                Payment mil gaya &#10003; Aapka paisa surakshit hai. Login karte hi course
+                apne aap khul jayega &#8212; dobara pay mat kijiye.
+              </p>
+            </div>
+          )}
+
           {errorMessage && (
             <div className="mb-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20 flex items-start gap-2">
               {isNetworkError ? <WifiOff className="h-5 w-5 text-destructive shrink-0 mt-0.5" /> : <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />}
@@ -148,14 +165,14 @@ const Login = () => {
             <span className="text-xs text-muted-foreground">OR</span>
             <div className="h-px flex-1 bg-border" />
           </div>
-          <Link to="/login-otp" className="mt-4 block">
+          <Link to="/login-otp" state={location.state} className="mt-4 block">
             <Button type="button" variant="outline" className="w-full h-12">
               📱 Sign in with mobile OTP
             </Button>
           </Link>
 
           <p className="mt-8 text-center text-muted-foreground">
-            Don't have an account? <Link to="/signup" className="text-primary font-medium hover:underline">Create account</Link>
+            Don't have an account? <Link to="/signup" state={location.state} className="text-primary font-medium hover:underline">Create account</Link>
           </p>
         </div>
       </div>

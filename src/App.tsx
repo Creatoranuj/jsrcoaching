@@ -260,6 +260,7 @@ const DeferredChatWidget = () => {
 import RouteSkeleton from "./components/RouteSkeleton";
 import HomeSkeleton from "./components/skeletons/HomeSkeleton";
 import { startIdlePrefetch } from "./lib/prefetch";
+import PaymentResume from "./hooks/usePaymentResume";
 
 
 // Auth-gate placeholder. A spinner made the landing page feel stuck, so we
@@ -285,8 +286,17 @@ PageLoader.displayName = "PageLoader";
 
 const PublicRoute = ({ element }: { element: React.ReactElement }) => {
   const { isAuthenticated, isLoading } = useAuth();
+  const location = useLocation();
   if (isLoading) return <PageLoader />;
-  if (isAuthenticated) return <Navigate to="/dashboard" replace />;
+  // A student pushed here by ProtectedRoute carries the page they actually
+  // wanted in `location.state.from` (payment return, a lesson deep link...).
+  // This guard used to unmount Login the instant the session appeared and
+  // send everyone to /dashboard, so the payment return URL was silently
+  // thrown away and a paying student never reached their course.
+  if (isAuthenticated) {
+    const from = (location.state as { from?: string } | null)?.from;
+    return <Navigate to={from && from.startsWith("/") ? from : "/dashboard"} replace />;
+  }
   return element;
 };
 
@@ -362,6 +372,8 @@ const App = () => (
               <BrowserRouter>
                 <NavigationHistoryProvider>
                   <ScrollToTop />
+                  {/* Finishes an interrupted purchase on ANY page, after ANY sign-in. */}
+                  <PaymentResume />
                   <ForceUpdateGate>
                   <Suspense fallback={<PageLoader />}>
                   <RouteTransitions>
@@ -431,7 +443,11 @@ const App = () => (
                     {/* Course Purchase & Learning */}
                     <Route path="/buy-course" element={<ProtectedRoute element={<BuyCourse />} />} />
                     <Route path="/buy-course/:id" element={<ProtectedRoute element={<BuyCourse />} />} />
-                    <Route path="/payment-callback" element={<ProtectedRoute element={<PaymentCallback />} />} />
+                    {/* PUBLIC ON PURPOSE. The browser-tab (UPI) return has no Supabase
+                        session; gating this route dropped a paid student onto a bare
+                        login form. The page itself shows a calm "sign in to unlock"
+                        state and resumes automatically after login. */}
+                    <Route path="/payment-callback" element={<PaymentCallback />} />
                     <Route path="/all-classes" element={<ProtectedRoute element={<AllClasses />} />} />
                     <Route path="/classes/:courseId/lessons" element={<ProtectedRoute element={<ErrorBoundary fallbackTitle="Lesson failed to load"><LessonView /></ErrorBoundary>} />} />
                     <Route path="/classes/:courseId/chapters" element={<ProtectedRoute element={<ChapterView />} />} />

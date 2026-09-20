@@ -149,6 +149,17 @@ export function formatRazorpayError(
   );
 }
 
+/**
+ * The Razorpay instance currently on screen.
+ *
+ * WHY: Razorpay throws "A checkout is already open" if `open()` is called
+ * while a previous sheet still exists — which is exactly what a student sees
+ * after a failed attempt, because the dead instance was never closed. We
+ * close the stale one before opening a new sheet, and drop the reference as
+ * soon as the sheet resolves (paid, dismissed, or failed).
+ */
+let activeCheckout: { close?: () => void } | null = null;
+
 export const openRazorpayCheckout = async (
   options: RazorpayOptions,
 ): Promise<void> => {
@@ -177,13 +188,44 @@ export const openRazorpayCheckout = async (
   }
 
   const { onFailure, ...rzpOptions } = options;
+
+  // Release the sheet reference whichever way this checkout ends, so the next
+  // attempt never hits "A checkout is already open".
+  const release = () => {
+    activeCheckout = null;
+  };
+  const userHandler = rzpOptions.handler;
+  const userDismiss = rzpOptions.modal?.ondismiss;
+  rzpOptions.handler = (resp: RazorpaySuccessResponse) => {
+    release();
+    userHandler?.(resp);
+  };
+  rzpOptions.modal = {
+    ...(rzpOptions.modal ?? {}),
+    ondismiss: () => {
+      release();
+      userDismiss?.();
+    },
+  };
+
+  if (activeCheckout) {
+    try {
+      activeCheckout.close?.();
+    } catch {
+      /* stale instance, nothing to clean up */
+    }
+    activeCheckout = null;
+  }
+
   const rzp = new window.Razorpay(rzpOptions);
+  activeCheckout = rzp;
 
   // Route Razorpay's async payment.failed event to the caller so the UI can
   // show a real message instead of a generic toast. Also forwarded to Sentry
   // with full context so we can diagnose recurring key/mode issues.
   rzp.on("payment.failed", (response: { error?: RazorpayPaymentError }) => {
     const err = response?.error;
+    release();
     reportError(err ?? new Error("Razorpay payment failed"), {
       surface: "razorpay.payment_failed",
       step: err?.step,
@@ -219,6 +261,7 @@ export const openRazorpayCheckout = async (
     } catch {
       /* ignore */
     }
+    release();
     const err = new Error(
       "Payment screen khali reh gayi. App update karein ya website se pay karein.",
     );
