@@ -107,9 +107,12 @@ jobs:
       - name: Platform prelude (idempotent)
         run: |
           set -eu
-          # The supabase/postgres image already ships auth/storage/extensions/
-          # graphql_public and the supabase_realtime publication. These guards
-          # only exist so the check keeps working if the image layout changes.
+          # The supabase/postgres image already ships auth/extensions/
+          # graphql_public and the supabase_realtime publication, but NOT the
+          # storage schema (that comes from storage-api). The inline guards
+          # below cover the image-shipped pieces; supabase/ci/platform-prelude.sql
+          # then provides a minimal real-shape storage schema so migrations
+          # touching storage.objects can replay.
           psql -X -v ON_ERROR_STOP=1 <<'SQL'
           CREATE SCHEMA IF NOT EXISTS extensions;
           DO $$ BEGIN
@@ -119,6 +122,7 @@ jobs:
           END $$;
           GRANT USAGE ON SCHEMA extensions TO anon, authenticated, service_role;
           SQL
+          psql -X -v ON_ERROR_STOP=1 -f supabase/ci/platform-prelude.sql
 
       - name: Load schema baseline
         run: |
@@ -193,7 +197,7 @@ jobs:
 
           # 1. Every table in public must have RLS enabled.
           no_rls=$(psql -X -Atc "
-            select string_agg(c.relname, ', ' order by c.relname)
+            select string_agh(c.relname, ', ' order by c.relname)
             from pg_class c join pg_namespace n on n.oid = c.relnamespace
             where n.nspname = 'public' and c.relkind in ('r','p') and not c.relrowsecurity")
           if [ -n "$no_rls" ]; then
