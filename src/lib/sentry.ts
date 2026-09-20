@@ -253,7 +253,11 @@ export const NETWORK_NOISE_RE = /failed to fetch|network error|networkerror|netw
 // (crashShield reloads on stale chunks, AuthContext refreshes an expired JWT,
 // PDF reader falls back to another source). They are reliability *signal*,
 // never a crash, so they live in breadcrumbs — not as Sentry issues.
-export const HANDLED_NOISE_RE = /loading chunk|failed to fetch dynamically imported module|chunkloaderror|importing a module script failed|jwt expired|pgrst303|pgrst301|permission denied for table|"code":"42501"|code":"PGRST30[13]"|invalid refresh token|refresh_token_not_found|auth session missing|resizeobserver loop/i;
+// `Unexpected server response (403|404)` is pdf.js' ResponseException for a
+// locked/missing PDF served through pdf-proxy — the enrollment gate working
+// as designed (SAFAR-ENGLISH-W, issue 7634304049). FastPdfReader already
+// skips captureException for these; this drops any future path at transport.
+export const HANDLED_NOISE_RE = /loading chunk|failed to fetch dynamically imported module|chunkloaderror|importing a module script failed|jwt expired|pgrst303|pgrst301|permission denied for table|"code":"42501"|code":"PGRST30[13]"|invalid refresh token|refresh_token_not_found|auth session missing|resizeobserver loop|unexpected server response \((403|404)\)/i;
 
 export function isNoiseMessage(msg: string): boolean {
   return NETWORK_NOISE_RE.test(msg) || HANDLED_NOISE_RE.test(msg);
