@@ -98,8 +98,8 @@ export function useEnrollmentArrival({
    * already files the single canonical Sentry issue for the same pending
    * order, so this hook only leaves a breadcrumb + remembers the cause.
    */
-  const recoverCourse = useCallback(async (courseId: number): Promise<boolean> => {
-    const result = await recoverEnrollmentDetailed(courseId);
+  const recoverCourse = useCallback(async (courseId: number, force = false): Promise<boolean> => {
+    const result = await recoverEnrollmentDetailed(courseId, { force });
     if (result.outcome === "recovered") {
       lastFailureRef.current = null;
       return true;
@@ -123,7 +123,7 @@ export function useEnrollmentArrival({
     setReconciling(true);
     let any = false;
     for (const courseId of pending) {
-      if (await recoverCourse(courseId)) any = true;
+      if (await recoverCourse(courseId, true)) any = true;
     }
     await refetchRef.current();
     if (aliveRef.current) setReconciling(false);
