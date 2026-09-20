@@ -92,6 +92,45 @@ export type Database = {
         }
         Relationships: []
       }
+      app_releases: {
+        Row: {
+          created_at: string
+          id: string
+          is_current: boolean
+          notes: string
+          released_at: string
+          status: string
+          title: string
+          updated_at: string
+          version: string
+          version_code: number | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_current?: boolean
+          notes?: string
+          released_at?: string
+          status?: string
+          title?: string
+          updated_at?: string
+          version: string
+          version_code?: number | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_current?: boolean
+          notes?: string
+          released_at?: string
+          status?: string
+          title?: string
+          updated_at?: string
+          version?: string
+          version_code?: number | null
+        }
+        Relationships: []
+      }
       attendance: {
         Row: {
           created_at: string
