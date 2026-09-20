@@ -20,6 +20,7 @@
  * student; this is purely "ask the server whether it happened yet".
  */
 import { recoverEnrollmentDetailed, type RecoverOutcome } from "@/utils/paymentApi";
+import { invalidateEnrollmentsCache } from "@/hooks/useEnrollments";
 
 /**
  * Delay BEFORE each attempt, in ms. Attempt times: 0, 5s, 17s, 47s, 107s, …
@@ -71,7 +72,12 @@ export const waitForEnrollment = async (
     const result = await recoverEnrollmentDetailed(courseId);
     if (cancelled()) return "cancelled";
 
-    if (result.outcome === "recovered") return "recovered";
+    if (result.outcome === "recovered") {
+      // The student just got the course — drop the shared 60s list cache so
+      // every screen shows it immediately.
+      invalidateEnrollmentsCache();
+      return "recovered";
+    }
 
     // 429 means "we asked too often", not "no payment". Never let it eat an
     // attempt — wait out the window and retry the same step.

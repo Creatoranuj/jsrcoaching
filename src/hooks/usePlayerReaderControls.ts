@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { loadSiteSettingRows, resetSiteSettingsCache } from "@/lib/siteSettingsCache";
 
 export const PLAYER_READER_KEYS = {
   infinityLogo: "player_infinity_logo",
@@ -39,17 +40,13 @@ export function parsePlayerReaderRows(rows: { key: string; value: string | null 
 export function usePlayerReaderControls() {
   const { data, isLoading } = useQuery({
     queryKey: PLAYER_READER_QUERY_KEY,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 60 * 1000,
+    refetchOnWindowFocus: false,
     gcTime: 24 * 60 * 60 * 1000,
     retry: 1,
     queryFn: async () => {
-      const { data: rows, error } = await supabase
-        .from("site_settings")
-        .select("key, value")
-        .in("key", Object.values(PLAYER_READER_KEYS));
-
-      if (error) throw error;
-      return parsePlayerReaderRows(rows || []);
+      const rows = await loadSiteSettingRows(Object.values(PLAYER_READER_KEYS));
+      return parsePlayerReaderRows(rows);
     },
   });
 
@@ -72,6 +69,7 @@ export function useSetPlayerReaderControls() {
       .upsert({ key, value: String(value), updated_at: now }, { onConflict: "key" });
 
     if (error) throw error;
+    resetSiteSettingsCache(); // admin just wrote a setting — next read must be live
 
     queryClient.setQueryData<PlayerReaderFlags>(PLAYER_READER_QUERY_KEY, (prev) => ({
       ...PLAYER_READER_DEFAULTS,

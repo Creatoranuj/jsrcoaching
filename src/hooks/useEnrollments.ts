@@ -25,6 +25,22 @@ export interface EnrollmentWithCourse extends Enrollment {
   course?: Course;
 }
 
+// PERF 2026-09-20: this hook is mounted by many screens at once and each
+// instance used to run its own enrollments+courses select — 15,718 calls in a
+// single window. One shared 60-second cache per user, with in-flight
+// de-duplication, serves every mounted copy. Writes (enroll / cancel /
+// payment reconcile) call `invalidateEnrollmentsCache()` so nothing goes stale
+// for the student who just paid.
+type CachedEnrollments = { rows: EnrollmentWithCourse[]; at: number };
+const ENROLLMENTS_TTL_MS = 60_000;
+let enrollmentsCache: { userId: string; data: CachedEnrollments } | null = null;
+let enrollmentsInflight: { userId: string; promise: Promise<EnrollmentWithCourse[]> } | null = null;
+
+export function invalidateEnrollmentsCache(): void {
+  enrollmentsCache = null;
+  enrollmentsInflight = null;
+}
+
 export const useEnrollments = () => {
   const { user } = useAuth();
   const [enrollments, setEnrollments] = useState<EnrollmentWithCourse[]>([]);
@@ -38,19 +54,19 @@ export const useEnrollments = () => {
   // PERF (audit 2026-09-17): key off the stable user id so a token refresh
   // (new user object, same id) no longer re-runs the enrollments read.
   const userId = user?.id;
-  const fetchEnrollments = useCallback(async () => {
-    if (!userId) {
-      if (!aliveRef.current) return;
-      setEnrollments([]);
-      setEnrolledCourseIds([]);
-      setLoading(false);
-      return;
+  const loadRows = useCallback(async (force: boolean): Promise<EnrollmentWithCourse[]> => {
+    if (!userId) return [];
+    if (force) invalidateEnrollmentsCache();
+
+    const cached = enrollmentsCache;
+    if (cached && cached.userId === userId && Date.now() - cached.data.at < ENROLLMENTS_TTL_MS) {
+      return cached.data.rows;
+    }
+    if (enrollmentsInflight && enrollmentsInflight.userId === userId) {
+      return enrollmentsInflight.promise;
     }
 
-    try {
-      setLoading(true);
-      setError(null);
-
+    const promise = (async () => {
       const { data, error: dbError } = await supabase
         .from("enrollments")
         .select("id,user_id,course_id,purchased_at,status,courses(id,title,description,grade,price,image_url,thumbnail_url,created_at)")
@@ -90,6 +106,33 @@ export const useEnrollments = () => {
         } : undefined,
       }));
 
+      enrollmentsCache = { userId, data: { rows: formatted, at: Date.now() } };
+      return formatted;
+    })();
+
+    enrollmentsInflight = { userId, promise };
+    try {
+      return await promise;
+    } finally {
+      if (enrollmentsInflight?.promise === promise) enrollmentsInflight = null;
+    }
+  }, [userId]);
+
+  const fetchEnrollments = useCallback(async (force = true) => {
+    if (!userId) {
+      if (!aliveRef.current) return;
+      setEnrollments([]);
+      setEnrolledCourseIds([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const formatted = await loadRows(force);
+
       if (!aliveRef.current) return;
       setEnrollments(formatted);
       setEnrolledCourseIds(formatted.filter(e => e.status === 'active').map((e) => e.courseId));
@@ -100,7 +143,7 @@ export const useEnrollments = () => {
     } finally {
       if (aliveRef.current) setLoading(false);
     }
-  }, [userId]);
+  }, [userId, loadRows]);
 
   const isEnrolled = useCallback((courseId: number): boolean => {
     return enrolledCourseIds.includes(courseId);
@@ -209,7 +252,7 @@ export const useEnrollments = () => {
   }, [enrollments]);
 
   useEffect(() => {
-    fetchEnrollments();
+    void fetchEnrollments(false); // shared 60s cache — no duplicate reads per mount
   }, [fetchEnrollments]);
 
   return {

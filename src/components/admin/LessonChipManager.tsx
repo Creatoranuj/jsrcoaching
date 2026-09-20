@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Plus, Trash2, ArrowUp, ArrowDown, LayoutGrid } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
+import { resetSiteSettingsCache } from "@/lib/siteSettingsCache";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -101,6 +102,7 @@ export default function LessonChipManager() {
         { onConflict: "key" },
       );
       if (error) throw error;
+      resetSiteSettingsCache();
       queryClient.invalidateQueries({ queryKey: LESSON_CHIP_CONFIG_QUERY_KEY });
       toast.success("Chip settings saved — students ke liye lagu ho gaya.", { id: "chip-config" });
     } catch (err: unknown) {
