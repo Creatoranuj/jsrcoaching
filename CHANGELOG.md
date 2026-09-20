@@ -7,6 +7,35 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [v1.9.0] — 2026-09-20
+
+### Fixed
+- **Razorpay UPI in the Android app.** The Capacitor WebView silently dropped
+  `upi:` / `intent://` links (`ERR_UNKNOWN_URL_SCHEME`), so the browser UPI
+  option never opened a UPI app. `RecoveryWebViewClient` now overrides
+  `shouldOverrideUrlLoading` with an external-scheme allow-list, parses
+  `intent://` via `Intent.parseUri` with `browser_fallback_url`, and falls back
+  to the system browser (or a clear Hindi message) when no app handles it.
+- Offline / slow-network PDF opens no longer freeze at a stuck percentage:
+  network pre-check, 45 s byte-fallback deadline, and auto-retry when
+  connectivity returns.
+- Free-course enrollment now honours the batch gate (batch closed / seats full),
+  fail-closed when the gate cannot be read.
+
+### Added
+- Sanitized UPI/intent diagnostics in the WebView — scheme + authority only
+  (120-char cap), resolved handler package, device tag. Payment order ids and
+  tokens are never logged. Visible via `adb logcat -s RecoveryWebView`.
+- JSR brand mark in both update dialogs, replacing the generic sparkle icon.
+- Public `/releases` history page and Admin → App Releases publishing flow.
+- Scheduled reconcile of stuck payments every 15 minutes (`x-cron-secret`).
+
+### Verified
+- Build green; 814 unit/integration tests pass (6 skipped); 12/12 completed
+  payments have matching enrollments.
+
+---
+
 ## [v1.8.2] — 2026-09-18
 
 ### Fixed
