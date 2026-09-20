@@ -16,6 +16,17 @@ const corsHeaders = {
 
 type OrderPayment = { id: string; status: string; amount: number };
 
+// Constant-time comparison so the cron secret cannot be guessed byte by byte.
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  const enc = new TextEncoder();
+  const bufA = enc.encode(a);
+  const bufB = enc.encode(b);
+  let result = 0;
+  for (let i = 0; i < bufA.length; i++) result |= bufA[i] ^ bufB[i];
+  return result === 0;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") {
@@ -35,23 +46,47 @@ Deno.serve(async (req) => {
     });
   }
 
-  // ── caller must be a signed-in admin ──
-  const authHeader = req.headers.get("Authorization") ?? "";
-  const asUser = createClient(SUPABASE_URL, ANON_KEY, {
-    global: { headers: { Authorization: authHeader } },
-  });
-  const { data: userData } = await asUser.auth.getUser();
-  const uid = userData?.user?.id;
-  if (!uid) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401, headers: corsHeaders,
-    });
+  // ── caller must be a signed-in admin OR the scheduled cron job ──
+  // The cron path exists so stuck payments are swept automatically every
+  // 15 minutes instead of waiting for an admin to press a button. It grants
+  // no extra power: the sweep only ever enrolls orders Razorpay itself
+  // reports as captured, through the same idempotent RPC.
+  const CRON_SECRET = Deno.env.get("RECONCILE_CRON_SECRET");
+  const presentedSecret = req.headers.get("x-cron-secret");
+  let isCron = false;
+  if (presentedSecret) {
+    if (!CRON_SECRET) {
+      return new Response(JSON.stringify({ error: "cron_secret_not_configured" }), {
+        status: 503, headers: corsHeaders,
+      });
+    }
+    isCron = timingSafeEqual(presentedSecret, CRON_SECRET);
+    if (!isCron) {
+      console.error("reconcile: invalid cron secret presented");
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403, headers: corsHeaders,
+      });
+    }
   }
-  const { data: isAdmin } = await asUser.rpc("has_role", { _user_id: uid, _role: "admin" });
-  if (!isAdmin) {
-    return new Response(JSON.stringify({ error: "Forbidden" }), {
-      status: 403, headers: corsHeaders,
+
+  if (!isCron) {
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const asUser = createClient(SUPABASE_URL, ANON_KEY, {
+      global: { headers: { Authorization: authHeader } },
     });
+    const { data: userData } = await asUser.auth.getUser();
+    const uid = userData?.user?.id;
+    if (!uid) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: corsHeaders,
+      });
+    }
+    const { data: isAdmin } = await asUser.rpc("has_role", { _user_id: uid, _role: "admin" });
+    if (!isAdmin) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403, headers: corsHeaders,
+      });
+    }
   }
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE);

@@ -146,6 +146,8 @@ export const useEnrollments = () => {
           toast.error("Course not found");
         } else if (code === "COURSE_INACTIVE") {
           toast.error("This course is not currently open for enrollment.");
+        } else if (code === "BATCH_CLOSED") {
+          toast.error("Yeh batch abhi full hai. Nayi seats khulne par enrollment shuru ho jayega.");
         } else if (/Too many requests/i.test(error.message)) {
           toast.error("Too many enroll attempts. Please wait a few minutes.");
         } else {

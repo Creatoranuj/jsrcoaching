@@ -91,6 +91,24 @@ Deno.serve(async (req) => {
       return json(200, { enrolled: true, already: true });
     }
 
+    // ── BATCH FULL GATE ──
+    // Paid enrollment is gated inside `complete_paid_enrollment`. Free courses
+    // must honour the same admin switch / seat cap, otherwise a closed batch
+    // can still be joined from the free path. Already-active students are
+    // short-circuited above, so a retry never strands an existing seat.
+    const { data: availability, error: availErr } = await admin
+      .rpc("course_availability", { _course_id: courseId });
+    if (availErr) {
+      // Fail-closed: if we cannot read the gate we must not hand out a seat.
+      console.error("[self-enroll-free] availability check failed", availErr.message);
+      return json(503, { error: "AVAILABILITY_UNAVAILABLE" });
+    }
+    const gate = Array.isArray(availability) ? availability[0] : availability;
+    if (gate?.is_full) {
+      return json(409, { error: "BATCH_CLOSED" });
+    }
+
+
     if (existing?.id) {
       const { error: upErr } = await admin
         .from("enrollments")
