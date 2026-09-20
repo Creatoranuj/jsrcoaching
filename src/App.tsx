@@ -9,6 +9,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
 import { HelmetProvider } from "react-helmet-async";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { hasStoredSupabaseSession } from "@/lib/authStorage";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
 import { BatchProvider } from "./contexts/BatchContext";
@@ -287,9 +288,31 @@ const PublicRoute = ({ element }: { element: React.ReactElement }) => {
 };
 
 const ProtectedRoute = ({ element }: { element: React.ReactElement }) => {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, sessionSettled } = useAuth();
+  const location = useLocation();
+  // Deep links (payment return, shared lesson link, cold start) hit this guard
+  // before Supabase has restored the session from storage. `isLoading` gives up
+  // after 6s by design, so without the stored-session hint a signed-in student
+  // got bounced to /login on /classes/:id/lessons. Keep waiting while a token
+  // is on disk but the session has not settled yet — bounded by a ceiling so a
+  // genuinely broken restore still lands on the login page instead of a
+  // forever spinner.
+  const [restoreTimedOut, setRestoreTimedOut] = useState(false);
+  useEffect(() => {
+    if (sessionSettled || isAuthenticated) return;
+    const t = window.setTimeout(() => setRestoreTimedOut(true), 12000);
+    return () => window.clearTimeout(t);
+  }, [sessionSettled, isAuthenticated]);
+
   if (isLoading) return <PageLoader />;
-  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (!isAuthenticated && !sessionSettled && !restoreTimedOut && hasStoredSupabaseSession()) {
+    return <PageLoader />;
+  }
+  // Carry the blocked URL so Login can send the student back where they meant
+  // to go (Login already reads `location.state.from`).
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />;
+  }
   return element;
 };
 
@@ -343,6 +366,9 @@ const App = () => (
                     {/* Public Routes */}
                     <Route path="/" element={<PublicRoute element={<Index />} />} />
                     <Route path="/index" element={<Navigate to="/" replace />} />
+                    {/* Legacy/scaffold path — some older links and templates point
+                        at /auth, which 404'd. The real sign-in page is /login. */}
+                    <Route path="/auth" element={<Navigate to="/login" replace />} />
                     <Route path="/login" element={<PublicRoute element={<Login />} />} />
                     <Route path="/login-otp" element={<PublicRoute element={<PhoneLogin />} />} />
                     <Route path="/signup" element={<PublicRoute element={<Signup />} />} />

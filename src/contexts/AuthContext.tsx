@@ -28,6 +28,8 @@ interface AuthContextType {
   role: AppRole | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  /** True once getSession() has actually resolved (not the 6s ceiling). */
+  sessionSettled: boolean;
   roleLoaded: boolean;
   isAdmin: boolean;
   isStudent: boolean;
@@ -161,6 +163,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [role, setRole] = useState<AppRole | null>(null);
   const [roleLoaded, setRoleLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [sessionSettled, setSessionSettled] = useState(false);
   const isMounted = useRef(true);
   const loadCounter = useRef(0);
 
@@ -245,6 +248,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     // Bounded restore: if getSession() never settles (slow/offline cold start
     // in the Android WebView) the whole app stayed on a loading screen forever.
+    // NOTE: hitting this ceiling does NOT mean "signed out" — it only means
+    // "unknown". `sessionSettled` stays false so ProtectedRoute can keep
+    // waiting for a stored session instead of bouncing a signed-in student to
+    // /login on a deep link (verified live on /classes/:id/lessons).
     const restoreTimer = setTimeout(() => {
       if (isMounted.current) setIsLoading(false);
     }, 6000);
@@ -263,10 +270,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             .then((m) => m.startSessionTracking(session.user.id))
             .catch(() => { /* noop */ });
         }
+        setSessionSettled(true);
         setIsLoading(false);
       }
     }).catch(() => {
-      if (isMounted.current) setIsLoading(false);
+      if (isMounted.current) { setSessionSettled(true); setIsLoading(false); }
     });
 
     return () => {
@@ -335,6 +343,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       role,
       isAuthenticated: !!user,
       isLoading,
+      sessionSettled,
       roleLoaded,
       isAdmin: role === "admin",
       isStudent: role === "student",
@@ -344,7 +353,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       logout,
       refetchUserData,
     }),
-    [user, profile, role, isLoading, roleLoaded, login, signup, logout, refetchUserData]
+    [user, profile, role, isLoading, sessionSettled, roleLoaded, login, signup, logout, refetchUserData]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
