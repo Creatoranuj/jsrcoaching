@@ -10,22 +10,20 @@
  *
  * It NEVER grants access itself — the webhook does that, server side. This is
  * purely "keep checking and keep the student informed".
+ *
+ * Immortality comes from three things:
+ *   1. the reminder lives on the device for 24 h (`pendingPayment`),
+ *   2. a rate-limit-aware schedule (`waitForEnrollment`) that actually spans
+ *      ~5 minutes instead of dying against the 5-calls-per-minute limiter,
+ *   3. a re-arm whenever the app comes back to the foreground, so every app
+ *      open is another chance to reconcile.
  */
 import { useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
-import { recoverEnrollment } from "@/utils/paymentApi";
 import { clearPendingPayment, readPendingPayment } from "@/lib/pendingPayment";
-
-/**
- * Backoff, in ms, between reconciliation attempts. Starts fast (the webhook
- * usually lands in a few seconds) and stretches to ~3.5 minutes so a slow
- * bank/UPI settlement is still caught without hammering the function.
- */
-const BACKOFF_MS = [
-  0, 3000, 3000, 5000, 5000, 8000, 10000, 15000, 20000, 30000, 30000, 45000, 60000,
-];
+import { waitForEnrollment } from "@/utils/reconcileEnrollment";
 
 const PaymentResume = (): null => {
   usePaymentResume();
@@ -37,66 +35,76 @@ export const usePaymentResume = (): void => {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const runningRef = useRef(false);
-  // /payment-callback runs its own, faster poll with a dedicated screen.
-  // Two pollers would double the calls and fight over the redirect.
+  // /payment-callback runs its own poll with a dedicated screen. Two pollers
+  // would double the calls (straight into the rate limiter) and fight over
+  // the redirect.
   const onCallbackPage = pathname.startsWith("/payment-callback");
 
   useEffect(() => {
-    if (!isAuthenticated || onCallbackPage || runningRef.current) return;
-    const pending = readPendingPayment();
-    if (!pending) return;
+    if (!isAuthenticated || onCallbackPage) return;
 
-    runningRef.current = true;
     let cancelled = false;
-    let syncingToastShown = false;
 
-    const run = async () => {
-      for (let attempt = 0; attempt < BACKOFF_MS.length; attempt++) {
-        if (cancelled) return;
-        if (BACKOFF_MS[attempt] > 0) {
-          await new Promise((r) => window.setTimeout(r, BACKOFF_MS[attempt]));
-        }
-        if (cancelled) return;
+    const attemptResume = async () => {
+      if (cancelled || runningRef.current) return;
+      const pending = readPendingPayment();
+      if (!pending) return;
 
-        if (!syncingToastShown) {
-          syncingToastShown = true;
-          toast.loading(
-            "Aapka payment mil gaya hai — enrollment confirm ho raha hai. Aap app band bhi kar sakte hain.",
-            { id: "payment-resume", duration: 8000 },
-          );
-        }
+      runningRef.current = true;
+      try {
+        const result = await waitForEnrollment(pending.courseId, {
+          isCancelled: () => cancelled,
+          onFirstAttempt: () =>
+            toast.loading(
+              "Aapka payment mil gaya hai — enrollment confirm ho raha hai. Aap app band bhi kar sakte hain.",
+              { id: "payment-resume", duration: 10000 },
+            ),
+        });
 
-        const outcome = await recoverEnrollment(pending.courseId);
         if (cancelled) return;
 
-        if (outcome === "recovered") {
+        if (result === "recovered") {
           clearPendingPayment();
           toast.dismiss("payment-resume");
           toast.success("🎉 Course unlock ho gaya! Aapka access ab live hai.");
           navigate(`/my-courses/${pending.courseId}?payment=success`, {
-            replace: false,
             state: { justPurchased: pending.courseId },
           });
           return;
         }
-      }
 
-      if (cancelled) return;
-      // Still not granted. This is NOT an error — Razorpay/bank settlement can
-      // be slow. The reminder stays on the device so the next app open tries
-      // again; the student must never be tempted to pay twice.
-      toast.dismiss("payment-resume");
-      toast.info(
-        "Thodi der lag rahi hai, par aapka paisa surakshit hai. Dobara pay mat karna — course apne aap My Courses me aa jayega.",
-        { duration: 10000 },
-      );
-      runningRef.current = false;
+        if (result === "not-yet") {
+          // NOT an error — bank/UPI settlement can be slow. The reminder stays
+          // on the device so the next app open tries again; the student must
+          // never be tempted to pay twice.
+          toast.dismiss("payment-resume");
+          toast.info(
+            "Thodi der lag rahi hai, par aapka paisa surakshit hai. Dobara pay mat karna — course apne aap My Courses me aa jayega.",
+            { duration: 10000 },
+          );
+        }
+      } finally {
+        // Always release, so a later foreground/auth change can try again.
+        // Leaving this latched was how one cancelled run killed resume for the
+        // rest of the session.
+        runningRef.current = false;
+      }
     };
 
-    void run();
+    void attemptResume();
+
+    // Every return to the foreground is a fresh chance — the webhook may have
+    // landed while the app was backgrounded.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void attemptResume();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
 
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
       toast.dismiss("payment-resume");
     };
   }, [isAuthenticated, onCallbackPage, navigate]);

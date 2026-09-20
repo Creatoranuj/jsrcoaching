@@ -9,13 +9,9 @@ import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
 import { notifySuccess, notifyError, tapLight } from "../lib/nativeChrome";
 import { getErrorMessage } from "@/lib/errorMessage";
-import { recoverEnrollment } from "../utils/paymentApi";
+import { waitForEnrollment } from "@/utils/reconcileEnrollment";
 import { clearPendingPayment, rememberPendingPayment } from "@/lib/pendingPayment";
-import {
-  PAYMENT_RETURN_PARAMS,
-  RETURN_POLL_INTERVAL_MS,
-  RETURN_MAX_POLLS,
-} from "@/config/paymentReturn";
+import { PAYMENT_RETURN_PARAMS } from "@/config/paymentReturn";
 
 type Status =
   | "verifying"
@@ -99,16 +95,18 @@ const PaymentCallback = () => {
      */
     const waitForWebhook = async (courseIdNum: number) => {
       setStatus("syncing");
-      for (let attempt = 0; attempt < RETURN_MAX_POLLS; attempt++) {
-        if (cancelled) return;
-        const outcome = await recoverEnrollment(courseIdNum);
-        if (outcome === "recovered") {
-          succeed(courseIdNum);
-          return;
-        }
-        await new Promise((resolve) => window.setTimeout(resolve, RETURN_POLL_INTERVAL_MS));
-      }
+      // Rate-limit aware: `recover-enrollment` allows 5 calls/60s per user, so
+      // the old every-3s loop spent polls 6..15 collecting silent 429s. The
+      // shared schedule keeps us under the limit and stretches the real window
+      // to ~5 minutes.
+      const result = await waitForEnrollment(courseIdNum, {
+        isCancelled: () => cancelled,
+      });
       if (cancelled) return;
+      if (result === "recovered") {
+        succeed(courseIdNum);
+        return;
+      }
       // Not an error: the webhook can land a little later. Keep the copy calm.
       setStatus("pending");
     };
