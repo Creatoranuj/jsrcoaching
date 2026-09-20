@@ -98,6 +98,35 @@ async function handle(req: Request, corsHeaders: Record<string, string>): Promis
 
     const sessions = activeSessions ?? [];
 
+    // 1b. PERF 2026-09-20: reuse the active slot for the same device instead of
+    // inserting a fresh row on every relaunch. The client persists its token
+    // now, but cleared app storage would otherwise still add a row each time.
+    const { data: sameDevice } = await admin
+      .from("user_sessions")
+      .select("id, session_token")
+      .eq("user_id", userId)
+      .eq("is_active", true)
+      .eq("device_type", device_type ?? "web")
+      .eq("user_agent", user_agent ?? null)
+      .order("logged_in_at", { ascending: false })
+      .limit(1);
+
+    const reusable = sameDevice?.[0];
+    if (reusable?.session_token) {
+      await admin
+        .from("user_sessions")
+        .update({ last_active_at: new Date().toISOString() })
+        .eq("id", reusable.id);
+      return new Response(
+        JSON.stringify({
+          session_token: reusable.session_token,
+          session_id: reusable.id,
+          reused: true,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     // 2. If >= 2 active sessions → evict the oldest
     if (sessions.length >= 2) {
       const oldest = sessions[0];
