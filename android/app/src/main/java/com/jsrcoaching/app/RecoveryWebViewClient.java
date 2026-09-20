@@ -70,29 +70,73 @@ public class RecoveryWebViewClient extends BridgeWebViewClient {
     @Override
     public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
         Uri uri = request != null ? request.getUrl() : null;
-        String scheme = uri != null && uri.getScheme() != null
-            ? uri.getScheme().toLowerCase(Locale.ROOT)
-            : "";
-
-        // http/https stays inside Capacitor's own navigation rules
-        // (capacitor.config.ts → server.allowNavigation).
-        if (scheme.isEmpty() || "http".equals(scheme) || "https".equals(scheme)
-            || "file".equals(scheme) || "content".equals(scheme)
-            || "capacitor".equals(scheme) || "blob".equals(scheme) || "data".equals(scheme)) {
+        if (uri == null) {
             return super.shouldOverrideUrlLoading(view, request);
         }
+        String scheme = schemeOf(uri.toString());
+        if (isInternalScheme(scheme)) {
+            return super.shouldOverrideUrlLoading(view, request);
+        }
+        return routeExternal(view, uri.toString(), scheme);
+    }
 
+    /**
+     * Legacy overload. Some OEM WebView builds (and sub-frame navigations)
+     * still call this one — without it those `upi:` / `intent://` taps fall
+     * through to the default handler and die with ERR_UNKNOWN_URL_SCHEME.
+     */
+    @Override
+    @SuppressWarnings("deprecation")
+    public boolean shouldOverrideUrlLoading(WebView view, String url) {
+        String scheme = schemeOf(url);
+        if (isInternalScheme(scheme)) {
+            return super.shouldOverrideUrlLoading(view, url);
+        }
+        return routeExternal(view, url, scheme);
+    }
+
+    private boolean routeExternal(WebView view, String url, String scheme) {
         if (!EXTERNAL_SCHEMES.contains(scheme)) {
             // Unknown non-http scheme: swallow it rather than letting the
             // WebView render an ERR_UNKNOWN_URL_SCHEME error page.
             Log.w(TAG, "blocked unknown scheme: " + scheme);
             return true;
         }
-
-        return launchExternal(view, uri.toString(), scheme);
+        return launchExternal(activity, view, url, scheme);
     }
 
-    private boolean launchExternal(WebView view, String url, String scheme) {
+    static String schemeOf(String url) {
+        try {
+            String s = Uri.parse(url).getScheme();
+            return s == null ? "" : s.toLowerCase(Locale.ROOT);
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /** http/https stays inside Capacitor's own navigation rules. */
+    static boolean isInternalScheme(String scheme) {
+        return scheme.isEmpty() || "http".equals(scheme) || "https".equals(scheme)
+            || "file".equals(scheme) || "content".equals(scheme)
+            || "capacitor".equals(scheme) || "blob".equals(scheme) || "data".equals(scheme);
+    }
+
+    /**
+     * Entry point for popup navigations (`window.open` / `target="_blank"`),
+     * which never reach shouldOverrideUrlLoading. Razorpay's checkout opens
+     * several UPI tiles that way, so before this route the tap did nothing at
+     * all. Returns true when the URL was consumed as an external deep link.
+     */
+    static boolean handlePopupUrl(Activity activity, WebView view, String url) {
+        String scheme = schemeOf(url);
+        if (isInternalScheme(scheme) || !EXTERNAL_SCHEMES.contains(scheme)) {
+            return false;
+        }
+        Log.i(TAG, "deeplink via popup scheme=" + scheme);
+        return launchExternal(activity, view, url, scheme);
+    }
+
+    private static boolean launchExternal(Activity activity, WebView view, String url, String scheme) {
         Intent intent;
         String fallbackUrl = null;
         try {
@@ -122,7 +166,7 @@ public class RecoveryWebViewClient extends BridgeWebViewClient {
 
         try {
             activity.startActivity(intent);
-            Log.i(TAG, "deeplink launched scheme=" + scheme + " app=" + resolvePackage(intent));
+            Log.i(TAG, "deeplink launched scheme=" + scheme + " app=" + resolvePackage(activity, intent));
             return true;
         } catch (ActivityNotFoundException notFound) {
             Log.w(TAG, "deeplink no_handler scheme=" + scheme
@@ -153,7 +197,7 @@ public class RecoveryWebViewClient extends BridgeWebViewClient {
      * The package that will actually handle this intent ("unknown" when the
      * chooser/system will decide). Never null — safe for log strings.
      */
-    private String resolvePackage(Intent intent) {
+    private static String resolvePackage(Activity activity, Intent intent) {
         try {
             android.content.pm.ResolveInfo ri =
                 activity.getPackageManager().resolveActivity(intent, 0);
