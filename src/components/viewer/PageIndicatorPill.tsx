@@ -9,6 +9,8 @@ import { recordDiagnostic } from "../../lib/freezeDiagnostics";
 const TRACK_TOP = 104;
 /** …and stops above the bottom FAB stack. */
 const TRACK_BOTTOM = 72;
+/** Padding kept inside the reader box when the reader is only part of the screen. */
+const READER_INSET = 12;
 /** Movement (px) that turns a press into a scrub instead of a tap. */
 const DRAG_THRESHOLD = 6;
 /** Consecutive bridge failures before we record one diagnostic. */
@@ -88,6 +90,8 @@ export default function PageIndicatorPill({
   const [focused, setFocused] = useState(false);
   /** 0..1 position of the thumb along the scrub track. */
   const [fraction, setFraction] = useState(0);
+  /** Bumped when the reader box moves, so the track is re-measured on render. */
+  const [, setTick] = useState(0);
   const [dragging, setDragging] = useState(false);
   const draggingRef = useRef(false);
   /** Which caret is emphasised: the one pointing where the reader is heading. */
@@ -286,12 +290,61 @@ export default function PageIndicatorPill({
   const dragRaf = useRef<number | null>(null);
   const pendingY = useRef(0);
 
+  /**
+   * Track bounds.
+   *
+   * The pill is `position: fixed`, so a viewport-height track was fine while
+   * the reader owned the whole screen. Inline on the lesson page the PDF box
+   * is only a slice of the viewport, and the chip rode far outside it — over
+   * the video and the lesson heading. So: derive the track from the reader's
+   * own rect whenever the reader is NOT full-screen, and clamp inside it.
+   */
   const trackMetrics = useCallback(() => {
-    const h = typeof window === "undefined" ? 0 : window.innerHeight;
-    const top = TRACK_TOP;
-    const length = Math.max(1, h - TRACK_TOP - TRACK_BOTTOM);
-    return { top, length };
+    const vh = typeof window === "undefined" ? 0 : window.innerHeight;
+    const viewportTrack = {
+      top: TRACK_TOP,
+      length: Math.max(1, vh - TRACK_TOP - TRACK_BOTTOM),
+    };
+    const anchor = (targetRef?.current ?? iframeRef?.current ?? null) as HTMLElement | null;
+    if (!anchor || typeof anchor.getBoundingClientRect !== "function") return viewportTrack;
+    const surface =
+      (typeof anchor.closest === "function"
+        ? (anchor.closest("[data-reader-surface]") as HTMLElement | null)
+        : null) ?? anchor;
+    const rect = surface.getBoundingClientRect();
+    if (!rect.height) return viewportTrack;
+    // Immersive reader (fills the screen) keeps the original track so the chip
+    // still clears the reader header and the bottom FAB stack.
+    if (rect.top <= 1 && rect.bottom >= vh - 1) return viewportTrack;
+    const top = Math.max(READER_INSET, rect.top + READER_INSET);
+    const bottom = Math.min(vh - READER_INSET, rect.bottom - READER_INSET);
+    return { top, length: Math.max(1, bottom - top) };
+  }, [targetRef, iframeRef]);
+
+  // The reader box moves when the *page* around it scrolls or resizes, so the
+  // track has to be re-derived. rAF-throttled, passive, capture-phase (the
+  // lesson page scrolls an inner <main>, not the window).
+  useEffect(() => {
+    let raf: number | null = null;
+    const bump = () => {
+      if (raf != null) return;
+      raf = requestAnimationFrame(() => {
+        raf = null;
+        if (mounted.current) setTick((n) => (n + 1) % 1024);
+      });
+    };
+    window.addEventListener("scroll", bump, { passive: true, capture: true });
+    window.addEventListener("resize", bump);
+    window.addEventListener("orientationchange", bump);
+    return () => {
+      if (raf != null) cancelAnimationFrame(raf);
+      window.removeEventListener("scroll", bump, { capture: true } as EventListenerOptions);
+      window.removeEventListener("resize", bump);
+      window.removeEventListener("orientationchange", bump);
+    };
   }, []);
+
+
 
   const applyFraction = useCallback(
     (next: number) => {

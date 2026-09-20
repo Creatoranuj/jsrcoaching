@@ -215,6 +215,7 @@ const PdfViewerInner = forwardRef<PdfViewerHandle, PdfViewerProps>(
     if (isNotion(url)) {
       return (
         <div
+          data-reader-surface
           className={
             chromeVisible
               ? "relative w-full overflow-hidden bg-background"
@@ -235,6 +236,7 @@ const PdfViewerInner = forwardRef<PdfViewerHandle, PdfViewerProps>(
     if (isMd) {
       return (
         <div
+          data-reader-surface
           className={
             chromeVisible
               ? "relative w-full overflow-hidden bg-background"
@@ -256,6 +258,7 @@ const PdfViewerInner = forwardRef<PdfViewerHandle, PdfViewerProps>(
     if (!useIframe) {
       return (
         <div
+          data-reader-surface
           className={
             chromeVisible
               ? "relative w-full overflow-hidden bg-background landscape:!h-[calc(100dvh-var(--nb-player-h,56.25vw)-env(safe-area-inset-top)-env(safe-area-inset-bottom))] landscape:!min-h-[200px]"
@@ -305,7 +308,7 @@ const PdfViewerInner = forwardRef<PdfViewerHandle, PdfViewerProps>(
 
 
     return (
-      <div className={wrapperClass} style={wrapperStyle} onClick={onSurfaceTap}>
+      <div data-reader-surface className={wrapperClass} style={wrapperStyle} onClick={onSurfaceTap}>
         <iframe
           ref={iframeRef}
           key={embedUrl}
