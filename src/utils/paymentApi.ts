@@ -151,7 +151,67 @@ const classifyRecoverFailure = (err: PaymentApiError): RecoverFailureReason => {
  * its own generic error, which is how the same failure landed in Sentry three
  * times (SAFAR-ENGLISH-APP-15/16/17).
  */
-export const recoverEnrollmentDetailed = async (courseId: number): Promise<RecoverResult> => {
+
+/**
+ * Shared budget + de-duplication gate in front of `recover-enrollment`.
+ *
+ * WHY: four independent surfaces ask "has my enrollment landed yet?" — the
+ * global resume watcher (`usePaymentResume`), the boot sweep
+ * (`useEnrollmentRecovery`), the My Courses arrival poll
+ * (`useEnrollmentArrival`) and the post-checkout sync gate (`usePaymentSync`).
+ * The server allows only **5 calls / 60 s per user** and normalises 429 to
+ * "not-yet", so an over-eager caller silently spends everybody else's budget:
+ * the student watches a spinner while every request is being rejected.
+ *
+ * Putting the gate here — rather than in one caller — means no future call
+ * site can bypass it. It de-duplicates concurrent asks for the same course and
+ * never spends more than MAX_CALLS_PER_WINDOW calls in a rolling minute,
+ * keeping one in reserve for the manual "I paid but don't see my course"
+ * button (`{ force: true }`).
+ *
+ * It grants nothing: `razorpay-webhook` (HMAC verified) and the idempotent
+ * `complete_paid_enrollment` RPC are the only things that enroll a student.
+ */
+const RECOVER_WINDOW_MS = 60_000;
+/** Server allows 5/60s; spend 4 and reserve one for the manual retry. */
+const RECOVER_MAX_CALLS_PER_WINDOW = 4;
+
+const recoverCallTimestamps: number[] = [];
+const recoverInFlight = new Map<number, Promise<RecoverResult>>();
+
+/** Calls we are still willing to spend in the current rolling minute. */
+export const recoverBudgetLeft = (): number => {
+  const now = Date.now();
+  while (recoverCallTimestamps.length > 0 && now - recoverCallTimestamps[0] > RECOVER_WINDOW_MS) {
+    recoverCallTimestamps.shift();
+  }
+  return Math.max(0, RECOVER_MAX_CALLS_PER_WINDOW - recoverCallTimestamps.length);
+};
+
+export const recoverEnrollmentDetailed = async (
+  courseId: number,
+  opts: { force?: boolean } = {},
+): Promise<RecoverResult> => {
+  // Someone else is already asking about this exact course — share the answer
+  // rather than spending a second call on it.
+  const existing = recoverInFlight.get(courseId);
+  if (existing) return existing;
+
+  if (recoverBudgetLeft() <= 0 && !opts.force) {
+    // Shaped like a server 429 so every caller's existing "not-yet" handling
+    // (calm copy, try again later) works unchanged.
+    return { outcome: "not-yet", status: 429, code: "CLIENT_THROTTLED" };
+  }
+
+  recoverCallTimestamps.push(Date.now());
+  const promise = runRecoverEnrollment(courseId).finally(() => {
+    recoverInFlight.delete(courseId);
+  });
+  recoverInFlight.set(courseId, promise);
+  return promise;
+};
+
+const runRecoverEnrollment = async (courseId: number): Promise<RecoverResult> => {
   try {
     await invokePaymentFunction("recover-enrollment", { course_id: Number(courseId) });
     return { outcome: "recovered" };
