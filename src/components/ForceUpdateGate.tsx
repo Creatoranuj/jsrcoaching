@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, Sparkles } from "lucide-react";
+import { JSRMark } from "@/components/brand/JSRMark";
 import { isUpdateRequired, isUpdateAvailable } from "@/utils/version";
 import { loadCapacitorApp } from "@/lib/native/app";
 import { openResource } from "@/lib/openResource";
@@ -267,8 +267,8 @@ export const ForceUpdateGate = ({ children }: { children: ReactNode }) => {
           onInteractOutside={(e) => e.preventDefault()}
         >
           <DialogHeader>
-            <div className="mx-auto w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center mb-2">
-              <AlertTriangle className="w-6 h-6 text-destructive" />
+            <div className="mx-auto mb-2 flex justify-center">
+              <JSRMark compact />
             </div>
             <DialogTitle className="text-center">Update Required</DialogTitle>
             <DialogDescription className="text-center">
@@ -286,8 +286,8 @@ export const ForceUpdateGate = ({ children }: { children: ReactNode }) => {
       <Dialog open={mode === "optional"} onOpenChange={(open) => { if (!open) dismissOptional(); }}>
         <DialogContent className="max-w-sm sm:max-w-md">
           <DialogHeader>
-            <div className="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
-              <Sparkles className="w-6 h-6 text-primary" />
+            <div className="mx-auto mb-2 flex justify-center">
+              <JSRMark compact />
             </div>
             <DialogTitle className="text-center">
               Naya version {targetVersion ? `(${targetVersion})` : ""} aa gaya hai

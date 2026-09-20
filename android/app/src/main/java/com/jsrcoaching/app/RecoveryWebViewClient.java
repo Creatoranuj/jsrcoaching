@@ -107,19 +107,31 @@ public class RecoveryWebViewClient extends BridgeWebViewClient {
                 intent.addCategory(Intent.CATEGORY_BROWSABLE);
             }
         } catch (URISyntaxException e) {
-            Log.w(TAG, "unparseable external url", e);
+            Log.w(TAG, "deeplink unparseable scheme=" + scheme + " device=" + deviceTag());
             return true;
         }
 
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+
+        // Diagnostics: which deep link was attempted and on what device.
+        // sanitizeUrl() strips query/fragment, so Razorpay order/payment
+        // tokens can never land in logcat or crash reports.
+        Log.i(TAG, "deeplink attempt scheme=" + scheme
+            + " target=" + sanitizeUrl(url)
+            + " device=" + deviceTag());
+
         try {
             activity.startActivity(intent);
+            Log.i(TAG, "deeplink launched scheme=" + scheme + " app=" + resolvePackage(intent));
             return true;
         } catch (ActivityNotFoundException notFound) {
-            Log.w(TAG, "no app for scheme " + scheme, notFound);
+            Log.w(TAG, "deeplink no_handler scheme=" + scheme
+                + " target=" + sanitizeUrl(url)
+                + " fallback=" + (fallbackUrl != null ? "browser" : "toast"));
         }
 
         if (fallbackUrl != null && view != null) {
+            Log.i(TAG, "deeplink fallback browser scheme=" + scheme);
             view.loadUrl(fallbackUrl);
             return true;
         }
@@ -134,6 +146,47 @@ public class RecoveryWebViewClient extends BridgeWebViewClient {
             /* activity may be finishing */
         }
         return true;
+    }
+
+
+    /**
+     * The package that will actually handle this intent ("unknown" when the
+     * chooser/system will decide). Never null — safe for log strings.
+     */
+    private String resolvePackage(Intent intent) {
+        try {
+            android.content.pm.ResolveInfo ri =
+                activity.getPackageManager().resolveActivity(intent, 0);
+            if (ri != null && ri.activityInfo != null && ri.activityInfo.packageName != null) {
+                return ri.activityInfo.packageName;
+            }
+        } catch (Exception ignored) {
+            /* PackageManager can throw on a finishing activity */
+        }
+        return "unknown";
+    }
+
+    /**
+     * Scheme + host/package only. Query strings and fragments are dropped
+     * because payment deep links can carry order ids and tokens — those are
+     * payment secrets and must never be logged.
+     */
+    private static String sanitizeUrl(String url) {
+        try {
+            Uri u = Uri.parse(url);
+            String s = new Uri.Builder()
+                .scheme(u.getScheme())
+                .authority(u.getAuthority())
+                .build()
+                .toString();
+            return s.length() > 120 ? s.substring(0, 120) : s;
+        } catch (Exception e) {
+            return "(unparseable)";
+        }
+    }
+
+    private static String deviceTag() {
+        return Build.MANUFACTURER + "/" + Build.MODEL + " sdk=" + Build.VERSION.SDK_INT;
     }
 
     @Override
