@@ -362,19 +362,40 @@ const BuyCourse = () => {
 
           if (!error && data) {
             const isFree = !data.price || data.price === 0;
-            const [resolvedThumb, resolvedImage] = await Promise.all([
-              resolveContentUrl(data.thumbnail_url),
-              resolveContentUrl(data.image_url),
-            ]);
+            // Paint the Buy screen with the raw URLs FIRST. Signing a storage
+            // URL is a second network round-trip; awaiting it here used to keep
+            // the whole page on the skeleton (and the Buy button unrendered)
+            // whenever storage was slow, even though the course had loaded.
             setCourse({
               id: data.id,
               title: data.title,
               description: data.description,
               grade: data.grade,
               price: data.price ?? 0,
-              thumbnailUrl: resolvedThumb ?? data.thumbnail_url,
-              imageUrl: resolvedImage ?? data.image_url,
+              thumbnailUrl: data.thumbnail_url,
+              imageUrl: data.image_url,
             });
+            setLoading(false);
+
+            // Upgrade to signed/CDN URLs in the background; a failure or a
+            // hang only means the raw URL (or the placeholder) stays.
+            void Promise.all([
+              resolveContentUrl(data.thumbnail_url),
+              resolveContentUrl(data.image_url),
+            ])
+              .then(([resolvedThumb, resolvedImage]) => {
+                if (!alive) return;
+                setCourse((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        thumbnailUrl: resolvedThumb ?? prev.thumbnailUrl,
+                        imageUrl: resolvedImage ?? prev.imageUrl,
+                      }
+                    : prev,
+                );
+              })
+              .catch((err) => logger.error("Course image resolve failed", err));
 
 
             if (isFree && user && alive) {
