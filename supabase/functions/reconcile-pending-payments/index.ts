@@ -7,6 +7,13 @@
 // uses (`complete_paid_enrollment`), so running this twice is safe. Nothing is
 // ever enrolled from client input.
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "npm:jose@5";
+
+const GITHUB_OIDC_ISSUER = "https://token.actions.githubusercontent.com";
+const GITHUB_JWKS = createRemoteJWKSet(new URL(`${GITHUB_OIDC_ISSUER}/.well-known/jwks`));
+const CRON_REPOSITORY = "Creatoranuj/jsrcoaching";
+const CRON_WORKFLOW = "reconcile-payments.yml";
+const CRON_AUDIENCE = "jsr-coaching-reconcile";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -53,8 +60,42 @@ Deno.serve(async (req) => {
   // reports as captured, through the same idempotent RPC.
   const CRON_SECRET = Deno.env.get("RECONCILE_CRON_SECRET");
   const presentedSecret = req.headers.get("x-cron-secret");
+  const oidcToken = req.headers.get("x-github-oidc-token");
   let isCron = false;
-  if (presentedSecret) {
+
+  // Preferred cron path: a short-lived GitHub Actions OIDC token pinned to THIS
+  // repository and THIS workflow file. Nothing to configure by hand, nothing to
+  // rotate, and a fork or another workflow cannot mint a token that passes.
+  if (oidcToken) {
+    try {
+      const { payload } = await jwtVerify(oidcToken, GITHUB_JWKS, {
+        issuer: GITHUB_OIDC_ISSUER,
+        audience: Deno.env.get("RECONCILE_OIDC_AUDIENCE") ?? CRON_AUDIENCE,
+        clockTolerance: 60,
+      });
+      const claims = payload as JWTPayload & { repository?: string; workflow_ref?: string };
+      if (claims.repository !== CRON_REPOSITORY) {
+        console.error("reconcile: OIDC wrong repository", claims.repository);
+        return new Response(JSON.stringify({ error: "OIDC_WRONG_REPOSITORY" }), {
+          status: 403, headers: corsHeaders,
+        });
+      }
+      const wantPrefix = `${CRON_REPOSITORY}/.github/workflows/${CRON_WORKFLOW}@`;
+      if (!claims.workflow_ref || !claims.workflow_ref.startsWith(wantPrefix)) {
+        console.error("reconcile: OIDC wrong workflow", claims.workflow_ref);
+        return new Response(JSON.stringify({ error: "OIDC_WRONG_WORKFLOW" }), {
+          status: 403, headers: corsHeaders,
+        });
+      }
+      isCron = true;
+    } catch (e) {
+      console.error("reconcile: OIDC verify failed", e instanceof Error ? e.message : e);
+      return new Response(JSON.stringify({ error: "OIDC_INVALID" }), {
+        status: 401, headers: corsHeaders,
+      });
+    }
+  } else if (presentedSecret) {
+    // Legacy shared-secret path, kept for a manual or local sweep.
     if (!CRON_SECRET) {
       return new Response(JSON.stringify({ error: "cron_secret_not_configured" }), {
         status: 503, headers: corsHeaders,
