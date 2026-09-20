@@ -13,7 +13,7 @@
  */
 
 import { test, expect, Page } from "@playwright/test";
-import { signIn } from "./helpers/auth";
+import { signInAndLand } from "./helpers/auth";
 
 const STUDENT = {
   email: process.env.TEST_USER_EMAIL || process.env.E2E_EMAIL || "",
@@ -32,8 +32,10 @@ const HAS_STUDENT = !!(STUDENT.email && STUDENT.password);
 const HAS_ADMIN = !!(ADMIN.email && ADMIN.password);
 
 async function login(page: Page, email: string, password: string) {
-  await signIn(page, email, password);
-  await expect(page).toHaveURL(/\/(dashboard|my-courses|admin)/, { timeout: 20_000 });
+  // signInAndLand waits for the post-login route with a 30s budget and reports
+  // the inline error on failure; the old bare 20s toHaveURL made this flaky in
+  // CI whenever AuthContext booted slowly (run 35504201896).
+  await signInAndLand(page, email, password, /\/(dashboard|my-courses|admin)/);
 }
 
 // ============================================================
