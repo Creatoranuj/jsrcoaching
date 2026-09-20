@@ -125,6 +125,8 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+    // EncryptedSharedPreferences for SecureStorePlugin (auth token at rest).
+    implementation 'androidx.security:security-crypto:1.1.0-alpha06'
     // Razorpay Android SDK — pinned to an exact version on purpose. The old
     // capacitor-razorpay plugin used the dynamic range '1.6.+', so two builds
     // could ship different SDKs and behave differently on UPI.

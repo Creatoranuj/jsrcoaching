@@ -48,6 +48,8 @@ public class MainActivity extends BridgeActivity
         // Reports why the process died last time (low memory / native crash /
         // ANR) so triage no longer needs `adb logcat` on a cabled device.
         registerPlugin(AppExitInfoPlugin.class);
+        // Keystore-backed storage for the Supabase session (SecureStorePlugin).
+        registerPlugin(SecureStorePlugin.class);
         super.onCreate(savedInstanceState);
 
         // Warm up Razorpay so the payment-method list (including installed UPI
