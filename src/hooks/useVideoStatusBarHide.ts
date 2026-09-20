@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
-import { hideStatusBar, showStatusBar } from "../lib/nativeChrome";
-import { enterImmersive, exitImmersive } from "../lib/androidImmersive";
+import { enterFullscreen, exitFullscreen } from "../lib/native/fullscreen";
+
+/** Owner key in the shared ref-counted fullscreen set. */
+const OWNER = "video-playback";
 
 /**
  * YouTube-style status-bar auto-hide during video playback.
@@ -64,8 +66,7 @@ export function useVideoStatusBarHide(opts: {
       restoreTimerRef.current = window.setTimeout(() => {
         restoreTimerRef.current = null;
         hiddenRef.current = false;
-        void showStatusBar();
-        exitImmersive();
+        exitFullscreen(OWNER);
       }, 400);
       return;
     }
@@ -78,8 +79,7 @@ export function useVideoStatusBarHide(opts: {
     timerRef.current = window.setTimeout(() => {
       timerRef.current = null;
       hiddenRef.current = true;
-      void hideStatusBar();
-      enterImmersive();
+      enterFullscreen(OWNER, true);
     }, delayMs);
 
     return () => {
@@ -94,8 +94,7 @@ export function useVideoStatusBarHide(opts: {
       if (timerRef.current !== null) window.clearTimeout(timerRef.current);
       if (restoreTimerRef.current !== null) window.clearTimeout(restoreTimerRef.current);
       if (hiddenRef.current) {
-        void showStatusBar();
-        exitImmersive();
+        exitFullscreen(OWNER);
       }
     },
     [],
