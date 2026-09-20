@@ -45,7 +45,7 @@ RETURNS text[]
 LANGUAGE sql
 IMMUTABLE
 AS $func$
-  SELECT string_to_array(name, '/')[1:array_length(string_to_array(name, '/'), 1) - 1];
+  SELECT (string_to_array(name, '/'))[1:array_length(string_to_array(name, '/'), 1) - 1];
 $func$;
 
 CREATE OR REPLACE FUNCTION storage.filename(name text)
@@ -53,7 +53,7 @@ RETURNS text
 LANGUAGE sql
 IMMUTABLE
 AS $func$
-  SELECT string_to_array(name, '/')[array_length(string_to_array(name, '/'), 1)];
+  SELECT (string_to_array(name, '/'))[array_length(string_to_array(name, '/'), 1)];
 $func$;
 
 CREATE OR REPLACE FUNCTION storage.extension(name text)
