@@ -212,6 +212,43 @@ Deno.serve(async (req) => {
     const { error } = await admin.from("app_config").update(patch).eq("id", 1);
     if (error) throw error;
 
+    // Public release history (/releases + the update gate) must not depend on
+    // an admin remembering to add a row after every APK. CI publishes it in
+    // the same authorized call that announces the version.
+    if (platform === "android") {
+      try {
+        const now = new Date().toISOString();
+        // Only one row may carry is_current (partial unique index), so the old
+        // current release is demoted BEFORE the new one claims the flag —
+        // otherwise the upsert trips the unique index.
+        const { error: demoteErr } = await admin
+          .from("app_releases")
+          .update({ is_current: false, updated_at: now })
+          .eq("is_current", true)
+          .neq("version", version);
+        if (demoteErr) throw demoteErr;
+        const { error: relErr } = await admin
+          .from("app_releases")
+          .upsert(
+            {
+              version,
+              title: `Version ${version}`,
+              notes: notes ?? "",
+              status: "supported",
+              is_current: true,
+              released_at: now.slice(0, 10),
+              updated_at: now,
+            },
+            { onConflict: "version" },
+          );
+        if (relErr) throw relErr;
+        console.log("[set-latest-version] app_releases row published", version);
+      } catch (relError) {
+        // A release-history hiccup must never fail the version publish itself.
+        console.error("[set-latest-version] app_releases publish failed", relError);
+      }
+    }
+
     console.log("[set-latest-version] published", {
       platform,
       version,
