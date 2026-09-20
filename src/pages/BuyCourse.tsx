@@ -17,6 +17,7 @@ import { listUpiApps, type UpiApp } from "../utils/upiApps";
 import { tapLight, tapMedium, notifySuccess, notifyError } from "../lib/nativeChrome";
 import { LoadingSpinner } from "../components/ui/loading-spinner";
 import { resolveContentUrl } from "../lib/resolveContentUrl";
+import { withTimeout, isOnline } from "../lib/supabaseHelpers";
 import { safeGet, safeSet, safeRemove } from "../lib/storage";
 import { rememberPendingPayment } from "../lib/pendingPayment";
 import { logger } from "@/lib/logger";
@@ -28,6 +29,11 @@ import { useCourseAvailability } from "@/hooks/useCourseAvailability";
 
 
 const MERCHANT_NAME = "JSR COACHING";
+
+// A phone on a weak tower can take ~8s for this row. 12s is generous but
+// still well inside a student's patience, and far below the 15s watchdog
+// that used to be the only thing that ever spoke.
+const COURSE_FETCH_TIMEOUT_MS = 12_000;
 
 interface RazorpayOrderData {
   order_id: string;
@@ -143,6 +149,12 @@ const BuyCourse = () => {
   const [payMode, setPayMode] = useState<null | "native" | "web" | "browser">(null);
   const [course, setCourse] = useState<CourseData | null>(null);
   const [loading, setLoading] = useState(true);
+  // Why the course never arrived. `null` = no failure yet. The three states are
+  // deliberately distinct: a paying student must never be told "course not
+  // found" when the truth is "your phone has no internet".
+  const [loadError, setLoadError] = useState<null | "offline" | "slow" | "notfound">(null);
+  // Bumping this re-runs the course fetch only — never a full app reload.
+  const [reloadKey, setReloadKey] = useState(0);
   const [adminAutoEnrolled, setAdminAutoEnrolled] = useState(false);
   // Apple IAP policy guard — true only inside the native iOS build.
   const [isIosNative, setIsIosNative] = useState(false);
@@ -315,15 +327,38 @@ const BuyCourse = () => {
   }, [user?.id, courseId]);
 
   useEffect(() => {
+    // The buy screen used to await this fetch with no time limit: on a dead or
+    // sleeping radio the promise never settles, `loading` stays true and the
+    // student stares at a skeleton forever (the real bug behind the
+    // "Taking longer than expected…" screenshot). Time-box it, tell the truth,
+    // and let them retry just this call.
+    let alive = true;
     const initData = async () => {
       setLoading(true);
+      setLoadError(null);
       if (courseId) {
+        if (!isOnline()) {
+          if (!alive) return;
+          setLoadError("offline");
+          setLoading(false);
+          return;
+        }
         try {
-          const { data, error } = await supabase
-            .from("courses")
-            .select("*")
-            .eq("id", Number(courseId))
-            .single();
+          const { data, error } = await withTimeout(
+            supabase
+              .from("courses")
+              .select("id,title,description,grade,price,thumbnail_url,image_url")
+              .eq("id", Number(courseId))
+              .single(),
+            COURSE_FETCH_TIMEOUT_MS,
+          );
+          if (!alive) return;
+
+          if (error || !data) {
+            setLoadError(isOnline() ? "notfound" : "offline");
+            setLoading(false);
+            return;
+          }
 
           if (!error && data) {
             const isFree = !data.price || data.price === 0;
@@ -342,19 +377,28 @@ const BuyCourse = () => {
             });
 
 
-            if (isFree && user) {
+            if (isFree && user && alive) {
               await handleFreeEnrollment(Number(courseId));
             }
           }
         } catch (err) {
           logger.error("Error fetching course:", err);
+          if (!alive) return;
+          // Timed out or the network died mid-flight — never "not found".
+          setLoadError(isOnline() ? "slow" : "offline");
+          setLoading(false);
+          return;
         }
       }
+      if (!alive) return;
       setLoading(false);
     };
     initData();
+    return () => {
+      alive = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [courseId, user?.id]);
+  }, [courseId, user?.id, reloadKey]);
 
   useEffect(() => {
     const handleAdminAutoEnroll = async () => {
@@ -782,7 +826,50 @@ const BuyCourse = () => {
   };
 
 
-  if (loading) return <LoadingSpinner fullPage text="Loading course…" />;
+  const retryCourseFetch = () => {
+    tapLight();
+    setReloadKey((k) => k + 1);
+  };
+
+  if (loading) return <LoadingSpinner fullPage text="Loading course…" onRetry={retryCourseFetch} />;
+
+  if (loadError === "offline" || loadError === "slow") {
+    const offline = loadError === "offline";
+    return (
+      <div className="min-h-dvh bg-muted/30">
+        <header
+          className="sticky top-0 z-50 bg-card border-b px-4 py-3 flex items-center gap-3 shadow-sm"
+          style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 0.75rem)" }}
+        >
+          <BackButton fallback="/courses" />
+          <h1 className="font-semibold text-lg">Secure Checkout</h1>
+        </header>
+        <main className="mx-auto max-w-xl p-4 mt-8">
+          <Card>
+            <CardContent className="space-y-4 p-6 text-center">
+              <h2 className="text-lg font-semibold">
+                {offline ? "Internet band hai" : "Internet slow lag raha hai"}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                {offline
+                  ? "Phone ka internet on karke dobara koshish karein. Aapka paisa kahin nahi gaya — abhi tak koi payment shuru hi nahi hui."
+                  : "Course ki jaankari abhi tak nahi aayi. Dobara koshish karein — abhi tak koi payment shuru nahi hui, paisa surakshit hai."}
+              </p>
+              <div className="flex flex-col gap-2">
+                <Button onClick={retryCourseFetch} className="w-full">
+                  Dobara koshish karein
+                </Button>
+                <Button variant="outline" onClick={() => navigate("/courses")} className="w-full">
+                  Courses par wapas jayein
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    );
+  }
+
   if (!course) return <div className="p-10 text-center">Course not found <Button onClick={() => navigate("/courses")}>Back</Button></div>;
 
   return (
