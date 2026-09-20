@@ -1,0 +1,50 @@
+name: Reconcile Stuck Payments
+
+# Sweeps razorpay_payments rows that are still `pending` and enrolls the ones
+# Razorpay reports as genuinely captured. Runs every 15 minutes so a student
+# whose app died right after paying gets their course without anyone pressing
+# a button. The edge function is idempotent (complete_paid_enrollment), so a
+# repeated sweep never double-enrolls or re-charges.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sweep:
+    runs-on: ubuntu-24.04
+    env:
+      BASE: ${{ secrets.SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
+      ANON: ${{ secrets.SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY }}
+      CRON_SECRET: ${{ secrets.RECONCILE_CRON_SECRET }}
+    steps:
+      - name: Call reconcile-pending-payments
+        run: |
+          if [ -z "$BASE" ] || [ -z "$ANON" ] || [ -z "$CRON_SECRET" ]; then
+            echo "::notice::Missing SUPABASE_URL / SUPABASE_ANON_KEY / RECONCILE_CRON_SECRET secret — sweep skipped."
+            exit 0
+          fi
+          echo "::add-mask::$CRON_SECRET"
+          URL="${BASE%/}/functions/v1/reconcile-pending-payments"
+          STATUS=$(curl -s -o /tmp/out.json -w "%{http_code}" -X POST \
+            -H "apikey: $ANON" \
+            -H "Authorization: Bearer $ANON" \
+            -H "x-cron-secret: $CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            --max-time 120 "$URL" || echo "000")
+          echo "HTTP $STATUS"
+          cat /tmp/out.json || true
+          echo
+          if [ "$STATUS" != "200" ]; then
+            # Transient Supabase/Razorpay hiccups must not spam red runs; the
+            # next sweep is 15 minutes away and the work is idempotent.
+            echo "::warning::Reconcile sweep returned HTTP $STATUS"
+            exit 0
+          fi
+          ENROLLED=$(jq -r '.enrolled // 0' /tmp/out.json 2>/dev/null || echo 0)
+          CHECKED=$(jq -r '.checked // 0' /tmp/out.json 2>/dev/null || echo 0)
+          echo "::notice::Reconcile sweep checked $CHECKED pending order(s), enrolled $ENROLLED."
