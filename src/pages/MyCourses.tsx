@@ -458,9 +458,13 @@ const MyCourses = () => {
         };
       }).filter(Boolean) as EnrolledCourse[];
 
-      // Sign legacy `/object/public/content/...` URLs so private-bucket thumbnails load.
-      // PERF: one batched createSignedUrls call instead of 2 storage round-trips
-      // per enrolled course (was 2N requests before first paint).
+      // Paint the list FIRST (audit 2026-09-20, HIGH): signing thumbnails is a
+      // second storage round-trip, and awaiting it here kept the whole list on
+      // the skeleton whenever storage was slow, even though the courses had
+      // already loaded. Images upgrade in the background.
+      setCourses(enrolledCoursesRaw);
+      setLoading(false);
+
       const signed = await resolveContentUrls(
         enrolledCoursesRaw.flatMap((c) => [c.imageUrl, c.thumbnailUrl]),
       );
