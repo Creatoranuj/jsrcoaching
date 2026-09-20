@@ -63,6 +63,11 @@ public class MainActivity extends BridgeActivity
         com.getcapacitor.Bridge b = getBridge();
         if (b != null && b.getWebView() != null) {
             b.getWebView().setWebChromeClient(new BridgeFullscreenWebChromeClient(this));
+            // Razorpay's UPI tiles use window.open(); without multiple-window
+            // support the WebView drops those popups before onCreateWindow ever
+            // fires, so the UPI deep link never leaves the app.
+            b.getWebView().getSettings().setSupportMultipleWindows(true);
+            b.getWebView().getSettings().setJavaScriptCanOpenWindowsAutomatically(true);
             // Renderer-death recovery: if Android kills the WebView renderer
             // while the app is backgrounded, we rebuild the Activity instead of
             // leaving the user on a blank screen. See RecoveryWebViewClient.
