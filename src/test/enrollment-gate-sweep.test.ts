@@ -63,8 +63,9 @@ describe("scheduled sweep workflow", () => {
     expect(yml).toMatch(/cron: '\*\/15 \* \* \* \*'/);
   });
 
-  it("sends the cron secret header and never hardcodes it", () => {
-    expect(yml).toMatch(/x-cron-secret: \$CRON_SECRET/);
-    expect(yml).toMatch(/secrets\.RECONCILE_CRON_SECRET/);
+  it("authenticates with a short-lived GitHub OIDC token, not a stored secret", () => {
+    expect(yml).toMatch(/x-github-oidc-token: \$OIDC_TOKEN/);
+    expect(yml).toMatch(/id-token: write/);
+    expect(yml).not.toMatch(/secrets\.RECONCILE_CRON_SECRET/);
   });
 });
