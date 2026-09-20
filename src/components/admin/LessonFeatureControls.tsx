@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import LessonChipManager from "./LessonChipManager";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { resetSiteSettingsCache } from "@/lib/siteSettingsCache";
 import { useQueryClient } from "@tanstack/react-query";
 import { getErrorMessage } from "@/lib/errorMessage";
 import {
@@ -104,6 +105,7 @@ export default function LessonFeatureControlsManager() {
       if (error) throw error;
 
       setFlags((prev) => ({ ...prev, [flag]: next }));
+      resetSiteSettingsCache();
       resetLessonFeatureFlagsCache();
       queryClient.invalidateQueries({ queryKey: LESSON_FEATURE_QUERY_KEY });
       toast.success(`${label} ${next ? "ON" : "OFF"} — sabhi students ke liye lagu ho gaya.`, {
