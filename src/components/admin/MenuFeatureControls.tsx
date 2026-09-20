@@ -5,6 +5,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { resetSiteSettingsCache } from "@/lib/siteSettingsCache";
 import { useQueryClient } from "@tanstack/react-query";
 import { getErrorMessage } from "@/lib/errorMessage";
 import {
@@ -69,6 +70,7 @@ export default function MenuFeatureControlsManager() {
       if (error) throw error;
 
       setFlags((prev) => ({ ...prev, [flag]: next }));
+      resetSiteSettingsCache();
       queryClient.invalidateQueries({ queryKey: MENU_FEATURE_QUERY_KEY });
       toast.success(`${label} ${next ? "ON" : "OFF"} — students ke liye lagu ho gaya.`, {
         id: `menu-flag-${flag}`,
