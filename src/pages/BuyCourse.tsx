@@ -7,7 +7,7 @@ import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { toast } from "sonner";
 import {
-  CheckCircle, Shield, Loader2, CreditCard, Zap
+  CheckCircle, Shield, Loader2, CreditCard, Zap, ExternalLink
 } from "lucide-react";
 import { useAdminEnrollment } from "../hooks/useAdminEnrollment";
 import { openRazorpayCheckout, formatRazorpayError, buildRazorpayPrefill, buildUpiCheckoutConfig, type RazorpaySuccessResponse } from "../utils/razorpay";
@@ -86,6 +86,28 @@ const openBrowserCheckout = async (
   // preferWebView:false → system browser (Custom Tab), NOT the embedded
   // WebView. That is the entire point of this fallback; do not change it.
   await openExternal(`${origin}/pay?${q.toString()}`, { preferWebView: false });
+};
+
+/**
+ * Website escape hatch — opens the REAL site's buy page in the phone's
+ * browser so the student can sign in with their own account and pay there.
+ *
+ * Preferred over the bare `/pay` tab whenever the in-app sheet cannot open:
+ * the student sees a familiar logged-in page, UPI apps work (real browser,
+ * not a WebView), and the purchase lands on the same account, so the course
+ * appears in the app as soon as the webhook grants enrollment.
+ */
+const openWebsiteCheckout = async (courseId: string | number | null): Promise<void> => {
+  const origin = `https://${APP_LINK_HOSTS[0]}`;
+  const target = courseId ? `${origin}/buy-course?id=${encodeURIComponent(String(courseId))}` : origin;
+  const { openExternal } = await import("@/lib/native/browser");
+  try {
+    await openExternal(target, { preferWebView: false });
+    toast.info("Website khul gayi — wahan login karke payment poora karein.");
+  } catch (err) {
+    logger.error("Website checkout handoff failed:", err);
+    toast.error("Website khul nahi payi. Internet check karke dobara koshish karein.");
+  }
 };
 // Self-hosted via Lovable CDN — no third-party dependency, works offline
 // with cached CDN response, and satisfies the app-wide "no unlisted external
@@ -567,7 +589,7 @@ const BuyCourse = () => {
           // point at the browser checkout instead of a generic failure.
           toast.error(
             e instanceof RazorpayBridgeMissingError
-              ? "Aapka app purana hai — payment screen is version me nahi hai. Play Store se app update karein, ya neeche 'Browser checkout se pay karein' dabaein. Paisa nahi kata hai."
+              ? "Aapka app purana hai — payment screen is version me nahi hai. Play Store se app update karein, ya neeche 'Website par login karke pay karein' dabaein. Paisa nahi kata hai."
               : "Payment screen khul nahi payi. Dobara 'Pay Securely' dabaein — paisa nahi kata hai.",
           );
           return;
@@ -941,13 +963,31 @@ const BuyCourse = () => {
                       {/* Always tappable — even mid-attempt. If the native sheet
                           misbehaves the user must never be trapped behind a
                           disabled escape hatch. */}
+                      {/* Website-first escape hatch. The student signs in on
+                          jsrcoaching.vercel.app and completes the SAME purchase
+                          there, with their own session and full UPI support —
+                          safer and far less confusing than a bare checkout tab.
+                          Always tappable, even mid-attempt: the user must never
+                          be trapped behind a disabled escape hatch. */}
                       <Button
                         type="button"
-                        variant="outline"
-                        onClick={() => { void tapMedium(); void handleRazorpayPayment({ forceWeb: true }); }}
-                        className="mt-2 h-auto min-h-11 w-full whitespace-normal break-words px-3 py-2.5 text-sm font-medium leading-snug active:scale-[0.97] transition-transform duration-150 ease-out"
+                        onClick={() => { void tapMedium(); void openWebsiteCheckout(courseId); }}
+                        className="mt-2 h-auto min-h-12 w-full whitespace-normal break-words px-3 py-2.5 text-sm font-semibold leading-snug active:scale-[0.97] transition-transform duration-150 ease-out"
                       >
-                        Browser checkout se pay karein
+                        <ExternalLink className="mr-2 h-4 w-4 shrink-0" />
+                        Website par login karke pay karein
+                      </Button>
+                      <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+                        Website par apne isi account se login karein — payment ke baad course
+                        app me apne aap khul jayega.
+                      </p>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => { void tapMedium(); void handleRazorpayPayment({ forceWeb: true }); }}
+                        className="mt-1 h-auto min-h-10 w-full whitespace-normal break-words px-3 py-2 text-xs font-normal leading-snug text-muted-foreground active:scale-[0.97] transition-transform duration-150 ease-out"
+                      >
+                        Ya sidha browser checkout kholein
                       </Button>
                       {(isAdmin || paymentMode === "test") && (
                         <div className="mt-2 rounded-lg border border-dashed bg-muted/40 p-2.5 text-left">

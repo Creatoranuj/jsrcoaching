@@ -27,7 +27,12 @@ import {
 } from "@/utils/razorpay";
 // Return-link shape lives in one place so PaymentCallback always reads the
 // same param names this page writes. Do NOT hand-build the deep link here.
-import { buildPaymentReturnUrl } from "@/config/paymentReturn";
+import {
+  buildPaymentReturnUrl,
+  buildPaymentReturnIntentUrl,
+  buildPaymentReturnWebUrl,
+  RETURN_HANDOFF_STEP_MS,
+} from "@/config/paymentReturn";
 import { reportError, addBreadcrumb } from "@/lib/sentry";
 
 type Phase = "opening" | "open" | "done" | "cancelled" | "error";
@@ -45,15 +50,55 @@ const PayBrowser = () => {
   const title = params.get("title") || "Course";
   const courseId = params.get("course") || "";
 
-  /** Send the user back into the app. Works from a Custom Tab on Android. */
+  /**
+   * Send the user back into the app from a Custom Tab.
+   *
+   * Three hand-offs, in order, because no single one is reliable:
+   *   1. `com.jsrcoaching.app://payment-callback` — instant when Chrome
+   *      allows the custom scheme (user-gesture navigations always do).
+   *   2. `intent://…;package=…;end` — the documented Android form; survives
+   *      Chrome's block on gesture-less custom-scheme navigation.
+   *   3. the verified https App Link — Android routes it into the app, and
+   *      a student without the app simply lands on the website.
+   *
+   * Each hop is skipped once the tab goes hidden (the app took over). Timers
+   * are tracked so unmount clears them — a stray timer firing after the tab
+   * is reused would yank the student out of an unrelated page.
+   */
+  const handoffTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const lastStatusRef = useRef<"success" | "cancelled">("success");
+
+  useEffect(() => () => {
+    handoffTimersRef.current.forEach(clearTimeout);
+    handoffTimersRef.current = [];
+  }, []);
+
   const backToApp = useCallback(
     (status: "success" | "cancelled") => {
-      const url = buildPaymentReturnUrl(status, { courseId, orderId });
-      try {
-        window.location.href = url;
-      } catch {
-        /* user can close the tab manually */
-      }
+      lastStatusRef.current = status;
+      handoffTimersRef.current.forEach(clearTimeout);
+      handoffTimersRef.current = [];
+
+      const opts = { courseId, orderId };
+      const hops = [
+        buildPaymentReturnUrl(status, opts),
+        buildPaymentReturnIntentUrl(status, opts),
+        buildPaymentReturnWebUrl(status, opts),
+      ];
+
+      hops.forEach((url, i) => {
+        const go = () => {
+          // Tab already backgrounded → the app has focus, stop navigating.
+          if (typeof document !== "undefined" && document.hidden) return;
+          try {
+            window.location.href = url;
+          } catch {
+            /* next hop, or the visible button, will carry the student back */
+          }
+        };
+        if (i === 0) go();
+        else handoffTimersRef.current.push(setTimeout(go, RETURN_HANDOFF_STEP_MS * i));
+      });
     },
     [courseId, orderId]
   );
@@ -140,10 +185,19 @@ const PayBrowser = () => {
       )}
 
       {phase === "done" && (
-        <p className="text-sm text-muted-foreground">
-          Payment ho gaya. App me wapas jaa rahe hain&#8230; agar apne aap na khule to app
-          kholkar My Courses check karein.
-        </p>
+        <div className="flex w-full flex-col items-center gap-3">
+          <p className="text-sm text-muted-foreground">
+            Payment ho gaya &#10003; Paisa surakshit hai &#8212; enrollment apne aap ho
+            jayegi. App me wapas jaa rahe hain&#8230;
+          </p>
+          <Button
+            className="h-auto min-h-12 w-full whitespace-normal break-words text-base leading-snug active:scale-[0.97] transition-transform duration-150 ease-out"
+            onClick={() => backToApp("success")}
+          >
+            <ArrowLeft className="mr-2 h-4 w-4 shrink-0" />
+            App me wapas jayein
+          </Button>
+        </div>
       )}
 
       {message && (
@@ -170,6 +224,12 @@ const PayBrowser = () => {
             App me wapas jayein
           </Button>
         </div>
+      )}
+
+      {orderId && (
+        <p className="pt-2 text-[11px] text-muted-foreground">
+          Order ref: <span className="font-mono">{orderId}</span>
+        </p>
       )}
     </div>
   );

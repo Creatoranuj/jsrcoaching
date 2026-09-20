@@ -15,7 +15,7 @@
  * SECURITY: these params carry no entitlement. Enrollment is granted only by
  * `razorpay-webhook` (HMAC verified, server side); the app merely reconciles.
  */
-import { APP_SCHEME } from "./deepLinks";
+import { APP_SCHEME, APP_LINK_HOSTS } from "./deepLinks";
 
 /** Param names shared by PayBrowser (writer) and PaymentCallback (reader). */
 export const PAYMENT_RETURN_PARAMS = {
@@ -42,6 +42,44 @@ export const buildPaymentReturnUrl = (
   return `${APP_SCHEME}://payment-callback?${q.toString()}`;
 };
 
+/**
+ * Android `intent://` form of the same link.
+ *
+ * WHY: Chrome refuses a programmatic `location.href = "customscheme://…"`
+ * navigation when it was not started by a user gesture, and a Custom Tab
+ * silently drops it. The `intent:` syntax with an explicit `package=` is the
+ * documented Android hand-off and survives that restriction, so a paid
+ * student is never stranded on a browser tab.
+ */
+export const buildPaymentReturnIntentUrl = (
+  status: PaymentReturnStatus,
+  opts: { courseId?: string | number | null; orderId?: string | null } = {},
+): string => {
+  const deep = buildPaymentReturnUrl(status, opts);
+  const query = deep.split("?")[1] ?? "";
+  return (
+    `intent://payment-callback${query ? `?${query}` : ""}` +
+    `#Intent;scheme=${APP_SCHEME};package=${APP_SCHEME};` +
+    `S.browser_fallback_url=${encodeURIComponent(buildPaymentReturnWebUrl(status, opts))};end`
+  );
+};
+
+/**
+ * Verified https App Link for the same destination. Android opens the app for
+ * this host (assetlinks.json + autoVerify); if the app is not installed the
+ * student simply lands on the website, which is a valid outcome too.
+ */
+export const buildPaymentReturnWebUrl = (
+  status: PaymentReturnStatus,
+  opts: { courseId?: string | number | null; orderId?: string | null } = {},
+): string => {
+  const query = buildPaymentReturnUrl(status, opts).split("?")[1] ?? "";
+  return `https://${APP_LINK_HOSTS[0]}/payment-callback${query ? `?${query}` : ""}`;
+};
+
 /** How long the app waits for the webhook before showing a calm "check later". */
 export const RETURN_POLL_INTERVAL_MS = 3000;
 export const RETURN_MAX_POLLS = 15; // ~45s, same window as usePaymentSync
+
+/** Gap between hand-off attempts before falling back to the next form. */
+export const RETURN_HANDOFF_STEP_MS = 1200;
