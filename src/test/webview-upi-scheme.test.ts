@@ -44,3 +44,32 @@ describe("android UPI deep-link handling", () => {
     expect(manifest).toMatch(/android:scheme="https"/);
   });
 });
+
+describe("android UPI popup handling", () => {
+  const chrome = readFileSync(
+    resolve(__dirname, "../../android/app/src/main/java/com/jsrcoaching/app/BridgeFullscreenWebChromeClient.java"),
+    "utf8",
+  );
+  const main = readFileSync(
+    resolve(__dirname, "../../android/app/src/main/java/com/jsrcoaching/app/MainActivity.java"),
+    "utf8",
+  );
+  const client = readFileSync(JAVA, "utf8");
+
+  // Razorpay's UPI tiles use window.open(); those never reach
+  // shouldOverrideUrlLoading, so without onCreateWindow the tap does nothing.
+  it("routes window.open popups to the deep-link handler", () => {
+    expect(chrome).toContain("onCreateWindow");
+    expect(chrome).toContain("RecoveryWebViewClient.handlePopupUrl");
+  });
+
+  it("enables multiple windows so popups reach onCreateWindow", () => {
+    expect(main).toContain("setSupportMultipleWindows(true)");
+    expect(main).toContain("setJavaScriptCanOpenWindowsAutomatically(true)");
+  });
+
+  it("keeps the legacy url-loading overload for OEM WebViews", () => {
+    expect(client).toContain("shouldOverrideUrlLoading(WebView view, String url)");
+    expect(client).toContain("static boolean handlePopupUrl");
+  });
+});
