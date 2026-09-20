@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS storage.buckets (
   file_size_limit bigint,
   allowed_mime_types text[],
   owner_id text
-{};
+);
 
 CREATE TABLE IF NOT EXISTS storage.objects (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
