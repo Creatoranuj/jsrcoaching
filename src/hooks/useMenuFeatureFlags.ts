@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { loadSiteSettingRows } from "@/lib/siteSettingsCache";
 
 /**
  * Admin-controlled visibility switches for side-menu sections.
@@ -49,17 +49,13 @@ export function parseMenuFeatureRows(
 export function useMenuFeatureFlags(): MenuFeatureFlags & { isLoading: boolean } {
   const { data, isLoading } = useQuery({
     queryKey: MENU_FEATURE_QUERY_KEY,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 60 * 1000,
+    refetchOnWindowFocus: false,
     gcTime: 24 * 60 * 60 * 1000,
     retry: 1,
     queryFn: async () => {
-      const { data: rows, error } = await supabase
-        .from("site_settings")
-        .select("key, value")
-        .in("key", Object.values(MENU_FEATURE_KEYS));
-
-      if (error) throw error;
-      return parseMenuFeatureRows(rows || []);
+      const rows = await loadSiteSettingRows(Object.values(MENU_FEATURE_KEYS));
+      return parseMenuFeatureRows(rows);
     },
   });
 
