@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { reportError } from "@/lib/sentry";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../integrations/supabase/client";
 import { Button } from "../components/ui/button";
@@ -29,6 +29,7 @@ const Signup = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isNetworkError, setIsNetworkError] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { signup, isAuthenticated, isLoading: authLoading } = useAuth();
   const submitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Guards setState-after-unmount for the async signup handler below.
@@ -41,9 +42,12 @@ const Signup = () => {
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
       toast.success("Account ready — chalo shuru karte hain");
-      navigate("/dashboard", { replace: true });
+      // A student who signed up mid-purchase must land back on the payment
+      // return page, not on a generic dashboard.
+      const from = (location.state as { from?: string } | null)?.from;
+      navigate(from && from.startsWith("/") ? from : "/dashboard", { replace: true });
     }
-  }, [isAuthenticated, authLoading, navigate]);
+  }, [isAuthenticated, authLoading, navigate, location.state]);
 
   // Cleanup timer + abort in-flight requests on unmount
   useEffect(() => {

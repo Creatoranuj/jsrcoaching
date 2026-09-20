@@ -4,19 +4,23 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { supabase } from "../integrations/supabase/client";
 import { useAuth } from "../contexts/AuthContext";
 import { toast } from "sonner";
-import { Loader2, CheckCircle, XCircle, Clock } from "lucide-react";
+import { Loader2, CheckCircle, XCircle, Clock, LogIn, ShieldCheck } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
 import { notifySuccess, notifyError, tapLight } from "../lib/nativeChrome";
 import { getErrorMessage } from "@/lib/errorMessage";
-import { recoverEnrollment } from "../utils/paymentApi";
-import {
-  PAYMENT_RETURN_PARAMS,
-  RETURN_POLL_INTERVAL_MS,
-  RETURN_MAX_POLLS,
-} from "@/config/paymentReturn";
+import { waitForEnrollment } from "@/utils/reconcileEnrollment";
+import { clearPendingPayment, rememberPendingPayment } from "@/lib/pendingPayment";
+import { PAYMENT_RETURN_PARAMS } from "@/config/paymentReturn";
 
-type Status = "verifying" | "syncing" | "success" | "failed" | "cancelled" | "pending";
+type Status =
+  | "verifying"
+  | "syncing"
+  | "success"
+  | "failed"
+  | "cancelled"
+  | "pending"
+  | "needs-login";
 
 const PaymentCallback = () => {
   const [searchParams] = useSearchParams();
@@ -33,6 +37,24 @@ const PaymentCallback = () => {
   // browser-return deep link (`course`).
   const courseId =
     searchParams.get("course_id") ?? searchParams.get(PAYMENT_RETURN_PARAMS.course);
+
+  // This page is PUBLIC: the UPI browser tab has no Supabase session, so a
+  // paid student lands here signed out. Remember the purchase on the device
+  // first (survives tab close / app kill), then ask them to sign in with a
+  // calm, money-is-safe message instead of a bare login form.
+  useEffect(() => {
+    if (user) return;
+    const courseIdNum = Number(courseId);
+    if (Number.isFinite(courseIdNum) && courseIdNum > 0) {
+      rememberPendingPayment({ courseId: courseIdNum, orderId: searchParams.get(PAYMENT_RETURN_PARAMS.order) });
+    }
+    const timer = window.setTimeout(() => {
+      // Give AuthContext a moment to restore a session from storage before
+      // declaring the student signed out.
+      setStatus((prev) => (prev === "verifying" ? "needs-login" : prev));
+    }, 2500);
+    return () => window.clearTimeout(timer);
+  }, [user, courseId, searchParams]);
 
   useEffect(() => {
     if (!user || verifiedRef.current) return;
@@ -56,6 +78,7 @@ const PaymentCallback = () => {
 
     const succeed = (courseIdNum: number | null) => {
       if (cancelled) return;
+      clearPendingPayment();
       setStatus("success");
       void notifySuccess();
       toast.success("🎉 Payment verified! You are now enrolled!");
@@ -72,16 +95,18 @@ const PaymentCallback = () => {
      */
     const waitForWebhook = async (courseIdNum: number) => {
       setStatus("syncing");
-      for (let attempt = 0; attempt < RETURN_MAX_POLLS; attempt++) {
-        if (cancelled) return;
-        const outcome = await recoverEnrollment(courseIdNum);
-        if (outcome === "recovered") {
-          succeed(courseIdNum);
-          return;
-        }
-        await new Promise((resolve) => window.setTimeout(resolve, RETURN_POLL_INTERVAL_MS));
-      }
+      // Rate-limit aware: `recover-enrollment` allows 5 calls/60s per user, so
+      // the old every-3s loop spent polls 6..15 collecting silent 429s. The
+      // shared schedule keeps us under the limit and stretches the real window
+      // to ~5 minutes.
+      const result = await waitForEnrollment(courseIdNum, {
+        isCancelled: () => cancelled,
+      });
       if (cancelled) return;
+      if (result === "recovered") {
+        succeed(courseIdNum);
+        return;
+      }
       // Not an error: the webhook can land a little later. Keep the copy calm.
       setStatus("pending");
     };
@@ -178,6 +203,35 @@ const PaymentCallback = () => {
     <main className="min-h-dvh bg-muted/30 flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardContent className="pt-8 pb-8 text-center space-y-6">
+          {status === "needs-login" && (
+            <>
+              <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto">
+                <ShieldCheck className="w-12 h-12" />
+              </div>
+              <h2 className="text-2xl font-bold">Payment mil gaya &#10003;</h2>
+              <p className="text-muted-foreground text-sm">
+                Aapka paisa surakshit hai. Course unlock karne ke liye bas apne account me
+                login kar lijiye &#8212; uske baad course apne aap khul jayega.
+              </p>
+              <div className="space-y-2 pb-[max(env(safe-area-inset-bottom),16px)]">
+                <Button
+                  onClick={() => {
+                    void tapLight();
+                    navigate("/login", {
+                      state: { from: `${window.location.pathname}${window.location.search}` },
+                    });
+                  }}
+                  className="w-full gap-2 active:scale-[0.97] transition-transform duration-150 ease-out"
+                >
+                  <LogIn className="h-5 w-5" /> Login karke course kholein
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Dobara payment karne ki bilkul zarurat nahi hai.
+                </p>
+              </div>
+            </>
+          )}
+
           {status === "verifying" && (
             <>
               <Loader2 className="h-16 w-16 animate-spin text-primary mx-auto" />
