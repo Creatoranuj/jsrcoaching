@@ -113,6 +113,63 @@ Deno.serve(async (req) => {
       }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    // ── Pre-flight guards: never take money for a seat the student already
+    // has, and never take money for a batch the gate will refuse afterwards.
+    // These run BEFORE any Razorpay order exists, so a blocked attempt costs
+    // the student nothing.
+    const courseIdNum = Number(course_id);
+
+    const { data: existingEnrollment } = await supabaseAdmin
+      .from('enrollments')
+      .select('id, status')
+      .eq('user_id', user.id)
+      .eq('course_id', courseIdNum)
+      .maybeSingle();
+
+    if (existingEnrollment && existingEnrollment.status === 'active') {
+      console.log('[razorpay] order blocked: already enrolled', {
+        user_id: user.id, course_id: courseIdNum,
+      });
+      return new Response(JSON.stringify({
+        error: 'Aap is course me pehle se enrolled hain. My Courses me jaakar padhna shuru karein.',
+        code: 'ALREADY_ENROLLED',
+      }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    const { data: alreadyPaid } = await supabaseAdmin
+      .from('razorpay_payments')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('course_id', courseIdNum)
+      .eq('status', 'completed')
+      .limit(1)
+      .maybeSingle();
+
+    if (alreadyPaid) {
+      console.log('[razorpay] order blocked: payment already completed', {
+        user_id: user.id, course_id: courseIdNum,
+      });
+      return new Response(JSON.stringify({
+        error: 'Is course ka payment pehle hi ho chuka hai. Access confirm kiya ja raha hai — dobara pay na karein.',
+        code: 'ALREADY_PAID',
+      }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // Batch-full gate. `complete_paid_enrollment` also enforces this, but that
+    // happens AFTER the money is captured — checking here means a closed batch
+    // never charges anyone.
+    const { data: availRows, error: availError } = await supabaseAdmin
+      .rpc('course_availability', { _course_id: courseIdNum });
+    if (!availError) {
+      const avail = Array.isArray(availRows) ? availRows[0] : availRows;
+      if (avail && (avail as { is_full?: boolean }).is_full) {
+        return new Response(JSON.stringify({
+          error: 'Is batch me enrollment abhi band hai (Batch Full). Agli batch khulte hi aap join kar sakenge.',
+          code: 'BATCH_CLOSED',
+        }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+    }
+
     // Idempotency: if a pending order already exists for this
     // (user, course, idempotency_key) tuple, return it instead of creating
     // a new Razorpay order. Prevents duplicate Razorpay orders + duplicate
