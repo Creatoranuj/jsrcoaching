@@ -1629,6 +1629,7 @@ const LessonView = () => {
 
       {/* --- HEADER (Clean & Minimal) — desktop only --- */}
       <LessonDesktopHeader
+        courseId={courseId}
         courseTitle={course.title}
         gradeLabel={formatGrade(course.grade)}
         lessonCount={lessons.length}
@@ -1721,7 +1722,7 @@ const LessonView = () => {
 
                     {/* Locked Overlay */}
                     {currentLesson && !canAccessLesson(currentLesson) && (
-                        <LessonLockedOverlay lessonCount={lessons.length} onBuy={() => navigate(`/buy-course?id=${courseId}`)} />
+                        <LessonLockedOverlay courseId={courseId} lessonCount={lessons.length} onBuy={() => navigate(`/buy-course?id=${courseId}`)} />
                     )}
                 </div>
                 )}

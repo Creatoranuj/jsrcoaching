@@ -23,6 +23,7 @@ import { loadBuildStamp, formatBuildStamp } from "@/lib/buildStamp";
 import successSound from "@/assets/success.mp3.asset.json";
 import AccessCountdown from "../components/courses/AccessCountdown";
 import { APP_LINK_HOSTS } from "@/config/deepLinks";
+import { useCourseAvailability } from "@/hooks/useCourseAvailability";
 
 
 const MERCHANT_NAME = "JSR COACHING";
@@ -121,6 +122,9 @@ const BuyCourse = () => {
   const location = useLocation();
   const { user, profile } = useAuth();
   const { adminEnroll, isAdmin, isEnrolling } = useAdminEnrollment();
+  // Batch Full gate. Display side only — `complete_paid_enrollment()` refuses
+  // the enrollment server-side too, so a stale page cannot sneak a payment in.
+  const { isFull: batchFull, seatLimit, seatsTaken } = useCourseAvailability(courseId);
 
   const [step, setStep] = useState<"details" | "razorpay-success">("details");
   const [isRazorpayLoading, setIsRazorpayLoading] = useState(false);
@@ -932,7 +936,16 @@ const BuyCourse = () => {
                     <span className="text-muted-foreground">Total</span>
                     <span className="text-lg font-bold">₹{course.price}</span>
                   </div>
-                  {isIosNative ? (
+                  {batchFull ? (
+                    <div className="rounded-lg border border-dashed bg-muted/40 p-3 text-center text-sm">
+                      <p className="font-semibold text-foreground">Batch Full</p>
+                      <p className="mt-1 text-muted-foreground">
+                        Is batch me enrollment abhi band hai
+                        {seatLimit != null ? ` (${seatsTaken}/${seatLimit} seats)` : ""}.
+                        Agli batch khulte hi yahan Buy button wapas aa jayega.
+                      </p>
+                    </div>
+                  ) : isIosNative ? (
                     <div className="rounded-lg border border-dashed bg-muted/40 p-3 text-center text-sm text-muted-foreground">
                       Purchases aren't available in the iOS app. Buy this course on our
                       website, then sign in here to access it.
@@ -958,7 +971,7 @@ const BuyCourse = () => {
                       )}
                     </Button>
                   )}
-                  {isNative && !isIosNative && showBrowserEscape && (
+                  {!batchFull && isNative && !isIosNative && showBrowserEscape && (
                     <>
                       {/* Always tappable — even mid-attempt. If the native sheet
                           misbehaves the user must never be trapped behind a

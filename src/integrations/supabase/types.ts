@@ -608,6 +608,8 @@ export type Database = {
           created_at: string | null
           description: string | null
           end_date: string | null
+          enrollment_open: boolean
+          seat_limit: number | null
           grade: string | null
           id: number
           image_url: string | null
@@ -626,6 +628,8 @@ export type Database = {
           created_at?: string | null
           description?: string | null
           end_date?: string | null
+          enrollment_open?: boolean
+          seat_limit?: number | null
           grade?: string | null
           id?: number
           image_url?: string | null
@@ -644,6 +648,8 @@ export type Database = {
           created_at?: string | null
           description?: string | null
           end_date?: string | null
+          enrollment_open?: boolean
+          seat_limit?: number | null
           grade?: string | null
           id?: number
           image_url?: string | null
@@ -3923,6 +3929,16 @@ export type Database = {
           role: string
         }[]
       }
+      course_availability: {
+        Args: { _course_id: number }
+        Returns: {
+          enrollment_open: boolean
+          seat_limit: number | null
+          seats_taken: number
+          is_full: boolean
+        }[]
+      }
+      lookup_email_hint: { Args: { p_mobile: string }; Returns: string }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]

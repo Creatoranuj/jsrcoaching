@@ -2,6 +2,7 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { BookOpen, Clock, Star, CheckCircle, PlayCircle, Lock } from "lucide-react";
 import { SmartImage } from "../common/SmartImage";
+import { BuyGate } from "./BuyGate";
 import { cn } from "../../lib/utils";
 import { formatGrade } from "../../lib/formatGrade";
 
@@ -162,22 +163,24 @@ const CourseCard = ({ course, onClick, isAdmin, onAdminEnroll, isEnrolling, isEn
                 Enroll
               </Button>
             )}
-            <Button
-              size="sm"
-              onClick={handleClick}
-              disabled={isEnrolling}
-              className={cn(
-                "h-10 rounded-xl px-4 text-xs font-semibold shadow-sm active:scale-[0.97] transition-transform duration-150",
-                isEnrolled
-                  ? "bg-primary/90 hover:bg-primary text-primary-foreground"
-                  : course.price === 0
-                  ? "bg-foreground text-background hover:bg-foreground/90"
-                  : "bg-primary text-primary-foreground hover:bg-primary/90"
-              )}
-            >
-              {!isEnrolled && course.price > 0 && <Lock className="mr-1 h-3 w-3" />}
-              {ctaLabel}
-            </Button>
+            <BuyGate courseId={course.id} enrolled={isEnrolled || isAdmin || course.price === 0}>
+              <Button
+                size="sm"
+                onClick={handleClick}
+                disabled={isEnrolling}
+                className={cn(
+                  "h-10 rounded-xl px-4 text-xs font-semibold shadow-sm active:scale-[0.97] transition-transform duration-150",
+                  isEnrolled
+                    ? "bg-primary/90 hover:bg-primary text-primary-foreground"
+                    : course.price === 0
+                    ? "bg-foreground text-background hover:bg-foreground/90"
+                    : "bg-primary text-primary-foreground hover:bg-primary/90"
+                )}
+              >
+                {!isEnrolled && course.price > 0 && <Lock className="mr-1 h-3 w-3" />}
+                {ctaLabel}
+              </Button>
+            </BuyGate>
           </div>
         </div>
       </div>

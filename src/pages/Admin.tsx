@@ -141,6 +141,9 @@ const Admin = () => {
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<"pending" | "approved" | "rejected" | "completed" | "refunded" | "all">("all");
   const [refundingPayment, setRefundingPayment] = useState<string | null>(null);
   const [courseSearch, setCourseSearch] = useState("");
+  // Batch Full controls: active enrollments per course + the row being saved.
+  const [enrollmentCounts, setEnrollmentCounts] = useState<Record<number, number>>({});
+  const [savingCourseId, setSavingCourseId] = useState<number | null>(null);
   const [userSearch, setUserSearch] = useState("");
   const [userRoleFilter, setUserRoleFilter] = useState<"all" | "student" | "teacher" | "admin">("all");
   const [teacherSearch, setTeacherSearch] = useState("");
@@ -184,6 +187,21 @@ const Admin = () => {
     try {
       const { data: coursesData } = await supabase.from('courses').select('*');
       if (coursesData) setCoursesList(coursesData);
+
+      // Active enrollments per course — powers the "x / y enrolled" counter
+      // next to the Batch Full switch.
+      const { data: enrollmentRows } = await supabase
+        .from('enrollments')
+        .select('course_id')
+        .eq('status', 'active');
+      if (enrollmentRows) {
+        const counts: Record<number, number> = {};
+        for (const row of enrollmentRows) {
+          const cid = Number(row.course_id);
+          counts[cid] = (counts[cid] || 0) + 1;
+        }
+        setEnrollmentCounts(counts);
+      }
 
       const { data: profilesData } = await supabase.from('profiles').select('*');
       const profileMap = new Map<string, Tables<"profiles">>((profilesData || []).map((p) => [p.id, p]));
@@ -499,6 +517,39 @@ const Admin = () => {
     }
   };
 
+  /**
+   * Batch Full switch. Turning enrollment off hides the Buy button across the
+   * app; `complete_paid_enrollment()` also refuses new paid enrollments, so a
+   * stale page or a direct /buy-course link cannot slip through. Students who
+   * already bought the course are unaffected.
+   */
+  const handleToggleEnrollment = async (course: Tables<"courses">, open: boolean) => {
+    setSavingCourseId(course.id);
+    // Optimistic — the switch must feel instant; we revert on error.
+    setCoursesList((prev) => prev.map((c) => (c.id === course.id ? { ...c, enrollment_open: open } : c)));
+    const { error } = await supabase.from('courses').update({ enrollment_open: open }).eq('id', course.id);
+    setSavingCourseId(null);
+    if (error) {
+      setCoursesList((prev) => prev.map((c) => (c.id === course.id ? { ...c, enrollment_open: !open } : c)));
+      toast.error(getErrorMessage(error) || "Could not update enrollment");
+      return;
+    }
+    toast.success(open ? `Enrollment open for "${course.title}"` : `"${course.title}" marked Batch Full`);
+  };
+
+  /** Optional hard seat cap. null = unlimited. */
+  const handleSaveSeatLimit = async (course: Tables<"courses">, seatLimit: number | null) => {
+    setSavingCourseId(course.id);
+    const { error } = await supabase.from('courses').update({ seat_limit: seatLimit }).eq('id', course.id);
+    setSavingCourseId(null);
+    if (error) {
+      toast.error(getErrorMessage(error) || "Could not save the seat limit");
+      return;
+    }
+    setCoursesList((prev) => prev.map((c) => (c.id === course.id ? { ...c, seat_limit: seatLimit } : c)));
+    toast.success(seatLimit == null ? "Seat limit removed" : `Seat limit set to ${seatLimit}`);
+  };
+
   const handleDeleteCourse = async (id: number) => {
     if (!(await confirmAction({ title: "Delete course? This will remove all lessons too!", variant: "destructive" }))) return;
     const { error } = await supabase.from('courses').delete().eq('id', id);
@@ -804,6 +855,10 @@ const Admin = () => {
               onSaveCourseEdit={handleSaveCourseEdit}
               onCancelEdit={() => setEditingCourseId(null)}
               onDeleteCourse={handleDeleteCourse}
+              onToggleEnrollment={handleToggleEnrollment}
+              onSaveSeatLimit={handleSaveSeatLimit}
+              enrollmentCounts={enrollmentCounts}
+              savingCourseId={savingCourseId}
             />
           )}</TabsContent>
 
