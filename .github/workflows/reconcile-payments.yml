@@ -13,6 +13,9 @@ on:
 
 permissions:
   contents: read
+  # Lets the runner mint the short-lived OIDC token the edge function verifies,
+  # so the sweep needs no shared secret configured anywhere.
+  id-token: write
 
 jobs:
   sweep:
@@ -20,20 +23,28 @@ jobs:
     env:
       BASE: ${{ secrets.SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
       ANON: ${{ secrets.SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY }}
-      CRON_SECRET: ${{ secrets.RECONCILE_CRON_SECRET }}
     steps:
+      - name: Mint GitHub OIDC token
+        id: oidc
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const token = await core.getIDToken('jsr-coaching-reconcile');
+            core.setSecret(token);
+            core.setOutput('token', token);
       - name: Call reconcile-pending-payments
+        env:
+          OIDC_TOKEN: ${{ steps.oidc.outputs.token }}
         run: |
-          if [ -z "$BASE" ] || [ -z "$ANON" ] || [ -z "$CRON_SECRET" ]; then
-            echo "::notice::Missing SUPABASE_URL / SUPABASE_ANON_KEY / RECONCILE_CRON_SECRET secret — sweep skipped."
+          if [ -z "$BASE" ] || [ -z "$ANON" ]; then
+            echo "::notice::Missing SUPABASE_URL / SUPABASE_ANON_KEY secret — sweep skipped."
             exit 0
           fi
-          echo "::add-mask::$CRON_SECRET"
           URL="${BASE%/}/functions/v1/reconcile-pending-payments"
           STATUS=$(curl -s -o /tmp/out.json -w "%{http_code}" -X POST \
             -H "apikey: $ANON" \
             -H "Authorization: Bearer $ANON" \
-            -H "x-cron-secret: $CRON_SECRET" \
+            -H "x-github-oidc-token: $OIDC_TOKEN" \
             -H "Content-Type: application/json" \
             --max-time 120 "$URL" || echo "000")
           echo "HTTP $STATUS"
