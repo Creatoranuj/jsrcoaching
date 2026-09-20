@@ -21,7 +21,7 @@ jobs:
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF || 'wegamscqtvqhxowlskfm' }}
       SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # No token configured is a *configuration* state, not a code failure:
       # skip cleanly instead of painting the pipeline red.

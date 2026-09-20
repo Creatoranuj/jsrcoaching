@@ -40,9 +40,14 @@ const PaymentCallback = () => {
     let redirectTimer: number | null = null;
     let cancelled = false;
 
+    // Land the student directly on the course they just bought, not on a
+    // generic list they then have to search through.
+    const coursesPath = (courseIdNum: number | null) =>
+      courseIdNum ? `/my-courses/${courseIdNum}?payment=success` : "/my-courses";
+
     const goToCourses = (courseIdNum: number | null) => {
       redirectTimer = window.setTimeout(() => {
-        navigate("/my-courses", {
+        navigate(coursesPath(courseIdNum), {
           replace: true,
           state: courseIdNum ? { justPurchased: courseIdNum } : undefined,
         });

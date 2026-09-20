@@ -459,6 +459,27 @@ const BuyCourse = () => {
     } catch (error: unknown) {
       logger.error("Razorpay create-order error:", error);
       const apiError = error instanceof PaymentApiError ? error : undefined;
+      // Server refused to create an order because this student already owns
+      // the seat (or already paid for it). Never a failure for the user —
+      // send them straight to the course instead of letting them pay twice.
+      if (apiError?.code === "ALREADY_ENROLLED" || apiError?.code === "ALREADY_PAID") {
+        toast.info(apiError.message);
+        clearIdemKey(user.id, String(courseId));
+        if (apiError.code === "ALREADY_PAID") void attemptReconcile(Number(courseId));
+        navigate(`/my-courses/${courseId}?payment=success`, { replace: true, state: { justPurchased: Number(courseId) } });
+        setIsRazorpayLoading(false);
+        setPayPhase(null);
+        setPayStep(null);
+        return;
+      }
+      // Batch closed while the page was open — refuse BEFORE any money moves.
+      if (apiError?.code === "BATCH_CLOSED") {
+        toast.error(apiError.message);
+        setIsRazorpayLoading(false);
+        setPayPhase(null);
+        setPayStep(null);
+        return;
+      }
       // On timeout, the order may still have been created server-side.
       if (apiError?.code === "TIMEOUT") {
         toast.info("Network slow — checking if your order went through...");
@@ -970,6 +991,29 @@ const BuyCourse = () => {
                         </>
                       )}
                     </Button>
+                  )}
+                  {/* UPI apps (GPay / PhonePe / Paytm) cannot be launched from
+                      inside the app's own WebView, so Razorpay hides those tiles
+                      there. This option is therefore ALWAYS offered on Android —
+                      not only after the in-app sheet has already failed. */}
+                  {!batchFull && isNative && !isIosNative && !showBrowserEscape && (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => { void tapMedium(); void handleRazorpayPayment({ forceWeb: true }); }}
+                        disabled={isRazorpayLoading}
+                        className="mt-2 h-auto min-h-11 w-full whitespace-normal break-words px-3 py-2.5 text-sm font-semibold leading-snug active:scale-[0.97] transition-transform duration-150 ease-out"
+                      >
+                        <ExternalLink className="mr-2 h-4 w-4 shrink-0" />
+                        UPI app se pay karein (browser)
+                      </Button>
+                      <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+                        GPay, PhonePe, Paytm jaise UPI apps app ke andar wale checkout me nahi
+                        khul paate. Ye option phone ke browser me checkout kholta hai, jahan
+                        saare UPI apps dikhte hain — payment ke baad course apne aap khul jayega.
+                      </p>
+                    </>
                   )}
                   {!batchFull && isNative && !isIosNative && showBrowserEscape && (
                     <>
