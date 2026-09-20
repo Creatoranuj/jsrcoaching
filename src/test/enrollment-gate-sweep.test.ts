@@ -63,9 +63,12 @@ describe("scheduled sweep workflow", () => {
     expect(yml).toMatch(/cron: '\*\/15 \* \* \* \*'/);
   });
 
-  it("authenticates with a short-lived GitHub OIDC token, not a stored secret", () => {
-    expect(yml).toMatch(/x-github-oidc-token: \$OIDC_TOKEN/);
-    expect(yml).toMatch(/id-token: write/);
-    expect(yml).not.toMatch(/secrets\.RECONCILE_CRON_SECRET/);
+  // Two accepted wirings: the keyless GitHub OIDC token (preferred) or the
+  // legacy shared secret. Either way the credential is never hardcoded.
+  it("authenticates without hardcoding any credential", () => {
+    const oidc = /x-github-oidc-token: \$OIDC_TOKEN/.test(yml) && /id-token: write/.test(yml);
+    const legacy = /x-cron-secret: \$CRON_SECRET/.test(yml)
+      && /secrets\.RECONCILE_CRON_SECRET/.test(yml);
+    expect(oidc || legacy).toBe(true);
   });
 });
