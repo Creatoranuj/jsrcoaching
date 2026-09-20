@@ -1,0 +1,12 @@
+# Markers for .github/workflows/migration-drift.yml (14-digit migration timestamps).
+#
+# package = snapshot point of supabase/schema-package.sql. Migrations older than
+#           this are already inside the package and are skipped (the migrations
+#           folder starts mid-history, so a from-scratch replay can never pass).
+# strict  = migrations at/after this timestamp must apply cleanly on top of the
+#           package (+ the historical window) — a failure blocks the check.
+#           Migrations between the two markers are replayed but only reported.
+#
+# Bump both whenever schema-package.sql is regenerated from the live project.
+package=20260709000000
+strict=20260801060000
