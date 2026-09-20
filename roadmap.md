@@ -23,3 +23,20 @@
 - [x] `openExternal()` silently fell back to `window.open()` on native — a no-op inside the Capacitor WebView, so a missing/failed in-app-browser plugin looked like "kuch hua hi nahi". It now rethrows on native so `BuyCourse` shows the real error toast.
 - [x] Live backend loophole re-verification (no migration needed): enrollments INSERT policy requires free course OR completed `razorpay_payments` row; `profiles.role` column absent, `user_roles` writable by admins only (and never for self); `content` bucket is `public = false` (only `book-covers` is public).
 - [x] `bun run build` + `npx cap sync android` clean; tsc clean; 706 vitest pass.
+
+## 2026-09-19 (late) — Sentry end-to-end + audit (commit 3ed6408, release v2026.9.19.1)
+- [x] In-app Razorpay sheet never opened → browser fallback. Root cause: `loadRazorpayNative()` resolved the bare Capacitor proxy; Promise `.then` probe became a native call (`"RazorpayNative.then()" is not implemented`, 120 events). Loader now returns `{ plugin }`; guard test `nativeLoadersThenSafe.test.ts`.
+- [x] LessonView / AdminQuizManager TDZ (`Cannot access 'Er' before initialization`) — same-scope use-before-define; ESLint rule promoted to error + `tdzLintGuard.test.ts`.
+- [x] recover-enrollment triple Sentry reporting → one canonical `EnrollmentRecoveryError` grouped by status+code; auth/offline → breadcrumbs; My Courses shows cause-specific toasts (re-login / offline / AMOUNT_MISMATCH → WhatsApp support).
+- [x] `logger.error()` promotes a plain context object in the error slot; Sentry console forwarder skips `[error]` mirrors.
+- [x] ChatWidget: one Sentry report per failure class per page-load; `chatbot` edge fn returns 503 `gateway_unauthorized` on AI-gateway 401/403.
+- [x] pdf-proxy 403: enrollment-gate copy; 403/404 no longer captured as exceptions.
+- [x] Reports: `docs/observer/2026-09-19-sentry-triage.md`, `docs/observer/2026-09-19-senior-architect-audit.md` (rating 4/5).
+- [x] 7 of 8 Sentry issues marked resolved-in-next-release with commit refs (APP-13/14/15/16/17/18/19). The pdf-proxy 403 issue must be resolved manually in Sentry (ID lookup failed after the workspace move).
+- [x] GitHub API reconnected in the new Lovable workspace (fresh connection; commits go through the gateway again).
+- [ ] OWNER: rotate `LOVABLE_API_KEY` in Supabase → Edge Functions → Secrets (old-workspace key → chatbot 401), redeploy `chatbot`, send one test message.
+- [ ] OWNER: install the v2026.9.19.1 APK, ₹1 in-app purchase, confirm the Razorpay sheet opens inside the app, then open a lesson + a PDF.
+- [ ] OWNER: re-link Supabase under Project Settings → Connectors in the new Lovable workspace (only needed for DB tooling from chat).
+- [ ] Bandwidth (after Egress-report baseline): `useSiteSettings()` consolidation (4 hooks → 1 query); visibility-driven `user_sessions` flush instead of tab-count × 5-min PATCH.
+- [ ] Polish backlog: diagnostics panel `text-xs`; browser-escape button as `variant="link"`; Eruda `beforeSend` filter.
+- [ ] Decide: bump `app_config.min_android_version` to force pre-plugin APKs to update.
