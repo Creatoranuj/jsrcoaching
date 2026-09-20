@@ -49,6 +49,22 @@ export default tseslint.config(
       "no-empty": "off",
       "no-useless-assignment": "off",
       "prefer-const": "off",
+      // TDZ guard (2026-09-19): a `const` read in the SAME scope before its
+      // declaration — typically a useCallback/useMemo/useEffect deps array
+      // naming a hook result declared a few lines lower — is fine in dev but
+      // throws "Cannot access 'X' before initialization" in the minified
+      // bundle (LessonView crash, Sentry SAFAR-ENGLISH-APP-18).
+      // `variables: false` limits the rule to same-scope reads, so closures
+      // that reference a later module-level const (safe at call time) pass.
+      "@typescript-eslint/no-use-before-define": ["error", {
+        functions: false,
+        classes: false,
+        variables: false,
+        enums: false,
+        typedefs: false,
+        ignoreTypeReferences: true,
+        allowNamedExports: true,
+      }],
     },
   },
   // Guardrail: keep raw @capacitor/* imports inside the bridge layer.

@@ -61,15 +61,17 @@ describe("listUpiApps", () => {
   });
 
   it("returns an empty list on an older APK without the method", async () => {
-    loadRazorpayNativeMock.mockResolvedValue({ open: vi.fn(), cancel: vi.fn() });
+    loadRazorpayNativeMock.mockResolvedValue({ plugin: { open: vi.fn(), cancel: vi.fn() } });
     await expect(listUpiApps()).resolves.toEqual([]);
   });
 
   it("returns the installed apps", async () => {
     loadRazorpayNativeMock.mockResolvedValue({
-      open: vi.fn(),
-      cancel: vi.fn(),
-      getUpiApps: vi.fn().mockResolvedValue({ apps: [{ packageName: "com.phonepe.app" }] }),
+      plugin: {
+        open: vi.fn(),
+        cancel: vi.fn(),
+        getUpiApps: vi.fn().mockResolvedValue({ apps: [{ packageName: "com.phonepe.app" }] }),
+      },
     });
     await expect(listUpiApps()).resolves.toEqual([
       { packageName: "com.phonepe.app", label: "PhonePe" },

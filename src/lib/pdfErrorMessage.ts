@@ -57,6 +57,14 @@ export function friendlyPdfErrorMessage(err: unknown, src: string | null | undef
     return "Document service didn't respond. Tap Retry; if it keeps failing, tell the admin.";
   }
 
+  // 403 minted by OUR pdf-proxy (not the upstream CDN) means the enrollment
+  // gate rejected the user — tell them to enroll / re-login instead of blaming
+  // the uploader's link (Sentry SAFAR-ENGLISH-W: "ResponseException 403" on a
+  // jsdelivr URL that was perfectly public).
+  if (status === 403 && /\/functions\/v1\/pdf-proxy|Not authorized for this file/i.test(`${src || ""} ${msg}`)) {
+    return "Yeh PDF sirf enrolled students ke liye hai. Course me enroll karein, ya session expire hua ho to dobara login karein.";
+  }
+
   if (status === 403 || status === 404) {
     if (isDrive) return DRIVE_PRIVATE_MSG;
     const host = pdfSourceHost(src);

@@ -36,6 +36,24 @@ function toError(input: unknown): Error {
   }
 }
 
+/**
+ * A plain `{ key: value }` bag (not an Error, not a class instance). Callers
+ * regularly write `logger.error("x failed", { courseId })` — context in the
+ * error slot — which used to ship `{"courseId":34}` as the Sentry title
+ * (SAFAR-ENGLISH-APP-17). Detect that and treat it as context instead.
+ */
+function isPlainContext(v: unknown): v is Context {
+  if (v === null || typeof v !== "object") return false;
+  if (v instanceof Error) return false;
+  const proto = Object.getPrototypeOf(v);
+  if (proto !== Object.prototype && proto !== null) return false;
+  const o = v as Record<string, unknown>;
+  // Error-like objects (Supabase PostgrestError, FunctionsError JSON) carry
+  // message/code/details — keep those as the error so Sentry sees the cause.
+  if (typeof o.message === "string" || typeof o.code === "string" || "details" in o) return false;
+  return true;
+}
+
 export const logger = {
   /**
    * Log an error. Always writes to console; forwards to Sentry in prod when
@@ -43,6 +61,10 @@ export const logger = {
    * Sentry issue grouping.
    */
   error(message: string, error?: unknown, context?: Context): void {
+    if (context === undefined && isPlainContext(error)) {
+      context = error;
+      error = undefined;
+    }
      
     console.error(`[error] ${message}`, error ?? "", context ?? "");
     const err = error !== undefined ? toError(error) : new Error(message);

@@ -1,4 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from "react";
+import CrashShield from "../components/system/CrashShield";
+import { formatGrade } from "../lib/formatGrade";
+import { getErrorMessage } from "@/lib/errorMessage";
 import { mark, measure } from "@/lib/perf/marks";
 import { useSearchParams, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../integrations/supabase/client";
@@ -936,10 +939,9 @@ const LessonView = () => {
         autoOpenedPdfRef.current = currentLesson.id;
       } catch (err) {
          
-        logger.error("[eval-debug] pdf open failed", {
+        logger.error("[eval-debug] pdf open failed", err, {
           attachmentId: att.id,
           file_name: resolved.attachment.file_name,
-          error: (err as Error)?.message || String(err),
         });
         toast.error("Couldn't open PDF", {
           description: (err as Error)?.message || "Unknown error while resolving attachment.",
@@ -999,6 +1001,22 @@ const LessonView = () => {
     };
   }, [user, currentLesson, courseId]);
 
+  // Wire lesson_progress: interval-based unique-watch tracking + resume.
+  // MUST be declared BEFORE `handleVideoTimeUpdate`: its deps array reads
+  // `reportLessonProgress` during render, and a `const` declared later in the
+  // same function body is in its temporal dead zone at that point. In dev the
+  // cycle happened to work; the minified bundle threw
+  // "ReferenceError: Cannot access 'Er' before initialization" on every lesson
+  // open (Sentry SAFAR-ENGLISH-APP-18). Guarded by
+  // src/test/tdzLintGuard.test.ts + the same-scope no-use-before-define rule.
+  const { report: reportLessonProgress, flush: flushLessonProgress } =
+    useLessonProgress(currentLesson?.id, videoDuration, (lastPosition) => {
+      // Buffer the seek until the player reports ready; MahimaGhostPlayer
+      // ignores seekTo before playerReady is true.
+      if (playerReadyRef.current) dispatchResumeSeek(lastPosition);
+      else pendingResumeRef.current = lastPosition;
+    });
+
   // Handle video time update → save progress at 80%
   const handleVideoTimeUpdate = useCallback(async (currentTime: number, duration: number) => {
     videoCurrentTimeRef.current = currentTime;
@@ -1028,15 +1046,6 @@ const LessonView = () => {
       }
     }
   }, [user, currentLesson?.id, courseId, reportLessonProgress]);
-
-  // Wire lesson_progress: interval-based unique-watch tracking + resume.
-  const { report: reportLessonProgress, flush: flushLessonProgress } =
-    useLessonProgress(currentLesson?.id, videoDuration, (lastPosition) => {
-      // Buffer the seek until the player reports ready; MahimaGhostPlayer
-      // ignores seekTo before playerReady is true.
-      if (playerReadyRef.current) dispatchResumeSeek(lastPosition);
-      else pendingResumeRef.current = lastPosition;
-    });
 
   // Reset ready flag whenever the lesson changes.
   useEffect(() => {
@@ -2152,9 +2161,6 @@ const LessonView = () => {
     </div>
   );
 };
-import CrashShield from "../components/system/CrashShield";
-import { formatGrade } from "../lib/formatGrade";
-import { getErrorMessage } from "@/lib/errorMessage";
 
 const LessonViewShielded = () => (
   <CrashShield source="lesson-view">

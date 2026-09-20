@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { recoverEnrollment } from "@/utils/paymentApi";
+import { recoverEnrollmentDetailed, EnrollmentRecoveryError } from "@/utils/paymentApi";
 import { addBreadcrumb, reportError } from "@/lib/sentry";
 import { toast } from "sonner";
 
@@ -75,15 +75,29 @@ async function reconcileOne(uid: string, order: PendingOrder): Promise<boolean> 
   // Ask server to reconcile via Razorpay API + atomic RPC.
   // 404 (no captured payment yet) / 429 (rate-limited) are normalised to
   // "not-yet" by recoverEnrollment — never thrown, so no unhandled rejection.
-  const outcome = await recoverEnrollment(Number(order.courseId));
-  if (outcome === "recovered") {
+  const result = await recoverEnrollmentDetailed(Number(order.courseId));
+  if (result.outcome === "recovered") {
     try { localStorage.removeItem(order.key); } catch { /* ignore */ }
     addBreadcrumb("payments", "enrollment auto-recovered", { courseId: order.courseId });
     return true;
   }
-  if (outcome === "failed") {
-    reportError(new Error("recover-enrollment failed"), {
-      surface: "useEnrollmentRecovery", courseId: order.courseId,
+  if (result.outcome === "failed") {
+    // Expired session / no network are user conditions, not defects — a
+    // breadcrumb is enough. Only genuine server failures become ONE Sentry
+    // issue, grouped by status+code (was: three generic "recover-enrollment
+    // failed" events per incident — SAFAR-ENGLISH-APP-15/16/17).
+    if (result.reason === "auth" || result.reason === "offline") {
+      addBreadcrumb("payments", "enrollment recovery skipped", {
+        courseId: order.courseId, reason: result.reason, status: result.status,
+      });
+      return false;
+    }
+    reportError(new EnrollmentRecoveryError(result), {
+      surface: "useEnrollmentRecovery",
+      courseId: order.courseId,
+      status: result.status,
+      code: result.code,
+      serverMessage: result.message,
     });
   }
   return false;

@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // run *before* and *around* the native call, not the plugin itself.
 const openMock = vi.fn();
 const cancelMock = vi.fn();
-const loadRazorpayNativeMock = vi.fn(async () => ({ open: openMock, cancel: cancelMock }));
+const loadRazorpayNativeMock = vi.fn(async () => ({ plugin: { open: openMock, cancel: cancelMock } }));
 vi.mock("@/lib/native/razorpay", () => ({
   loadRazorpayNative: () => loadRazorpayNativeMock(),
 }));
@@ -56,7 +56,7 @@ const setVisibilityStateSilently = (value: "visible" | "hidden") => {
 beforeEach(() => {
   setVisibilityStateSilently("visible");
   openMock.mockReset();
-  loadRazorpayNativeMock.mockReset().mockImplementation(async () => ({ open: openMock, cancel: cancelMock }));
+  loadRazorpayNativeMock.mockReset().mockImplementation(async () => ({ plugin: { open: openMock, cancel: cancelMock } }));
   // Default: the bridge confirms the native sheet is really gone.
   cancelMock.mockReset().mockResolvedValue({ dismissed: true });
   isPluginAvailable.mockReset().mockReturnValue(true);

@@ -107,18 +107,6 @@ const AdminQuizManager = () => {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  useEffect(() => {
-    const init = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { navigate("/admin/login"); return; }
-      const { data: isAdmin } = await supabase.rpc('has_role', { _user_id: session.user.id, _role: 'admin' });
-      if (!isAdmin) { navigate("/admin"); return; }
-      await Promise.all([fetchQuizzes(), fetchCourses()]);
-      setLoading(false);
-    };
-    init();
-  }, [fetchQuizzes, fetchCourses, navigate]);
-
   useEffect(() => () => {
     Object.values(questionImagePreviewsRef.current).forEach((url) => {
       try { URL.revokeObjectURL(url); } catch { /* noop */ }
@@ -151,6 +139,22 @@ const AdminQuizManager = () => {
     const { data } = await supabase.from("courses").select("id, title").order("title");
     setCourses(data || []);
   }, []);
+
+  // Placed AFTER fetchQuizzes/fetchCourses on purpose: the deps array reads
+  // both during render, and a `const` declared lower in the same body is in
+  // its temporal dead zone at that point (same crash class as LessonView,
+  // Sentry SAFAR-ENGLISH-APP-18; enforced by no-use-before-define).
+  useEffect(() => {
+    const init = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { navigate("/admin/login"); return; }
+      const { data: isAdmin } = await supabase.rpc('has_role', { _user_id: session.user.id, _role: 'admin' });
+      if (!isAdmin) { navigate("/admin"); return; }
+      await Promise.all([fetchQuizzes(), fetchCourses()]);
+      setLoading(false);
+    };
+    init();
+  }, [fetchQuizzes, fetchCourses, navigate]);
 
   const fetchLessons = async (courseId: number) => {
     try {

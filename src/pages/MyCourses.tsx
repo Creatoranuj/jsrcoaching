@@ -511,7 +511,7 @@ const MyCourses = () => {
   // returned 503 and the webhook is still in flight). This reconciles, polls
   // briefly, and subscribes to realtime as a backstop. No-op on normal visits.
   const enrolledCourseIds = useMemo(() => courses.map((c) => c.id), [courses]);
-  const { reconciling, recoverNow } = useEnrollmentArrival({
+  const { reconciling, recoverNow, getLastFailure } = useEnrollmentArrival({
     userId: user?.id,
     enrolledCourseIds,
     loading,
@@ -532,11 +532,34 @@ const MyCourses = () => {
       } else if (result === "nothing") {
         toast({ title: "No pending payment found", description: "Nothing to recover on this device." });
       } else {
-        toast({
-          title: "Couldn't confirm yet",
-          description: "If your payment was captured, enrollment will happen automatically via webhook. Please check again in a few minutes.",
-          variant: "destructive",
-        });
+        // Cause-specific guidance — a generic "couldn't confirm" left users
+        // retrying against an expired session or a dead connection.
+        const failure = getLastFailure();
+        if (failure?.reason === "auth") {
+          toast({
+            title: "Session expire ho gaya",
+            description: "Dobara login karein, phir 'Recover' dabayein — payment safe hai.",
+            variant: "destructive",
+          });
+        } else if (failure?.reason === "offline") {
+          toast({
+            title: "Internet connect nahi hai",
+            description: "Wi-Fi ya mobile data on karke dobara try karein.",
+            variant: "destructive",
+          });
+        } else if (failure?.code === "AMOUNT_MISMATCH") {
+          toast({
+            title: "Payment amount match nahi hua",
+            description: "Support ko WhatsApp par payment screenshot bhejein — hum manually enroll kar denge.",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Couldn't confirm yet",
+            description: "If your payment was captured, enrollment will happen automatically via webhook. Please check again in a few minutes.",
+            variant: "destructive",
+          });
+        }
       }
     } finally {
       setRecovering(false);

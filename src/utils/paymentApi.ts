@@ -120,16 +120,79 @@ export const invokePaymentFunction = async <T = unknown>(
  */
 export type RecoverOutcome = "recovered" | "not-yet" | "failed";
 
-export const recoverEnrollment = async (courseId: number): Promise<RecoverOutcome> => {
+/**
+ * Why a failure happened — drives both the user-facing toast and whether the
+ * failure is worth a Sentry issue at all:
+ *   auth    → 401: session expired; user must sign in again (not a bug).
+ *   offline → no network / timeout before the server answered (not a bug).
+ *   server  → 4xx/5xx from recover-enrollment (AMOUNT_MISMATCH, Razorpay not
+ *             configured, enrollment RPC failed …) — the only reportable kind.
+ */
+export type RecoverFailureReason = "auth" | "offline" | "server";
+
+export interface RecoverResult {
+  outcome: RecoverOutcome;
+  status?: number;
+  code?: string;
+  message?: string;
+  reason?: RecoverFailureReason;
+}
+
+const classifyRecoverFailure = (err: PaymentApiError): RecoverFailureReason => {
+  if (err.status === 401) return "auth";
+  if (err.code === "OFFLINE" || err.code === "TIMEOUT") return "offline";
+  if (err.status === undefined && /fetch|network/i.test(err.message)) return "offline";
+  return "server";
+};
+
+/**
+ * Detailed variant: callers that show UI or report to Sentry need the status,
+ * server code and reason — a bare "failed" string forced every caller to log
+ * its own generic error, which is how the same failure landed in Sentry three
+ * times (SAFAR-ENGLISH-APP-15/16/17).
+ */
+export const recoverEnrollmentDetailed = async (courseId: number): Promise<RecoverResult> => {
   try {
     await invokePaymentFunction("recover-enrollment", { course_id: Number(courseId) });
-    return "recovered";
+    return { outcome: "recovered" };
   } catch (err) {
-    const status = (err as PaymentApiError)?.status;
-    if (status === 404 || status === 429) return "not-yet";
-    return "failed";
+    const e = err instanceof PaymentApiError
+      ? err
+      : new PaymentApiError((err as Error)?.message || "recover-enrollment failed");
+    if (e.status === 404 || e.status === 429) {
+      return { outcome: "not-yet", status: e.status, code: e.code, message: e.message };
+    }
+    return {
+      outcome: "failed",
+      status: e.status,
+      code: e.code,
+      message: e.message,
+      reason: classifyRecoverFailure(e),
+    };
   }
 };
+
+/** Shorthand kept for callers that only branch on the outcome. */
+export const recoverEnrollment = async (courseId: number): Promise<RecoverOutcome> =>
+  (await recoverEnrollmentDetailed(courseId)).outcome;
+
+/**
+ * Canonical error for a *server-side* recovery failure. The message carries
+ * status + code so Sentry groups by cause ("recover-enrollment 500 RPC_FAILED")
+ * instead of one bucket per call site.
+ */
+export class EnrollmentRecoveryError extends Error {
+  status?: number;
+  code?: string;
+  reason?: RecoverFailureReason;
+  constructor(result: RecoverResult) {
+    super(`recover-enrollment ${result.status ?? "?"} ${result.code ?? "UNKNOWN"}`);
+    this.name = "EnrollmentRecoveryError";
+    this.status = result.status;
+    this.code = result.code;
+    this.reason = result.reason;
+  }
+}
 
 /** Native haptic on payment success. No-op on web. */
 

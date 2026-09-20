@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { recoverEnrollment } from "@/utils/paymentApi";
-import { logger } from "@/lib/logger";
+import { recoverEnrollmentDetailed, type RecoverResult } from "@/utils/paymentApi";
+import { addBreadcrumb } from "@/lib/sentry";
 
 const KEY_PREFIX = "nb:pendingOrder:";
 const MAX_AGE_MS = 10 * 60 * 1000; // 10 min — beyond this the webhook has long settled;
@@ -88,11 +88,27 @@ export function useEnrollmentArrival({
   const aliveRef = useRef(true);
   useEffect(() => () => { aliveRef.current = false; }, []);
 
-  /** Fire `recover-enrollment` for one course. Silent on the expected 404. */
+  /** Last non-recovered result — lets the page show a cause-specific toast. */
+  const lastFailureRef = useRef<RecoverResult | null>(null);
+  const getLastFailure = useCallback(() => lastFailureRef.current, []);
+
+  /**
+   * Fire `recover-enrollment` for one course. Silent on the expected 404.
+   * Failures are NOT reported here: `useEnrollmentRecovery` (mounted globally)
+   * already files the single canonical Sentry issue for the same pending
+   * order, so this hook only leaves a breadcrumb + remembers the cause.
+   */
   const recoverCourse = useCallback(async (courseId: number): Promise<boolean> => {
-    const outcome = await recoverEnrollment(courseId);
-    if (outcome === "failed") logger.error("recover-enrollment failed", { courseId });
-    return outcome === "recovered";
+    const result = await recoverEnrollmentDetailed(courseId);
+    if (result.outcome === "recovered") {
+      lastFailureRef.current = null;
+      return true;
+    }
+    lastFailureRef.current = result;
+    addBreadcrumb("payments", "arrival recovery not completed", {
+      courseId, outcome: result.outcome, reason: result.reason, status: result.status, code: result.code,
+    });
+    return false;
   }, []);
 
 
@@ -194,5 +210,5 @@ export function useEnrollmentArrival({
     return () => { void supabase.removeChannel(channel); };
   }, [userId]);
 
-  return { reconciling, recoverNow };
+  return { reconciling, recoverNow, getLastFailure };
 }

@@ -793,7 +793,15 @@ const FastPdfReader = forwardRef<FastPdfReaderHandle, Props>(
         const kind = classifyPdfError(err);
         addBreadcrumb("pdf", "load-error", { kind, message: msg });
         traceReader(route, "error", "load-error", { kind, message: msg });
-        captureException(err, { where: "FastPdfReader", kind, url: url.slice(0, 120) });
+        // 403/404 are access / stale-link outcomes (not-enrolled, private
+        // Drive file, deleted upload) — the same rule the byte-fallback path
+        // already applies. Reporting them as exceptions made every
+        // un-enrolled tap on a locked PDF a Sentry issue (SAFAR-ENGLISH-W).
+        const httpStatus =
+          (err as { status?: number })?.status ?? Number(msg.match(/HTTP\s+(\d{3})/i)?.[1] || 0);
+        if (httpStatus !== 403 && httpStatus !== 404) {
+          captureException(err, { where: "FastPdfReader", kind, httpStatus, url: url.slice(0, 120) });
+        }
 
         // Archive scans can be hundreds of MB or larger. Materialising one as
         // a Uint8Array after a transient Range failure can OOM the WebView and

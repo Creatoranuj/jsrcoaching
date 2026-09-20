@@ -532,7 +532,10 @@ export const openNativeRazorpayCheckout = async (
       });
     }
 
-    const RazorpayNative = await withTimeout(
+    // The loader resolves a `{ plugin }` container, never the bare Capacitor
+    // proxy (a bare proxy is "thenable" and rejects with
+    // `"RazorpayNative.then()" is not implemented on android` before open()).
+    const { plugin: RazorpayNative } = await withTimeout(
       loadRazorpayNative(),
       BRIDGE_LOAD_TIMEOUT_MS,
       () => new RazorpayBridgeMissingError(),

@@ -66,7 +66,10 @@ export const normalizeUpiApps = (raw: unknown): UpiApp[] => {
 /** Resolves to the installed UPI apps, or `[]` when it cannot be determined. */
 export const listUpiApps = async (): Promise<UpiApp[]> => {
   try {
-    const plugin = await loadRazorpayNative();
+    const { plugin } = await loadRazorpayNative();
+    // Capacitor proxies answer `typeof` with "function" for any name, so this
+    // probe only filters test doubles; on an old APK the call itself rejects
+    // with UNIMPLEMENTED and lands in the catch below → [].
     if (typeof plugin.getUpiApps !== "function") return [];
     return normalizeUpiApps(await plugin.getUpiApps());
   } catch {

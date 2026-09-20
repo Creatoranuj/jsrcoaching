@@ -14,7 +14,56 @@ import { tapHaptic, selectionHaptic } from "@/lib/native/haptics";
 import logoIcon from "../../assets/branding/jsr-mark.webp";
 import fabLogo from "../../assets/branding/jsr-mark.webp";
 import { logger } from "../../lib/logger";
-import { friendlyAiError } from "../../lib/aiErrorMessage";
+import { friendlyAiError, isAiKeyFailure } from "../../lib/aiErrorMessage";
+import { addBreadcrumb } from "../../lib/sentry";
+
+/**
+ * Chat failure classes that are *server configuration* faults (rotated
+ * LOVABLE_API_KEY, credits exhausted, gateway rate limit). Every student on
+ * the app hits them simultaneously, so one Sentry event per class per page
+ * load is plenty — thousands of identical "[ChatWidget] chatbot call failed"
+ * events (SAFAR-ENGLISH-APP-19) hid the real signal and burned quota.
+ */
+const CONFIG_FAILURE_CLASSES = new Set(["gateway_unauthorized", "credits_exhausted", "rate_limited"]);
+const reportedChatFailureClasses = new Set<string>();
+
+function classifyChatFailure(input: { code?: string; status?: number; message: string }): string {
+  if (isAiKeyFailure(input)) return "gateway_unauthorized";
+  const code = (input.code || "").toLowerCase();
+  if (code) return code;
+  if (input.status === 402) return "credits_exhausted";
+  if (input.status === 429) return "rate_limited";
+  if (input.status === 401) return "session_expired";
+  if (input.status === 504 || /timeout|aborted/i.test(input.message)) return "gateway_timeout";
+  if (/failed to send a request|functionsfetcherror/i.test(input.message)) return "blocked";
+  if (/failed to fetch|networkerror|load failed/i.test(input.message)) return "offline";
+  if (input.status && input.status >= 500) return "server_error";
+  return "unknown";
+}
+
+/**
+ * One canonical report per failure class. Config faults are reported once
+ * per session; user-side conditions (session expired / offline) are only
+ * breadcrumbs; everything else reports normally with a stable title.
+ */
+function reportChatFailure(err: unknown, input: { raw: string; status?: number; code?: string }) {
+  const cls = classifyChatFailure({ code: input.code, status: input.status, message: input.raw });
+  const ctx = { surface: "ChatWidget", failureClass: cls, status: input.status, code: input.code, raw: input.raw };
+  if (cls === "session_expired" || cls === "offline") {
+    addBreadcrumb("chat", `chatbot ${cls}`, ctx);
+    return;
+  }
+  if (CONFIG_FAILURE_CLASSES.has(cls)) {
+    if (reportedChatFailureClasses.has(cls)) {
+      addBreadcrumb("chat", `chatbot ${cls} (suppressed duplicate)`, ctx);
+      return;
+    }
+    reportedChatFailureClasses.add(cls);
+    logger.error(`[ChatWidget] chatbot ${cls} (server config)`, err, ctx);
+    return;
+  }
+  logger.error(`[ChatWidget] chatbot ${cls}`, err, ctx);
+}
 
 
 interface Message {
@@ -412,7 +461,7 @@ const ChatWidget = forwardRef<HTMLDivElement>(() => {
         (err as { status?: number })?.status ??
         (err as { context?: { status?: number } })?.context?.status;
       const code = (err as { code?: string })?.code;
-      logger.error("[ChatWidget] chatbot call failed", raw);
+      reportChatFailure(err, { raw, status, code });
       // Classify on code → status only. Substring-matching the message used to
       // report every "gateway_timeout" as a server key problem.
       let friendly = friendlyAiError({ code, status, message: raw });

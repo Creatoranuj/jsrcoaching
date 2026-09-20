@@ -31,15 +31,38 @@ export interface RazorpayNativePlugin {
   getUpiApps?(): Promise<RazorpayNativeUpiApps>;
 }
 
-let cached: RazorpayNativePlugin | null = null;
-let inflight: Promise<RazorpayNativePlugin> | null = null;
+/**
+ * Container that keeps the Capacitor proxy out of Promise resolution.
+ *
+ * ── Why the proxy is wrapped in `{ plugin }` ──────────────────────────────
+ * `registerPlugin()` returns a Proxy whose `get` trap treats EVERY property
+ * read as a native method call. When an `async` function resolves with that
+ * proxy directly, the Promise machinery performs "thenable assimilation": it
+ * reads `proxy.then`. The proxy answers with a function that invokes the
+ * native method `then`, which does not exist, so Android rejects with
+ * `"RazorpayNative.then()" is not implemented on android`.
+ *
+ * That is exactly what Sentry SAFAR-ENGLISH-APP-13/14 recorded (120 events):
+ * the bridge existed, but the *loader* rejected before `open()` ever ran, so
+ * BuyCourse fell back to the browser on every phone — "app se browser me
+ * chala gaya". Every other loader in this folder (`app.ts`, `preferences.ts`,
+ * `filesystem.ts`, `core.ts`) already wraps the proxy in a container; this one
+ * did not. Callers MUST destructure: `const { plugin } = await loadRazorpayNative()`.
+ */
+export interface RazorpayNativeContainer {
+  plugin: RazorpayNativePlugin;
+}
 
-export const loadRazorpayNative = async (): Promise<RazorpayNativePlugin> => {
+let cached: RazorpayNativeContainer | null = null;
+let inflight: Promise<RazorpayNativeContainer> | null = null;
+
+export const loadRazorpayNative = async (): Promise<RazorpayNativeContainer> => {
   if (cached) return cached;
   if (inflight) return inflight;
   inflight = (async () => {
     const { registerPlugin } = await import("@capacitor/core");
-    cached = registerPlugin<RazorpayNativePlugin>("RazorpayNative");
+    // Never `return` the bare proxy from an async function — see above.
+    cached = { plugin: registerPlugin<RazorpayNativePlugin>("RazorpayNative") };
     inflight = null;
     return cached;
   })();

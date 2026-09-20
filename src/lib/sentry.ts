@@ -303,9 +303,14 @@ function installConsoleErrorForwarder(): void {
     if (forwarderInFlight) { original(...args); return; }
     forwarderInFlight = true;
     try {
+      // `logger.error` already calls captureException AND mirrors to
+      // console.error with an "[error] " prefix — forwarding that mirror
+      // produced a second, differently-grouped Sentry issue per failure
+      // (SAFAR-ENGLISH-APP-15 vs -16). Skip the mirror; keep raw console.error.
+      const first = args[0];
+      if (typeof first === "string" && first.startsWith("[error] ")) { original(...args); return; }
       // First arg shapes the Sentry event. If it's already an Error, ship it
       // directly; otherwise stringify the first 2 args as the message.
-      const first = args[0];
       const err =
         first instanceof Error
           ? first
