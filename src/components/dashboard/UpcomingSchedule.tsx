@@ -1,9 +1,44 @@
 import { useLectureSchedules } from "../../hooks/useLectureSchedules";
-import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Card, CardContent } from "../ui/card";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
-import { Calendar, Clock, ExternalLink, Loader2 } from "lucide-react";
+import { Skeleton } from "../ui/skeleton";
+import { Calendar, Clock, ExternalLink } from "lucide-react";
 import { format, parseISO, isToday, isTomorrow } from "date-fns";
+
+/**
+ * Placeholder that mirrors the real schedule row (title, course badge, meta
+ * line, Join button) so the section keeps its height and nothing jumps when
+ * the data arrives — a spinner here made the home screen look stuck.
+ */
+const ScheduleSkeleton = () => (
+  <section aria-busy="true" aria-label="Loading upcoming schedule">
+    <h2 className="text-lg font-bold text-foreground mb-3 flex items-center gap-2">
+      <Calendar className="h-5 w-5 text-primary" />
+      Upcoming Schedule
+    </h2>
+    <div className="space-y-3">
+      {[0, 1].map((i) => (
+        <Card key={i}>
+          <CardContent className="p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0 space-y-2">
+                <Skeleton className="h-5 w-3/5" />
+                <Skeleton className="h-5 w-24 rounded-full" />
+                <div className="flex items-center gap-3 pt-1">
+                  <Skeleton className="h-4 w-16" />
+                  <Skeleton className="h-4 w-12" />
+                  <Skeleton className="h-4 w-14" />
+                </div>
+              </div>
+              <Skeleton className="h-9 w-20 rounded-md" />
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  </section>
+);
 
 const UpcomingSchedule = () => {
   const { upcomingSchedules, loading } = useLectureSchedules();
@@ -11,15 +46,7 @@ const UpcomingSchedule = () => {
   // Show max 5 upcoming
   const upcoming = upcomingSchedules.slice(0, 5);
 
-  if (loading) {
-    return (
-      <Card>
-        <CardContent className="py-8 text-center">
-          <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
-        </CardContent>
-      </Card>
-    );
-  }
+  if (loading) return <ScheduleSkeleton />;
 
   if (upcoming.length === 0) return null;
 

@@ -1,9 +1,11 @@
-import { memo } from "react";
+import { memo, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   CheckCircle, Clock, Download, Eye, Link as LinkIcon, Plus, Search, Trash2, Upload,
@@ -56,6 +58,15 @@ interface AdminCoursesTabProps {
   onSaveCourseEdit: () => void;
   onCancelEdit: () => void;
   onDeleteCourse: (id: number) => void;
+  // Batch Full controls
+  /** Flip enrollment on/off for one course. */
+  onToggleEnrollment: (course: Tables<"courses">, open: boolean) => void;
+  /** Save a seat cap (null = unlimited). */
+  onSaveSeatLimit: (course: Tables<"courses">, seatLimit: number | null) => void;
+  /** Active enrollments per course id, for the "x / y" counter. */
+  enrollmentCounts?: Record<number, number>;
+  /** Course id currently being saved, so its row can disable its controls. */
+  savingCourseId?: number | null;
 }
 
 function AdminCoursesTabImpl({
@@ -86,6 +97,10 @@ function AdminCoursesTabImpl({
   onSaveCourseEdit,
   onCancelEdit,
   onDeleteCourse,
+  onToggleEnrollment,
+  onSaveSeatLimit,
+  enrollmentCounts,
+  savingCourseId,
 }: AdminCoursesTabProps) {
   return (
     <div className="grid md:grid-cols-2 gap-6">
@@ -204,13 +219,28 @@ function AdminCoursesTabImpl({
                       </div>
                     </div>
                   ) : (
-                    <div className="flex justify-between items-center">
-                      <div><p className="font-semibold">{c.title}</p><p className="text-xs text-muted-foreground">₹{c.price} • Grade {c.grade}</p></div>
-                      <div className="flex items-center gap-1">
-                        <Button size="icon" variant="ghost" className="text-blue-500 hover:bg-blue-50" onClick={() => onEditCourse(c)}><Eye className="h-4 w-4" /></Button>
-                        <Button size="icon" variant="ghost" className="text-red-500 hover:bg-red-50" onClick={() => onDeleteCourse(c.id)}><Trash2 className="h-4 w-4" /></Button>
+                    <>
+                      <div className="flex justify-between items-center">
+                        <div><p className="font-semibold">{c.title}</p><p className="text-xs text-muted-foreground">₹{c.price} • Grade {c.grade}</p></div>
+                        <div className="flex items-center gap-1">
+                          <Button size="icon" variant="ghost" className="text-blue-500 hover:bg-blue-50" onClick={() => onEditCourse(c)}><Eye className="h-4 w-4" /></Button>
+                          <Button size="icon" variant="ghost" className="text-red-500 hover:bg-red-50" onClick={() => onDeleteCourse(c.id)}><Trash2 className="h-4 w-4" /></Button>
+                        </div>
                       </div>
-                    </div>
+
+                      {/* ── Batch Full control ───────────────────────────────
+                          Switch OFF hides the Buy button everywhere in the app
+                          AND makes the database refuse new paid enrollments.
+                          Existing students keep full access. The seat cap does
+                          the same automatically once it is reached. */}
+                      <CourseEnrollmentControl
+                        course={c}
+                        seatsTaken={enrollmentCounts?.[c.id] ?? 0}
+                        saving={savingCourseId === c.id}
+                        onToggleEnrollment={onToggleEnrollment}
+                        onSaveSeatLimit={onSaveSeatLimit}
+                      />
+                    </>
                   )}
                 </div>
               ))}
@@ -219,6 +249,95 @@ function AdminCoursesTabImpl({
           </ScrollArea>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+/**
+ * Per-course "Batch Full" switch + optional seat cap.
+ *
+ * Kept in this file because it is pure admin-list chrome. The seat input is
+ * uncontrolled-until-blur so typing does not fire a write per keystroke.
+ */
+function CourseEnrollmentControl({
+  course,
+  seatsTaken,
+  saving,
+  onToggleEnrollment,
+  onSaveSeatLimit,
+}: {
+  course: Tables<"courses">;
+  seatsTaken: number;
+  saving: boolean;
+  onToggleEnrollment: (course: Tables<"courses">, open: boolean) => void;
+  onSaveSeatLimit: (course: Tables<"courses">, seatLimit: number | null) => void;
+}) {
+  const seatLimit = course.seat_limit ?? null;
+  const [draft, setDraft] = useState(seatLimit == null ? "" : String(seatLimit));
+
+  // Re-sync when the row is refreshed from the server.
+  useEffect(() => {
+    setDraft(seatLimit == null ? "" : String(seatLimit));
+  }, [seatLimit]);
+
+  const capReached = seatLimit != null && seatsTaken >= seatLimit;
+  const open = course.enrollment_open && !capReached;
+
+  const commit = () => {
+    const trimmed = draft.trim();
+    const next = trimmed === "" ? null : Math.max(1, Math.floor(Number(trimmed)));
+    if (trimmed !== "" && !Number.isFinite(next as number)) {
+      setDraft(seatLimit == null ? "" : String(seatLimit));
+      return;
+    }
+    if (next === seatLimit) return;
+    onSaveSeatLimit(course, next);
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t pt-2">
+      <div className="flex items-center gap-2">
+        <Switch
+          id={`enroll-${course.id}`}
+          checked={course.enrollment_open}
+          disabled={saving}
+          onCheckedChange={(v) => onToggleEnrollment(course, v)}
+          aria-label={`Enrollment ${course.enrollment_open ? "open" : "closed"} for ${course.title}`}
+        />
+        <Label htmlFor={`enroll-${course.id}`} className="text-xs font-medium">
+          {course.enrollment_open ? "Enrollment Open" : "Enrollment Closed"}
+        </Label>
+      </div>
+
+      <Badge
+        variant={open ? "secondary" : "destructive"}
+        className="h-6 rounded-full px-2 text-[10px] font-semibold"
+      >
+        {open ? "Buy button visible" : "Batch Full"}
+      </Badge>
+
+      <div className="flex items-center gap-1.5">
+        <Label htmlFor={`seats-${course.id}`} className="text-xs text-muted-foreground">
+          Seat limit
+        </Label>
+        <Input
+          id={`seats-${course.id}`}
+          type="number"
+          min={1}
+          inputMode="numeric"
+          placeholder="∞"
+          value={draft}
+          disabled={saving}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+          className="h-8 w-20 text-xs"
+        />
+      </div>
+
+      <span className="text-xs text-muted-foreground">
+        {seatsTaken} / {seatLimit ?? "∞"} enrolled
+      </span>
     </div>
   );
 }

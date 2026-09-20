@@ -29,12 +29,14 @@ on:
       - 'supabase/migrations/**'
       - 'supabase/schema-package.sql'
       - 'supabase/BASELINE'
+      - 'supabase/ci/**'
       - '.github/workflows/migration-drift.yml'
   pull_request:
     paths:
       - 'supabase/migrations/**'
       - 'supabase/schema-package.sql'
       - 'supabase/BASELINE'
+      - 'supabase/ci/**'
       - '.github/workflows/migration-drift.yml'
   schedule:
     - cron: '0 3 * * 1' # weekly Monday 03:00 UTC
@@ -72,9 +74,10 @@ jobs:
       PGOPTIONS: '-c client_min_messages=warning'
       BASELINE_FILE: supabase/schema-package.sql
       CUTOFF_FILE: supabase/BASELINE
+      EXPECTED_FILE: supabase/ci/historical-replay-expected.txt
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Wait for Postgres
         run: |
@@ -156,7 +159,9 @@ jobs:
           #   ts <  PACKAGE_TS : already inside schema-package.sql          -> skipped
           #   ts <  STRICT_TS  : historical, applied live long ago           -> replayed, failures reported only
           #   ts >= STRICT_TS  : must apply cleanly on top of the above      -> blocking
-          skipped=0; hist_ok=0; hist_fail=0; applied=0; failed=0; failed_file=""
+          skipped=0; hist_ok=0; hist_expected=0; applied=0; failed=0; failed_file=""
+          grep -E "^[^#[:space:]]" "$EXPECTED_FILE" > /tmp/expected.ere
+          echo "Expected historical drifts: $(wc -l < /tmp/expected.ere) pattern(s) from $EXPECTED_FILE"
           for f in $(ls supabase/migrations/*.sql | sort); do
             name=$(basename "$f")
             ts="${name%%_*}"
@@ -169,8 +174,15 @@ jobs:
               if [ "$ts" \< "$STRICT_TS" ]; then hist_ok=$((hist_ok+1)); else applied=$((applied+1)); echo "ok   $name"; fi
             else
               if [ "$ts" \< "$STRICT_TS" ]; then
-                hist_fail=$((hist_fail+1))
-                echo "::notice file=$f::Historical migration did not replay on the baseline (already live; not blocking): $(grep -m1 -E 'ERROR|FATAL' /tmp/mig.log | sed -E 's#^psql:[^:]+:[0-9]+: ##')"
+                err="$(grep -m1 -E 'ERROR|FATAL' /tmp/mig.log | sed -E 's#^psql:[^:]+:[0-9]+: ##')"
+                if printf '%s' "$err" | grep -qEf /tmp/expected.ere; then
+                  hist_expected=$((hist_expected+1))
+                  echo "expected-drift $name -- $err"
+                else
+                  echo "FAIL $name"
+                  echo "::error file=$f::Historical migration failed with an UNEXPECTED error. Fix it, or add the message to $EXPECTED_FILE with a justification: $err"
+                  failed=1; failed_file="$f"; break
+                fi
               else
                 echo "FAIL $name"
                 echo "::error file=$f::Migration failed to apply on top of the schema baseline"
@@ -179,9 +191,9 @@ jobs:
               fi
             fi
           done
-          echo "Skipped $skipped (inside baseline); historical replay ok=$hist_ok fail=$hist_fail; strict applied=$applied."
+          echo "Skipped $skipped (inside baseline); historical replay ok=$hist_ok expected-drift=$hist_expected; strict applied=$applied."
           {
-            echo "| Historical replay (\`$PACKAGE_TS\` … \`$STRICT_TS\`) | $hist_ok ok, $hist_fail already-live failures (informational) |"
+            echo "| Historical replay (\`$PACKAGE_TS\` … \`$STRICT_TS\`) | $hist_ok ok, $hist_expected expected already-live drifts |"
             if [ "$failed" -eq 0 ]; then
               echo "| Migrations at/after \`$STRICT_TS\` | $applied applied cleanly |"
             else

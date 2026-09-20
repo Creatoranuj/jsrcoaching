@@ -1,0 +1,33 @@
+# Expected historical-replay drifts — supabase/ci/historical-replay-expected.txt
+#
+# Read by .github/workflows/migration-drift.yml.
+#
+# Migrations between the `package=` and `strict=` markers in supabase/BASELINE
+# are replayed on top of the schema package purely as a regression net. Some of
+# them CANNOT replay by construction: the object they touch was later dropped,
+# renamed, or already exists inside the package snapshot. Those failures used to
+# be printed as ::notice noise on every run.
+#
+# Each ERE below marks one such failure as expected. Anything else a historical
+# migration fails with is now a hard error — that is a real drift the team must
+# look at.
+#
+# Adding a line here is a deliberate decision: it must be a "this object no
+# longer exists / already exists in the live snapshot" case, never a genuine
+# syntax or logic error. Keep one justification comment per entry.
+
+# Tables dropped from the live project after these migrations ran.
+relation "public\.lesson_video_meta" does not exist
+relation "public\.error_logs" does not exist
+
+# Functions replaced/removed later in history.
+function public\.user_can_access_live_session_topic\(text\) does not exist
+function public\.assign_admin_on_signup\(\) does not exist
+cannot change return type of existing function
+
+# Objects already present in the schema-package snapshot (CREATE without
+# IF NOT EXISTS in the original migration).
+policy "Enrolled users and staff can view comments" for table "comments" already exists
+policy "Enrolled users and staff can view syllabus" for table "syllabus" already exists
+constraint "quiz_attempts_quiz_id_fkey" for relation "quiz_attempts" already exists
+multiple primary keys for table "profiles" are not allowed

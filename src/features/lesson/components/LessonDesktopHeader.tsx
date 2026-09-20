@@ -1,8 +1,11 @@
 import { memo } from "react";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { BuyGate } from "@/components/courses/BuyGate";
 
 export interface LessonDesktopHeaderProps {
+  /** Needed by the Batch Full gate around the Buy CTA. */
+  courseId: number | string | null | undefined;
   courseTitle: string;
   gradeLabel: string;
   lessonCount: number;
@@ -16,6 +19,7 @@ export interface LessonDesktopHeaderProps {
  * Mobile intentionally has no top bar — see the note in LessonView.
  */
 export const LessonDesktopHeader = memo(function LessonDesktopHeader({
+  courseId,
   courseTitle,
   gradeLabel,
   lessonCount,
@@ -37,13 +41,15 @@ export const LessonDesktopHeader = memo(function LessonDesktopHeader({
       </div>
       <div className="flex items-center gap-2">
         {!hasPurchased && (
-          <Button
-            size="sm"
-            className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-md"
-            onClick={onBuy}
-          >
-            Buy Now
-          </Button>
+          <BuyGate courseId={courseId}>
+            <Button
+              size="sm"
+              className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-md"
+              onClick={onBuy}
+            >
+              Buy Now
+            </Button>
+          </BuyGate>
         )}
       </div>
     </header>
