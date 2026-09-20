@@ -53,13 +53,13 @@ const PayBrowser = () => {
   /**
    * Send the user back into the app from a Custom Tab.
    *
-   * Three hand-offs, in order, because no single one is reliable:
-   *   1. `com.jsrcoaching.app://payment-callback` — instant when Chrome
-   *      allows the custom scheme (user-gesture navigations always do).
-   *   2. `intent://…;package=…;end` — the documented Android form; survives
-   *      Chrome's block on gesture-less custom-scheme navigation.
-   *   3. the verified https App Link — Android routes it into the app, and
-   *      a student without the app simply lands on the website.
+   * Two automatic hand-offs, in order, because neither alone is reliable:
+   *   1. `intent://…;package=…;end` — the documented Android form; it is the
+   *      one Chrome honours without a user gesture.
+   *   2. `com.jsrcoaching.app://payment-callback` — the custom scheme, as a
+   *      follow-up for browsers that prefer it.
+   *   3. the verified https App Link — NEVER automatic (see below); reachable
+   *      only through the visible button, as a real user gesture.
    *
    * Each hop is skipped once the tab goes hidden (the app took over). Timers
    * are tracked so unmount clears them — a stray timer firing after the tab

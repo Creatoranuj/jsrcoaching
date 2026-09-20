@@ -15,7 +15,7 @@
  *    still recovers from localStorage on next boot — both layers are
  *    written, both layers are read).
  *  - Never use this for secrets or auth tokens — those go through
- *    `supabaseAuthStorage` (Keystore-backed).
+ *    `supabaseAuthStorage` (Keystore-encrypted SecureStore).
  *  - Keys must be enumerated in `WARM_KEYS` so we know exactly what crosses
  *    the bridge at boot. Add new entries deliberately.
  */
