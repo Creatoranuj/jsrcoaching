@@ -4,87 +4,7 @@ import { Button } from "../ui/button";
 import { downloadFile } from "../../utils/fileUtils";
 import { toast } from "sonner";
 import SmartNotesReader from "../notes/SmartNotesReader";
-import { fileDB as personalFileDB } from "../../lib/personalLibraryDB";
-import { downloadFileDB } from "../../lib/indexedDB";
-
-const personalLibraryId = (url: string) => url.match(/^nb-personal-library:([^?#]+)$/i)?.[1] ?? null;
-const webDownloadId = (url: string) => url.match(/^web-indexeddb:(\d+)$/i)?.[1] ?? null;
-
-async function readNativeFileAsText(url: string): Promise<string | null> {
-  try {
-    const { Capacitor } = await import("@capacitor/core");
-    if (!Capacitor.isNativePlatform()) return null;
-    const { Filesystem } = await import("@capacitor/filesystem");
-
-    let absPath: string | null = null;
-    if (/^file:\/\//i.test(url)) {
-      absPath = decodeURIComponent(url.replace(/^file:\/\//i, ""));
-    } else if (/_capacitor_file_/i.test(url)) {
-      const m = url.match(/_capacitor_file_(.*)$/i);
-      if (m) absPath = decodeURIComponent(m[1]);
-    } else if (/^capacitor:\/\//i.test(url) || /^ionic:\/\//i.test(url)) {
-      const m = url.match(/_capacitor_file_(.*)$/i);
-      if (m) absPath = decodeURIComponent(m[1]);
-    }
-    if (!absPath) return null;
-
-    const res = await Filesystem.readFile({ path: absPath, encoding: "utf8" as never });
-    const data = (res as { data: string | Blob }).data;
-    if (typeof data === "string") return data;
-    if (data instanceof Blob) return data.text();
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-async function loadMarkdownText(url: string): Promise<string> {
-  const plId = personalLibraryId(url);
-  if (plId) {
-    const row = await personalFileDB.get(plId);
-    if (!row?.blob) throw new Error("This markdown file is no longer available on this device.");
-    return row.blob.text();
-  }
-  const dlId = webDownloadId(url);
-  if (dlId) {
-    const row = await downloadFileDB.get(Number(dlId));
-    if (!row?.blob) throw new Error("This downloaded markdown file is missing. Re-download it while online.");
-    return row.blob.text();
-  }
-  if (/^(capacitor:|ionic:|file:)/i.test(url) || /_capacitor_file_/i.test(url)) {
-    const direct = await readNativeFileAsText(url);
-    if (direct != null) return direct;
-  }
-  if (/^blob:/i.test(url)) {
-    // A blob: URL only lives for the session that created it. The native
-    // open path (`resolveDownloadUri`) mints a fresh blob URL from on-disk
-    // bytes — try reading it first, and only declare it dead if the fetch
-    // fails (i.e. the blob was revoked or never had bytes).
-    try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const text = await res.text();
-      if (!text) throw new Error("Empty blob");
-      return text;
-    } catch (err) {
-      console.warn("[MarkdownViewer] blob fetch failed", err);
-      throw new Error("Offline copy missing. Please delete this entry and re-download the notes while online.", { cause: err });
-    }
-  }
-  let res: Response;
-  try {
-    res = await fetch(url, { credentials: "omit" });
-  } catch (e) {
-    throw new Error(
-      `Couldn't reach the file source (${(e as Error)?.message || "network error"}). If you're offline, re-download it while online.`,
-      { cause: e }
-    );
-  }
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const text = await res.text();
-  if (!text) throw new Error("Empty response — file may be inaccessible offline.");
-  return text;
-}
+import { isVirtualMarkdownUrl, loadMarkdownText } from "../../lib/markdown/loadMarkdownText";
 
 interface Props {
   url: string;
@@ -158,12 +78,17 @@ export default function MarkdownViewer({ url, title, filename, onBack, hideDownl
     );
   }
 
+  // A virtual address (nb-download:, web-indexeddb:, nb-personal-library:) means
+  // the bytes already live on this device — re-saving would only re-fetch an
+  // address the network cannot resolve, so hide the save affordance.
+  const canSave = !hideDownload && !isVirtualMarkdownUrl(url);
+
   return (
     <SmartNotesReader
       title={title}
       markdown={text}
       onBack={onBack}
-      onDownload={hideDownload ? undefined : handleSave}
+      onDownload={canSave ? handleSave : undefined}
     />
   );
 }

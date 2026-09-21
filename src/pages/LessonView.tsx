@@ -2139,10 +2139,15 @@ const LessonView = () => {
             noteId={smartNotesActiveId}
             defaultReadingMode={smartNotesReadingMode}
             onBack={() => { setSmartNotesOpen(false); setSmartNotesActiveId(null); setSmartNotesReadingMode("off"); }}
-            onDownload={async () => {
+            onDownload={async (payload) => {
               try {
-                const fileName = `${currentLesson.title.replace(/[^\w.-]+/g, "_")}-smart-notes.md`;
-                const md = currentLesson.transcript_md || "";
+                // The reader hands us exactly what it is showing (a personal
+                // Smart Note, or the lesson transcript when there is no note).
+                // Using currentLesson.transcript_md here instead saved the wrong
+                // document whenever the user had their own note open.
+                const docTitle = payload?.title || currentLesson.title;
+                const fileName = `${docTitle.replace(/[^\w.-]+/g, "_")}-smart-notes.md`;
+                const md = payload?.markdown ?? (currentLesson.transcript_md || "");
                 if (!md.trim()) {
                   toast.error("Notes khaali hain — pehle Save karein.");
                   return;

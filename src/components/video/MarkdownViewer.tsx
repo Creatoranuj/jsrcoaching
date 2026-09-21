@@ -2,8 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 import { Markdown } from "../Markdown";
 import { Loader2, ExternalLink } from "lucide-react";
 import "github-markdown-css/github-markdown.css";
-import { fileDB as personalFileDB } from "../../lib/personalLibraryDB";
-import { downloadFileDB, getDownload } from "../../lib/indexedDB";
+import { isVirtualMarkdownUrl, loadMarkdownText } from "../../lib/markdown/loadMarkdownText";
 
 interface Props {
   url: string;
@@ -13,119 +12,6 @@ interface Props {
 export type MarkdownViewerHandle = {
   getScrollEl: () => HTMLElement | null;
 };
-
-const personalLibraryId = (url: string) =>
-  url.match(/^nb-personal-library:([^?#]+)$/i)?.[1] ?? null;
-const webDownloadId = (url: string) => url.match(/^web-indexeddb:(\d+)$/i)?.[1] ?? null;
-const nbDownloadId = (url: string) => url.match(/^nb-download:(\d+)$/i)?.[1] ?? null;
-
-/**
- * Read a Capacitor-local file (capacitor://, file://, or the WebViewLocalServer
- * https://localhost/_capacitor_file_/<path> form) DIRECTLY via the Filesystem
- * plugin instead of round-tripping through fetch(). Some Android release APK
- * builds return empty / HTML responses for `_capacitor_file_` fetches, which
- * surfaces here as a blank markdown page.
- */
-async function readNativeFileAsText(url: string): Promise<string | null> {
-  try {
-    const { Capacitor } = await import("@capacitor/core");
-    if (!Capacitor.isNativePlatform()) return null;
-    const { Filesystem } = await import("@capacitor/filesystem");
-
-    let absPath: string | null = null;
-    if (/^file:\/\//i.test(url)) {
-      absPath = decodeURIComponent(url.replace(/^file:\/\//i, ""));
-    } else if (/_capacitor_file_/i.test(url)) {
-      const m = url.match(/_capacitor_file_(.*)$/i);
-      if (m) absPath = decodeURIComponent(m[1]);
-    } else if (/^capacitor:\/\//i.test(url) || /^ionic:\/\//i.test(url)) {
-      const m = url.match(/_capacitor_file_(.*)$/i);
-      if (m) absPath = decodeURIComponent(m[1]);
-    }
-    if (!absPath) return null;
-
-    const res = await Filesystem.readFile({ path: absPath, encoding: "utf8" as never });
-    const data = (res as { data: string | Blob }).data;
-    if (typeof data === "string") {
-      // Some platforms return base64 even when utf8 is requested if encoding is
-      // unsupported. Heuristic: if it looks like base64 and not markdown, decode.
-      if (!/[#*\-`\n>|]/.test(data) && /^[A-Za-z0-9+/=\r\n]+$/.test(data.slice(0, 200))) {
-        try {
-          return decodeURIComponent(escape(atob(data)));
-        } catch {
-          return data;
-        }
-      }
-      return data;
-    }
-    if (data instanceof Blob) return await data.text();
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-async function loadMarkdownText(url: string): Promise<string> {
-  const plId = personalLibraryId(url);
-  if (plId) {
-    const row = await personalFileDB.get(plId);
-    if (!row?.blob)
-      throw new Error("This markdown file is no longer available on this device.");
-    return row.blob.text();
-  }
-  const dlId = webDownloadId(url);
-  if (dlId) {
-    const row = await downloadFileDB.get(Number(dlId));
-    if (!row?.blob)
-      throw new Error(
-        "This downloaded markdown file is missing. Re-download it while online."
-      );
-    return row.blob.text();
-  }
-  const nbId = nbDownloadId(url);
-  if (nbId) {
-    const rec = await getDownload(Number(nbId));
-    if (!rec) throw new Error("This download no longer exists on this device.");
-    if (rec.local_path?.startsWith("web-indexeddb:")) {
-      const row = await downloadFileDB.get(Number(nbId));
-      if (!row?.blob) throw new Error("Downloaded copy missing. Re-download it while online.");
-      return row.blob.text();
-    }
-    // Native filesystem tier — read UTF-8 text.
-    try {
-      const { Capacitor } = await import("@capacitor/core");
-      if (Capacitor.isNativePlatform() && rec.local_path) {
-        const { Filesystem, Directory } = await import("@capacitor/filesystem");
-        const parsed = rec.local_path.match(/^(Documents|Data|External|ExternalStorage|Cache|Library):(.+)$/);
-        const dirName = parsed?.[1] ?? "Data";
-        const filePath = parsed?.[2] ?? rec.local_path;
-        const directory =
-          (Directory as unknown as Record<string, unknown>)[dirName] ??
-          Directory.Data;
-        const res = await Filesystem.readFile({ path: filePath, directory: directory as never, encoding: "utf8" as never });
-        const data = (res as { data: string | Blob }).data;
-        if (typeof data === "string") return data;
-        if (data instanceof Blob) return await data.text();
-      }
-    } catch (err) {
-      throw new Error((err as Error)?.message || "Could not read downloaded file", { cause: err });
-    }
-    throw new Error("Could not read downloaded markdown file.");
-  }
-  // Try the native Filesystem path first for capacitor://, file://, or
-  // _capacitor_file_ URLs (release-APK safety net).
-  const isNativeLocal =
-    /^(capacitor:|ionic:|file:)/i.test(url) || /_capacitor_file_/i.test(url);
-  if (isNativeLocal) {
-    const direct = await readNativeFileAsText(url);
-    if (direct != null) return direct;
-  }
-  const res = await fetch(url, { credentials: "omit" });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const text = await res.text();
-  if (!text) throw new Error("Empty response — file may be inaccessible offline.");
-  return text;
-}
 
 /**
  * GitHub-themed Markdown viewer.
@@ -170,7 +56,7 @@ const MarkdownViewer = forwardRef<MarkdownViewerHandle, Props>(({ url }, ref) =>
   const isDark =
     typeof document !== "undefined" && document.documentElement.classList.contains("dark");
 
-  const isVirtualUrl = /^(nb-personal-library:|web-indexeddb:|nb-download:)/i.test(url);
+  const isVirtualUrl = isVirtualMarkdownUrl(url);
 
   return (
     <div ref={scrollRef} className="w-full h-full overflow-auto bg-background">

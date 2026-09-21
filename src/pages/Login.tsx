@@ -5,7 +5,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { toast } from "sonner";
-import { Eye, EyeOff, LogIn, AlertCircle, WifiOff, RefreshCw, ShieldCheck } from "lucide-react";
+import { Eye, EyeOff, LogIn, AlertCircle, WifiOff, RefreshCw, ShieldCheck, Smartphone } from "lucide-react";
 import logo from "../assets/branding/jsr-mark.webp";
 import { tapHaptic } from "@/lib/native/haptics";
 import { validateEmailDomain } from "../lib/emailBlocklist";
@@ -165,9 +165,13 @@ const Login = () => {
             <span className="text-xs text-muted-foreground">OR</span>
             <div className="h-px flex-1 bg-border" />
           </div>
+          {/* SMS OTP is under construction (see PhoneLogin). Say so up front and
+              use a lucide glyph — the 📱 emoji renders as a tofu box on the
+              stock Android WebView font. */}
           <Link to="/login-otp" state={location.state} className="mt-4 block">
-            <Button type="button" variant="outline" className="w-full h-12">
-              📱 Sign in with mobile OTP
+            <Button type="button" variant="outline" className="w-full h-12 gap-2">
+              <Smartphone className="h-4 w-4" aria-hidden="true" />
+              Mobile OTP — temporarily unavailable
             </Button>
           </Link>
 

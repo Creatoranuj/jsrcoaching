@@ -138,15 +138,25 @@ export function useSmartNote({ lessonId, courseId, defaultTitle = "Smart Note", 
     [userId, lessonId, courseId, note, defaultTitle, noteId]
   );
 
-  /** Debounced auto-save. Call from editor onChange. */
+  /**
+   * Debounced auto-save. Call from editor onChange.
+   *
+   * Guard: an empty draft never overwrites saved content. A blank editor is
+   * almost always a not-yet-loaded note rather than a deliberate "erase
+   * everything", and silently replacing real notes with "" is unrecoverable.
+   * Clearing a note on purpose still works through the explicit save path.
+   */
   const scheduleAutoSave = useCallback(
     (content_md: string, title?: string) => {
       if (autoSaveTimer.current) window.clearTimeout(autoSaveTimer.current);
+      const isEmptyDraft = !content_md.trim();
+      const hasSavedContent = !!(note?.content_md ?? "").trim();
+      if (isEmptyDraft && hasSavedContent) return;
       autoSaveTimer.current = window.setTimeout(() => {
         void save(content_md, title).catch(() => { /* surfaced via captureException */ });
       }, 700);
     },
-    [save]
+    [save, note]
   );
 
   useEffect(() => () => {

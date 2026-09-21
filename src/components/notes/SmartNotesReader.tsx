@@ -119,7 +119,12 @@ interface Props {
   title: string;
   onBack: () => void;
   /** Optional save handler — wire to addDownload, downloadFile, etc. */
-  onDownload?: () => void | Promise<void>;
+  /**
+   * Save the document to Downloads. Receives what the reader is actually
+   * showing, so the caller never has to guess between a personal Smart Note
+   * and the lesson transcript.
+   */
+  onDownload?: (payload: { markdown: string; title: string }) => void | Promise<void>;
   /** Wikilink click handler for `[[Name]]` references. */
   onOpenLink?: (name: string) => void;
   /** When provided, reader will load/save the user's personal Smart Note
@@ -223,8 +228,15 @@ export default function SmartNotesReader({ markdown, title, onBack, onDownload, 
     e.stopPropagation();
     if (saving) return;
     if (onDownload) {
+      // Hand over the live document: an in-progress edit wins, then the saved
+      // note, then the source markdown.
+      const current = editing && draft.trim() ? draft : resolvedMarkdown;
       setSaving(true);
-      try { await onDownload(); } finally { setSaving(false); }
+      try {
+        await onDownload({ markdown: current, title: note?.title || title });
+      } finally {
+        setSaving(false);
+      }
       return;
     }
     // Fallback: download as .md
