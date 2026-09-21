@@ -7,6 +7,32 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [v1.14.1] — 2026-09-21
+
+### Added
+- **Guardian: leaked-password gate.** New neutral (⚪) gate plus an "Aapke hisse
+  ka kaam" card linking straight to Supabase Auth providers. App-side HIBP check
+  (`src/lib/leakedPassword.ts`) already blocks breached passwords on signup,
+  reset and change; the Supabase Auth toggle is dashboard-only and cannot be
+  read from SQL, so the gate stays neutral by design instead of faking green.
+
+### Fixed
+- **Guardian open-write gate false red.** `service_role`-only permissive
+  policies (`pdf_source_resolutions`) are excluded — service_role bypasses RLS,
+  so such a policy is not an open door.
+
+### Verified
+- `npx cap sync android`: 20 native plugins registered, `capacitor.build.gradle`
+  and `capacitor.settings.gradle` byte-identical to `main` — no drift, no plugin
+  change needed (Capacitor 7.6.5, not 6.x).
+- Bundle: 355 JS chunks, 5.8 MB raw / 1.8 MB gzip total; first paint pulls
+  ~186 kB (57 kB gz) `index` + 196 kB gz CSS/vendor set. Heaviest lazy chunks:
+  html2pdf 935 kB, vendor-sentry 476 kB, vendor-pdf 419 kB, vendor-charts
+  405 kB. Guardian screen itself is 6.9 kB (2.7 kB gz).
+- 922 tests pass, typecheck and lint clean.
+
+---
+
 ## [v1.14.0] — 2026-09-21
 
 ### Added

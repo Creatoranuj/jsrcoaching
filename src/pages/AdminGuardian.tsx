@@ -197,8 +197,20 @@ export function buildGates(s: Snapshot): Gate[] {
             ? "0 gadbad"
             : `${s.policy_regressions} gadbad`,
     },
+    {
+      // Supabase Auth's own leaked-password setting lives in the dashboard and
+      // is not readable from SQL, so this gate stays neutral on purpose: the
+      // app-side HIBP check (src/lib/leakedPassword.ts) is what we can prove.
+      id: "leaked-password",
+      label: "Leak hue password rokna",
+      state: "unknown",
+      value: "App me chalu · Supabase dashboard me ek click baaki",
+      detail:
+        "Signup, reset aur password change par app khud breach list se milaata hai. Dusri parat (Supabase Auth ka setting) dashboard me ON karni hai — wo yahan se padhi nahi jaa sakti.",
+    },
   ];
 }
+
 
 export type { Snapshot as GuardianSnapshot, Gate as GuardianGate };
 
@@ -340,6 +352,29 @@ export default function AdminGuardian() {
             )}
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Aapke hisse ka kaam</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <p className="text-muted-foreground">
+              Supabase dashboard me <strong>Leaked password protection</strong> ON karein
+              (Authentication → Sign In / Providers → Password). Ye setting sirf dashboard se
+              badalti hai, isliye Guardian ise khud nahi padh sakta.
+            </p>
+            <Button asChild variant="outline" className="h-11 w-full sm:w-auto">
+              <a
+                href="https://supabase.com/dashboard/project/wegamscqtvqhxowlskfm/auth/providers"
+                target="_blank"
+                rel="noreferrer noopener"
+              >
+                Supabase setting kholein
+              </a>
+            </Button>
+          </CardContent>
+        </Card>
+
 
         {snapshot && (
           <Card>

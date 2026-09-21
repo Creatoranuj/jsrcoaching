@@ -29,7 +29,9 @@ const state = (s: GuardianSnapshot, id: string) =>
 
 describe("Backend Guardian gates", () => {
   it("marks a fully hardened backend green", () => {
-    expect(buildGates(clean).every((g) => g.state === "ok")).toBe(true);
+    // leaked-password is a dashboard-only setting: it stays neutral by design.
+    const auto = buildGates(clean).filter((g) => g.id !== "leaked-password");
+    expect(auto.every((g) => g.state === "ok")).toBe(true);
   });
 
   it("flags a table left without protection rules", () => {
@@ -77,5 +79,13 @@ describe("Backend Guardian gates", () => {
 
   it("stays neutral when scheduled jobs cannot be read", () => {
     expect(state({ ...clean, cron_jobs: null }, "cron")).toBe("unknown");
+  });
+});
+
+describe("Leaked-password gate", () => {
+  it("stays neutral and explains the dashboard click", () => {
+    const gate = buildGates(clean).find((g) => g.id === "leaked-password");
+    expect(gate?.state).toBe("unknown");
+    expect(gate?.detail).toMatch(/dashboard/i);
   });
 });
