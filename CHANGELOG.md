@@ -7,6 +7,31 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [v1.13.0] — 2026-09-21
+
+### Fixed
+- **Upload Center edit/delete were invisible on phones.** Chapter and sub-folder
+  actions used `opacity-0 group-hover:opacity-100`; a touch device has no hover,
+  so admins could never see them. They are now always visible and fade only on
+  devices that report `hover: hover`.
+- Upload Center chapter/sub-folder rows stack title-over-actions below `sm` and
+  truncate long titles, matching the content drill-down fix from v1.12.1.
+
+### Added
+- `aria-label`s on Upload Center chapter and sub-folder edit/delete buttons.
+- Guard tests in `src/test/adminRowLayout.test.ts` covering hover-only actions,
+  stacked rows, truncation and labels in `AdminUpload.tsx`.
+
+### Audit (no code change needed)
+- All `admin_*` SECURITY DEFINER functions verified to check `has_role()` internally;
+  the only anon-executable definers (`course_availability`, `lookup_email_hint`)
+  are rate-limited and return masked data.
+- Live anon probes: enrollment insert, `user_roles`, `profiles`, `razorpay_payments`,
+  `lessons` all 401; unsigned webhook 400. Auth/Storage/PostgREST 200.
+- Slow-query review: `user_sessions` hot columns already indexed; latency is RLS +
+  free-tier cold start, not a missing index.
+- Payment settlement engine (v1.12.0) untouched.
+
 ## [v1.12.1] — 2026-09-21
 
 ### Fixed

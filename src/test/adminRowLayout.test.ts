@@ -37,3 +37,35 @@ describe("admin content rows stay readable on small screens", () => {
     }
   });
 });
+
+/**
+ * Guard for the Upload Center rows: edit/delete used to be `opacity-0
+ * group-hover:opacity-100`, which on a touch device (no hover) meant the admin
+ * could never see them. They must be visible unless the device has real hover.
+ */
+const uploadSrc = readFileSync(
+  resolve(process.cwd(), "src/pages/AdminUpload.tsx"),
+  "utf8",
+);
+
+describe("upload centre row actions are reachable on touch devices", () => {
+  it("never hides an action behind a hover-only opacity", () => {
+    expect(uploadSrc).not.toMatch(/(?<!\[@media\(hover:hover\)\]:)opacity-0 group-hover:opacity-100/);
+  });
+
+  it("fades actions only where hover exists", () => {
+    const hoverGated = uploadSrc.match(/\[@media\(hover:hover\)\]:opacity-0/g);
+    expect(hoverGated?.length).toBe(4);
+  });
+
+  it("stacks chapter and sub-folder rows on mobile with truncated titles", () => {
+    expect(uploadSrc.match(/flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2/g)?.length).toBe(2);
+    expect(uploadSrc).toContain('<p className="font-medium text-sm truncate">{ch.title}</p>');
+  });
+
+  it("labels the chapter and sub-folder actions", () => {
+    for (const label of ["Edit chapter ", "Delete chapter ", "Edit sub-folder ", "Delete sub-folder "]) {
+      expect(uploadSrc).toContain(label);
+    }
+  });
+});

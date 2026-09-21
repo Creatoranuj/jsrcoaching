@@ -943,37 +943,41 @@ const AdminUpload = () => {
                                 </div>
                               </div>
                             ) : (
-                              <div className="p-4 flex items-center gap-2">
-                                {handle}
-                                <button
-                                  className="flex items-center gap-3 flex-1 text-left min-h-[44px]"
-                                  onClick={() => setSelectedChapterId(ch.id)}
-                                >
-                                  {ch.thumbnail_url ? (
-                                    <img src={ch.thumbnail_url} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0" />
-                                  ) : (
-                                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground shrink-0">
-                                      {ch.position || "—"}
-                                    </div>
-                                  )}
-                                  <p className="font-medium text-sm">{ch.title}</p>
-                                </button>
-                                <div className="flex items-center gap-1 ml-auto">
+                              <div className="p-4 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  {handle}
+                                  <button
+                                    className="flex items-center gap-3 flex-1 min-w-0 text-left min-h-[44px]"
+                                    onClick={() => setSelectedChapterId(ch.id)}
+                                  >
+                                    {ch.thumbnail_url ? (
+                                      <img src={ch.thumbnail_url} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0" />
+                                    ) : (
+                                      <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground shrink-0">
+                                        {ch.position || "—"}
+                                      </div>
+                                    )}
+                                    <p className="font-medium text-sm truncate">{ch.title}</p>
+                                  </button>
+                                </div>
+                                <div className="flex items-center justify-end gap-1 shrink-0 self-end sm:self-auto sm:ml-auto">
                                   <Button
                                     variant="ghost" size="icon"
-                                    className="h-10 w-10 text-primary hover:bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    aria-label={`Edit chapter ${ch.title}`}
+                                    className="h-10 w-10 shrink-0 text-primary hover:bg-primary/10 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100"
                                     onClick={(e) => { e.stopPropagation(); handleOpenChapterEdit(ch); }}
                                   >
                                     <Pencil className="h-3.5 w-3.5" />
                                   </Button>
                                   <Button
                                     variant="ghost" size="icon"
-                                    className="h-10 w-10 text-destructive hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    aria-label={`Delete chapter ${ch.title}`}
+                                    className="h-10 w-10 shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100"
                                     onClick={(e) => { e.stopPropagation(); handleDeleteChapter(ch.id, ch.title); }}
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </Button>
-                                  <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-primary" />
+                                  <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground group-hover:text-primary" />
                                 </div>
                               </div>
                             )}
@@ -1058,19 +1062,19 @@ const AdminUpload = () => {
                             </div>
                           </div>
                         ) : (
-                          <div className="p-3 flex items-center gap-2 min-h-[52px]">
-                            <button className="flex items-center gap-2 flex-1 text-left" onClick={() => setSelectedChapterId(sc.id)}>
-                              <FolderOpen className="h-4 w-4 text-primary/60" />
+                          <div className="p-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2 min-h-[52px]">
+                            <button className="flex items-center gap-2 flex-1 min-w-0 text-left" onClick={() => setSelectedChapterId(sc.id)}>
+                              <FolderOpen className="h-4 w-4 shrink-0 text-primary/60" />
                               <span className="text-sm font-medium flex-1 truncate">{sc.code} : {sc.title}</span>
                             </button>
-                            <div className="flex items-center gap-0.5 ml-auto">
-                              <Button variant="ghost" size="icon" className="h-9 w-9 text-primary hover:bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => { e.stopPropagation(); handleOpenChapterEdit(sc); }}>
+                            <div className="flex items-center justify-end gap-0.5 shrink-0 self-end sm:self-auto sm:ml-auto">
+                              <Button variant="ghost" size="icon" aria-label={`Edit sub-folder ${sc.title}`} className="h-9 w-9 shrink-0 text-primary hover:bg-primary/10 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100" onClick={(e) => { e.stopPropagation(); handleOpenChapterEdit(sc); }}>
                                 <Pencil className="h-3 w-3" />
                               </Button>
-                              <Button variant="ghost" size="icon" className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => { e.stopPropagation(); handleDeleteChapter(sc.id, sc.title); }}>
+                              <Button variant="ghost" size="icon" aria-label={`Delete sub-folder ${sc.title}`} className="h-9 w-9 shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100" onClick={(e) => { e.stopPropagation(); handleDeleteChapter(sc.id, sc.title); }}>
                                 <Trash2 className="h-3 w-3" />
                               </Button>
-                              <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary" />
+                              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-primary" />
                             </div>
                           </div>
                         )}
