@@ -73,7 +73,10 @@ BEGIN
     FROM pg_policies
    WHERE schemaname = 'public'
      AND cmd IN ('INSERT', 'UPDATE', 'DELETE', 'ALL')
-     AND btrim(coalesce(with_check, qual, '')) IN ('true', '(true)');
+     AND btrim(coalesce(with_check, qual, '')) IN ('true', '(true)')
+     -- service_role bypasses RLS anyway, so a permissive service_role-only
+     -- policy is not an open door; exclude it to avoid a false alarm.
+     AND NOT (roles <@ ARRAY['service_role']::name[]);
 
   BEGIN
     SELECT count(*) INTO v_regressions FROM public.audit_security_policies();
