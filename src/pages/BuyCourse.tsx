@@ -20,6 +20,7 @@ import { resolveContentUrl } from "../lib/resolveContentUrl";
 import { withTimeout, isOnline } from "../lib/supabaseHelpers";
 import { safeGet, safeSet, safeRemove } from "../lib/storage";
 import { rememberPendingPayment } from "../lib/pendingPayment";
+import { settlePayment, dismissSafetyCheck } from "@/lib/paymentEngine";
 import { markEnrollmentChanged } from "@/lib/enrollmentFreshness";
 import { logger } from "@/lib/logger";
 import { loadBuildStamp, formatBuildStamp } from "@/lib/buildStamp";
@@ -209,10 +210,9 @@ const BuyCourse = () => {
   }, [isNative, isIosNative]);
 
 
-  // Mount guard for navigate()-after-await. Without this, the 1500ms delayed
-  // redirect after Razorpay verification fires on an unmounted component if
-  // the user dismisses/closes mid-flow — produces a spurious navigation
-  // and a setState-on-unmounted warning.
+  // Mount guard for setState()/navigate()-after-await. The settlement engine
+  // awaits the server; if the student backed out mid-flow we must not touch
+  // state on an unmounted page.
   const isMountedRef = useRef(true);
   // One silent native retry per purchase attempt. A failed sheet launch must
   // retry IN THE APP — never hand the student off to a browser automatically.
@@ -227,13 +227,9 @@ const BuyCourse = () => {
    * tell WHY the sheet did not open.
    */
   const [payDiag, setPayDiag] = useState<string | null>(null);
-  const redirectTimerRef = useRef<number | null>(null);
   useEffect(() => {
     return () => {
       isMountedRef.current = false;
-      if (redirectTimerRef.current !== null) {
-        window.clearTimeout(redirectTimerRef.current);
-      }
     };
   }, []);
 
@@ -665,6 +661,14 @@ const BuyCourse = () => {
       try {
         setPayMode("native");
         void tapMedium();
+        // Remember the purchase on THIS device before the sheet opens. If the
+        // app is killed mid-UPI, `usePaymentResume` finishes the job on the
+        // next open; the settlement engine clears it once enrollment lands.
+        rememberPendingPayment({
+          courseId: Number(courseId),
+          courseTitle: orderData.course_title ?? null,
+          orderId: orderData.order_id,
+        });
         const resp = await openNativeRazorpayCheckout({
           ...sharedOpts,
           // Test keys get Razorpay's default sheet layout (see
@@ -704,6 +708,7 @@ const BuyCourse = () => {
         }
         if (e instanceof RazorpayCancelledError) {
           toast.info("Payment cancelled. You can try again whenever you're ready.");
+          void settleAfterDismiss();
         } else if (e instanceof RazorpaySheetUnresponsiveError) {
           // The native sheet stayed on top for the whole wait ceiling without
           // a result. Deliberately NO web fallback here — a second checkout
@@ -740,6 +745,11 @@ const BuyCourse = () => {
     }
 
     try {
+      rememberPendingPayment({
+        courseId: Number(courseId),
+        courseTitle: orderData.course_title ?? null,
+        orderId: orderData.order_id,
+      });
       await openRazorpayCheckout({
         ...sharedOpts,
         handler: async (response: RazorpaySuccessResponse) => {
@@ -762,6 +772,7 @@ const BuyCourse = () => {
         modal: {
           ondismiss: () => {
             toast.info("Payment cancelled. You can try again whenever you're ready.");
+            void settleAfterDismiss();
           },
         },
       });
@@ -794,63 +805,66 @@ const BuyCourse = () => {
     });
   };
 
+  /** Where every confirmed (or very-likely-confirmed) purchase lands. */
+  const goToCourse = () => {
+    if (!isMountedRef.current) return;
+    navigate(`/my-courses/${courseId}?payment=success`, {
+      replace: true,
+      state: { justPurchased: Number(courseId) },
+    });
+  };
+
+  const celebrateEnrollment = () => {
+    playSuccessSound();
+    void notifySuccess();
+    showEnrollmentToast();
+    if (user && courseId) clearIdemKey(user.id, String(courseId));
+    if (isMountedRef.current) setStep("razorpay-success");
+  };
+
+  /**
+   * Sheet success → settlement engine → My Courses. No artificial wait: the
+   * success toast rides along to the next screen. On "pending" (verify timed
+   * out but money is very likely captured) the student is still moved to the
+   * course page, where `usePaymentSync` shows "Syncing your course…" and
+   * polls on the rate-limit-safe schedule — never stranded on the pay page.
+   */
   const verifyRazorpayPayment = async (response: RazorpaySuccessResponse) => {
-    try {
-      await invokePaymentFunction("verify-razorpay-payment", {
-        razorpay_order_id: response.razorpay_order_id,
-        razorpay_payment_id: response.razorpay_payment_id,
-        razorpay_signature: response.razorpay_signature,
-        course_id: Number(courseId),
-      });
+    const result = await settlePayment({
+      courseId: Number(courseId),
+      userId: user?.id ?? null,
+      response,
+    });
 
-      playSuccessSound();
-      void notifySuccess();
-      markEnrollmentChanged(courseId, user?.id);
-      showEnrollmentToast();
-      setStep("razorpay-success");
-      if (user && courseId) clearIdemKey(user.id, String(courseId));
-      redirectTimerRef.current = window.setTimeout(() => {
-        if (isMountedRef.current) navigate(`/my-courses/${courseId}?payment=success`, { replace: true, state: { justPurchased: Number(courseId) } });
-      }, 600);
-
-    } catch (error: unknown) {
-      logger.error("Verification error:", error);
-      const apiErr = error instanceof PaymentApiError ? error : undefined;
-      const msg = errorMessage(error, "razorpay_unreachable");
-      const unreachable =
-        msg === "razorpay_unreachable" || apiErr?.status === 503;
-      // Verification timed out / 5xx / Razorpay unreachable but the money is
-      // very likely captured — reconcile before showing any failure.
-      if (apiErr?.code === "TIMEOUT" || unreachable || (apiErr?.status && apiErr.status >= 500)) {
-        toast.info("Confirming with server...");
-        // One explicit retry with a short backoff — the webhook may still be
-        // in flight when the first reconcile runs.
-        let recovered = await attemptReconcile(Number(courseId));
-        if (!recovered) {
-          await new Promise((r) => setTimeout(r, 2500));
-          recovered = await attemptReconcile(Number(courseId));
-        }
-        if (recovered) {
-          playSuccessSound();
-          void notifySuccess();
-          markEnrollmentChanged(courseId, user?.id);
-          showEnrollmentToast();
-          if (user && courseId) clearIdemKey(user.id, String(courseId));
-          navigate(`/my-courses/${courseId}?payment=success`, { replace: true, state: { justPurchased: Number(courseId) } });
-          return;
-        }
-        void notifyError();
-        toast.error(
-          "We couldn't confirm your payment right now. If your money was deducted, enrollment will happen automatically via webhook — please check My Courses in a few minutes."
-        );
-        return;
-      }
-      void notifyError();
-      toast.error(
-        errorMessage(error, "Payment verification failed. Please contact support.") +
-          " If payment was captured, enrollment will happen automatically via webhook."
-      );
+    if (result.outcome === "enrolled") {
+      celebrateEnrollment();
+      goToCourse();
+      return;
     }
+
+    if (result.outcome === "pending") {
+      toast.info(
+        "Payment mil gaya — server se confirm ho raha hai. Paisa surakshit hai, dobara pay mat karna.",
+        { duration: 6000 },
+      );
+      goToCourse();
+      return;
+    }
+
+    void notifyError();
+    toast.error(result.reason ?? "Payment verification failed. Please contact support.");
+  };
+
+  /**
+   * Sheet dismissed → ONE quiet server check. UPI intent flows can finish
+   * inside the UPI app even when the sheet reports "cancelled"; if the money
+   * landed we celebrate and redirect instead of letting the student pay twice.
+   */
+  const settleAfterDismiss = async () => {
+    const recovered = await dismissSafetyCheck(Number(courseId), user?.id ?? null);
+    if (!recovered) return;
+    celebrateEnrollment();
+    goToCourse();
   };
 
 

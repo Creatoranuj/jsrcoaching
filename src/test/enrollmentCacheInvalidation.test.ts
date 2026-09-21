@@ -24,15 +24,22 @@ describe("enrollment cache invalidation", () => {
 
   it("every enrollment success path in BuyCourse refreshes the caches", () => {
     // free enrollment, already-enrolled, recovered-on-open,
-    // ALREADY_ENROLLED/ALREADY_PAID, verify success, recovery after verify
+    // ALREADY_ENROLLED/ALREADY_PAID — verify success + recovery-after-verify
+    // now live in the settlement engine (src/lib/paymentEngine.ts).
     const calls = buyCourse.match(/markEnrollmentChanged\(/g) ?? [];
-    expect(calls.length).toBeGreaterThanOrEqual(6);
+    expect(calls.length).toBeGreaterThanOrEqual(4);
+    const engine = read("src/lib/paymentEngine.ts");
+    expect(engine).toContain("markEnrollmentChanged(");
+    expect(engine).toContain("clearPendingPayment()");
   });
 
-  it("redirect after a successful payment is not artificially slow", () => {
-    const m = buyCourse.match(/payment=success[\s\S]{0,200}?\}, (\d+)\);/);
-    expect(m).not.toBeNull();
-    expect(Number(m![1])).toBeLessThanOrEqual(800);
+  it("redirect after a successful payment is immediate (no artificial wait)", () => {
+    const delayed = buyCourse.match(/payment=success[\s\S]{0,200}?\}, (\d+)\);/g) ?? [];
+    for (const m of delayed) {
+      const n = Number(/\}, (\d+)\);$/.exec(m)?.[1] ?? 0);
+      expect(n).toBeLessThanOrEqual(800);
+    }
+    expect(buyCourse).not.toContain("redirectTimerRef");
   });
 
   const paymentSync = read("src/hooks/usePaymentSync.ts");

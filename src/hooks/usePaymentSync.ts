@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { waitForEnrollment } from "@/utils/reconcileEnrollment";
 import { markEnrollmentChanged } from "@/lib/enrollmentFreshness";
+import { clearPendingPayment } from "@/lib/pendingPayment";
 
 interface Options {
   /** Course being opened right after checkout. */
@@ -60,6 +61,7 @@ export function usePaymentSync({ courseId, hasPurchased, loading, refetch }: Opt
     celebratedRef.current = true;
     setSyncing(false);
     markEnrollmentChanged(courseId, user?.id);
+    clearPendingPayment();
     toast.success("🎉 Course unlocked — happy learning!");
     stripParam();
      
@@ -78,6 +80,7 @@ export function usePaymentSync({ courseId, hasPurchased, loading, refetch }: Opt
       if (cancelled) return;
       if (result === "recovered") {
         markEnrollmentChanged(courseId, user?.id);
+        clearPendingPayment();
         await refetchRef.current();
         return;
       }

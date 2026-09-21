@@ -33,15 +33,26 @@ const PaymentResume = (): null => {
 export const usePaymentResume = (): void => {
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const runningRef = useRef(false);
-  // /payment-callback runs its own poll with a dedicated screen. Two pollers
-  // would double the calls (straight into the rate limiter) and fight over
-  // the redirect.
+  // ONE poller at a time. These pages own the purchase while they are on
+  // screen, each with its own dedicated UI:
+  //   /payment-callback  → browser-UPI return screen (its own poll)
+  //   /buy-course/*      → the settlement engine (verify + quick reconcile);
+  //                        the in-app sheet backgrounds the app for the UPI
+  //                        hop, and a resume poll firing on that foreground
+  //                        would race the engine and burn the rate budget.
+  //   /my-courses/:id?payment=success → usePaymentSync's syncing gate.
+  // Two pollers double the calls (straight into the 5/60 s limiter) and fight
+  // over the redirect.
   const onCallbackPage = pathname.startsWith("/payment-callback");
+  const onBuyPage = pathname.startsWith("/buy-course");
+  const onSyncGate =
+    pathname.startsWith("/my-courses/") && new URLSearchParams(search).get("payment") === "success";
+  const anotherPollerOwnsIt = onCallbackPage || onBuyPage || onSyncGate;
 
   useEffect(() => {
-    if (!isAuthenticated || onCallbackPage) return;
+    if (!isAuthenticated || anotherPollerOwnsIt) return;
 
     let cancelled = false;
 
@@ -107,7 +118,7 @@ export const usePaymentResume = (): void => {
       window.removeEventListener("focus", onVisible);
       toast.dismiss("payment-resume");
     };
-  }, [isAuthenticated, onCallbackPage, navigate]);
+  }, [isAuthenticated, anotherPollerOwnsIt, navigate]);
 };
 
 export default PaymentResume;

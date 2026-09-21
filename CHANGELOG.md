@@ -7,6 +7,38 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [v1.12.0] — 2026-09-21
+
+### Added
+- **Post-payment settlement engine** (`src/lib/paymentEngine.ts`). One brain for
+  "the sheet closed, now what?": server verify → enrolled → caches dropped →
+  redirect to My Courses **immediately** (no artificial wait). Verify timed out
+  / 5xx → two bounded reconcile calls → "pending" hands the student to the
+  course page's "Syncing your course…" gate instead of stranding them on the
+  payment page. Hard 4xx (bad signature, refunded) is the only real failure.
+- **Single-flight settlement.** Duplicate handler calls for the same Razorpay
+  order share one promise — verify is never raced against itself.
+- **Dismiss safety check.** A dismissed sheet triggers exactly one quiet
+  server check (UPI intent flows can finish inside the UPI app). Money landed →
+  celebrate + redirect; genuine cancel → device reminder cleared so resume never
+  shows a false "payment mil gaya" toast.
+- The in-app checkout (native + web) now remembers the purchase on the device
+  **before** the sheet opens, so an app killed mid-UPI is finished by
+  `usePaymentResume` on the next open. The reminder is cleared the moment the
+  server confirms.
+
+### Changed
+- `usePaymentResume` no longer polls while `/buy-course/*`, `/payment-callback`
+  or `/my-courses/:id?payment=success` own the purchase — one poller at a time,
+  so the 5-calls/60 s limiter is never tripped by two loops.
+- `usePaymentSync` clears the device reminder once the server confirms.
+
+### Verified
+- 881 unit/integration tests pass (6 skipped); `tsc --noEmit` clean; ESLint
+  clean on touched files. New: `src/test/paymentEngine.test.ts` (14 tests).
+
+---
+
 ## [v1.9.0] — 2026-09-20
 
 ### Fixed
