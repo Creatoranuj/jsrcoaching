@@ -139,20 +139,51 @@ test.describe("PDF offline persistence (web/IndexedDB)", () => {
       await expect(item).toBeVisible({ timeout: 20000 });
     }
     await openUploadedItem(page);
-    await expect(page.locator("canvas").first()).toBeVisible({ timeout: 20000 });
+    const firstCanvas = page.locator("canvas").first();
+    await expect(firstCanvas).toBeVisible({ timeout: 20000 });
 
-    // Open AutoScroll FAB and pick the slowest speed.
-    await page.getByTestId("fab-autoscroll").click().catch(async () => {
-      await page.getByRole("button", { name: /auto.?scroll/i }).first().click();
-    });
-    await page.getByRole("button", { name: /0\.1/ }).first().click();
+    // The reader has two controls: the play FAB (data-testid
+    // "autoscroll-fab", aria-label "Start autoscroll") and a separate gear
+    // ("autoscroll-settings") that opens the speed sheet. The old spec
+    // pressed the FAB (which just started scrolling) and then waited forever
+    // for a "0.1" button that only lives inside the sheet. Both controls
+    // auto-hide 2.5 s after the document settles; a tap on the page surface
+    // brings them back.
+    const settings = page.getByTestId("autoscroll-settings");
+    const fab = page.getByTestId("autoscroll-fab");
+    const surface = page.locator("[data-reader-surface]").first();
+    const reveal = async () => {
+      if (await settings.isVisible().catch(() => false)) {
+        const clickable = await settings.evaluate((el) => getComputedStyle(el).pointerEvents !== "none");
+        if (clickable) return;
+      }
+      await surface.click({ position: { x: 40, y: 200 } });
+    };
 
-    const scroller = page
-      .locator('[data-pdf-scroll-root], .pdf-scroll, main')
-      .first();
-    const start = await scroller.evaluate((el) => el.scrollTop).catch(() => 0);
-    await page.waitForTimeout(3500);
-    const end = await scroller.evaluate((el) => el.scrollTop).catch(() => 0);
+    await reveal();
+    await settings.click({ timeout: 5000 });
+    const sheet = page.getByTestId("autoscroll-sheet");
+    await expect(sheet).toBeVisible({ timeout: 5000 });
+    await sheet.getByRole("button", { name: /^0\.1x$/ }).click();
+    await page.keyboard.press("Escape");
+    await expect(sheet).toBeHidden({ timeout: 5000 });
+
+    // Measure the element that actually scrolls the pages: the nearest
+    // scrollable ancestor of the first rendered page canvas.
+    const readScroll = () =>
+      firstCanvas.evaluate((c) => {
+        let el: HTMLElement | null = c.parentElement;
+        while (el && el.scrollHeight - el.clientHeight <= 2) el = el.parentElement;
+        return el ? el.scrollTop : window.scrollY;
+      });
+
+    const start = await readScroll();
+    await reveal();
+    await fab.click({ timeout: 5000 });
+    await expect(fab).toHaveAttribute("aria-pressed", "true", { timeout: 5000 });
+    // 0.1x ≈ 6 px/s — give it room to move a clearly measurable distance.
+    await page.waitForTimeout(4500);
+    const end = await readScroll();
     expect(end).toBeGreaterThan(start);
   });
 

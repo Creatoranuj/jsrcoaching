@@ -7,6 +7,18 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [v1.16.3] — 2026-09-21
+
+### CI — Playwright E2E (third pass, from run artifacts)
+- `pdf-offline › autoscroll`: drives the real controls — gear opens the speed
+  sheet, picks 0.1x, Escape closes it, play FAB starts — and measures the
+  pages' actual scroll container. The old spec pressed play first and then
+  waited for a speed chip that only exists inside the sheet.
+- `auth › dashboard within 20 s`: retries a submit click that landed before
+  the handler mounted and times only the attempt that navigated.
+
+---
+
 ## [v1.16.2] — 2026-09-21
 
 ### Fixed — My Library

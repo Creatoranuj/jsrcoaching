@@ -215,9 +215,17 @@ test.describe("Authenticated student", () => {
     await fillStable(page, "login-email", TEST_USER.email);
     await fillStable(page, "login-password", TEST_USER.password);
 
-    const startTime = Date.now();
-    await page.getByTestId("login-submit").click();
-    await page.waitForURL(AFTER_LOGIN, { timeout: 30_000 });
+    // The very first click can land before the form's submit handler is
+    // attached (same mount race `signIn()` retries around): the page then
+    // sits on /login with the fields still filled and nothing in flight.
+    // That is not a slow dashboard, so retry the click and time only the
+    // attempt that actually navigated.
+    let startTime = Date.now();
+    await expect(async () => {
+      startTime = Date.now();
+      await page.getByTestId("login-submit").click();
+      await page.waitForURL(AFTER_LOGIN, { timeout: 8_000 });
+    }).toPass({ timeout: 60_000, intervals: [500, 1_000] });
 
     expect(Date.now() - startTime).toBeLessThan(20_000);
   });
