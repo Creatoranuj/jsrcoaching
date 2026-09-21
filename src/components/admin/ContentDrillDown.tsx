@@ -22,8 +22,11 @@ import {
   ChevronRight, Video, FileText, BookOpen, Search,
   Trash2, ExternalLink, CheckCircle, Upload, ClipboardCheck,
   Lock, Unlock, Edit2, Hash, GripVertical, Plus, FolderOpen, Clock, Eye,
-  Paperclip, X, ImageIcon, ArrowUp, ArrowDown, Check,
+  Paperclip, X, ImageIcon, ArrowUp, ArrowDown, Check, ClipboardList,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { buildQuizDeepLink, lessonSupportsQuiz } from "@/features/admin-quiz/lib/quizDeepLink";
+
 import { toast } from "sonner";
 import { cn } from "../../lib/utils";
 import { useLessonPdfs, type LessonPdf } from "../../hooks/useLessonPdfs";
@@ -117,6 +120,19 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
   const [editAddingPdf, setEditAddingPdf] = useState(false);
 
   const selectedCourse = coursesList.find(c => c.id === selectedCourseId);
+  const navigate = useNavigate();
+
+  /** DPP/Test lesson → Quiz Manager, pre-filled with course, chapter and lesson. */
+  const openQuizForLesson = useCallback((lesson: { id: string; title: string; chapter_id?: string | null }) => {
+    navigate(buildQuizDeepLink({
+      lessonId: lesson.id,
+      lessonTitle: lesson.title,
+      courseId: selectedCourseId,
+      chapterId: lesson.chapter_id ?? selectedSubChapterId ?? selectedChapterId,
+      type: "dpp",
+    }));
+  }, [navigate, selectedCourseId, selectedChapterId, selectedSubChapterId]);
+
 
   useEffect(() => {
     if (!selectedCourseId) { setChapters([]); return; }
@@ -774,39 +790,42 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
                       />
                     </div>
                   ) : (
-                    <div className="flex items-center justify-between">
-                      <DragHandle handle={handle} label={ch.title} />
-                      <button onClick={() => setSelectedChapterId(ch.id)} className="flex items-center gap-3 flex-1 text-left min-w-0">
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <DragHandle handle={handle} label={ch.title} />
+                        <button onClick={() => setSelectedChapterId(ch.id)} className="flex items-center gap-3 flex-1 text-left min-w-0">
 
-                        <ChapterIcon url={ch.thumbnail_url} fallbackLabel={index + 1} className="w-8 h-8 shrink-0" />
-                        <FolderOpen className="h-4 w-4 text-primary" />
-                        <div>
-                          <p className="font-medium text-sm">{ch.title}</p>
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <span>{ch.code}</span>
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                              {chapterLessonCounts[ch.id] ?? "..."} lessons
-                            </Badge>
+                          <ChapterIcon url={ch.thumbnail_url} fallbackLabel={index + 1} className="w-8 h-8 shrink-0" />
+                          <FolderOpen className="h-4 w-4 text-primary shrink-0" />
+                          <div className="min-w-0">
+                            <p className="font-medium text-sm truncate">{ch.title}</p>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <span className="truncate">{ch.code}</span>
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0">
+                                {chapterLessonCounts[ch.id] ?? "..."} lessons
+                              </Badge>
+                            </div>
                           </div>
-                        </div>
-                      </button>
-                      <div className="flex items-center gap-0.5 shrink-0">
-                        <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-7 sm:w-7 sm:opacity-60 sm:group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); handleReorderChapter(ch.id, "up", chapters, false); }} disabled={index === 0}>
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-end gap-0.5 shrink-0 self-end sm:self-auto">
+                        <Button size="icon" variant="ghost" aria-label="Move subject up" className="h-9 w-9 shrink-0 sm:h-7 sm:w-7 sm:opacity-60 sm:group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); handleReorderChapter(ch.id, "up", chapters, false); }} disabled={index === 0}>
                           <ArrowUp className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                         </Button>
-                        <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-7 sm:w-7 sm:opacity-60 sm:group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); handleReorderChapter(ch.id, "down", chapters, false); }} disabled={index === chapters.length - 1}>
+                        <Button size="icon" variant="ghost" aria-label="Move subject down" className="h-9 w-9 shrink-0 sm:h-7 sm:w-7 sm:opacity-60 sm:group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); handleReorderChapter(ch.id, "down", chapters, false); }} disabled={index === chapters.length - 1}>
                           <ArrowDown className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                         </Button>
-                        <Button size="icon" variant="ghost" aria-label="Edit chapter" className="h-9 w-9 sm:h-7 sm:w-7 sm:opacity-60 sm:group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); setEditingChapterId(ch.id); setEditChapterTitle(ch.title); setEditChapterCode(ch.code); setEditChapterIcon(ch.thumbnail_url ?? ""); setEditChapterIconMode("url"); }}>
+                        <Button size="icon" variant="ghost" aria-label="Edit chapter" className="h-9 w-9 shrink-0 sm:h-7 sm:w-7 sm:opacity-60 sm:group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); setEditingChapterId(ch.id); setEditChapterTitle(ch.title); setEditChapterCode(ch.code); setEditChapterIcon(ch.thumbnail_url ?? ""); setEditChapterIconMode("url"); }}>
                           <Edit2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                         </Button>
-                        <Button size="icon" variant="ghost" aria-label="Delete chapter" className="h-9 w-9 sm:h-7 sm:w-7 text-destructive sm:opacity-60 sm:group-hover:opacity-100 transition-opacity" onClick={(e) => { e.stopPropagation(); handleDeleteChapter(ch.id); }}>
+                        <Button size="icon" variant="ghost" aria-label="Delete chapter" className="h-9 w-9 shrink-0 sm:h-7 sm:w-7 text-destructive sm:opacity-60 sm:group-hover:opacity-100 transition-opacity" onClick={(e) => { e.stopPropagation(); handleDeleteChapter(ch.id); }}>
                           <Trash2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                         </Button>
-                        <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+                        <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground group-hover:text-primary transition-colors" />
                       </div>
 
                     </div>
+
                   )
                   )}
                 </SortableCard>
@@ -934,32 +953,35 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
                     />
                   </div>
                 ) : (
-                  <div className="flex items-center justify-between">
-                    <DragHandle handle={handle} label={sc.title} />
-                    <button onClick={() => setSelectedSubChapterId(sc.id)} className="flex items-center gap-3 flex-1 text-left min-w-0">
-                      <ChapterIcon url={sc.thumbnail_url} fallbackLabel={idx + 1} className="w-7 h-7 shrink-0" />
-                      <FolderOpen className="h-4 w-4 text-primary shrink-0" />
-                      <div className="min-w-0">
-                        <p className="font-medium text-sm truncate">{sc.title}</p>
-                        <span className="text-xs text-muted-foreground">{sc.code}</span>
-                      </div>
-                    </button>
-                    <div className="flex items-center gap-0.5 shrink-0">
-                      <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-7 sm:w-7 sm:opacity-60 sm:group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); handleReorderChapter(sc.id, "up", subChapters, true); }} disabled={idx === 0}>
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <DragHandle handle={handle} label={sc.title} />
+                      <button onClick={() => setSelectedSubChapterId(sc.id)} className="flex items-center gap-3 flex-1 text-left min-w-0">
+                        <ChapterIcon url={sc.thumbnail_url} fallbackLabel={idx + 1} className="w-7 h-7 shrink-0" />
+                        <FolderOpen className="h-4 w-4 text-primary shrink-0" />
+                        <div className="min-w-0">
+                          <p className="font-medium text-sm truncate">{sc.title}</p>
+                          <span className="block truncate text-xs text-muted-foreground">{sc.code}</span>
+                        </div>
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-end gap-0.5 shrink-0 self-end sm:self-auto">
+                      <Button size="icon" variant="ghost" aria-label="Move chapter up" className="h-9 w-9 shrink-0 sm:h-7 sm:w-7 sm:opacity-60 sm:group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); handleReorderChapter(sc.id, "up", subChapters, true); }} disabled={idx === 0}>
                         <ArrowUp className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                       </Button>
-                      <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-7 sm:w-7 sm:opacity-60 sm:group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); handleReorderChapter(sc.id, "down", subChapters, true); }} disabled={idx === subChapters.length - 1}>
+                      <Button size="icon" variant="ghost" aria-label="Move chapter down" className="h-9 w-9 shrink-0 sm:h-7 sm:w-7 sm:opacity-60 sm:group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); handleReorderChapter(sc.id, "down", subChapters, true); }} disabled={idx === subChapters.length - 1}>
                         <ArrowDown className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                       </Button>
-                      <Button size="icon" variant="ghost" aria-label="Edit chapter" className="h-9 w-9 sm:h-7 sm:w-7 sm:opacity-60 sm:group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); setEditingChapterId(sc.id); setEditChapterTitle(sc.title); setEditChapterCode(sc.code); setEditChapterIcon(sc.thumbnail_url ?? ""); setEditChapterIconMode("url"); }}>
+                      <Button size="icon" variant="ghost" aria-label="Edit chapter" className="h-9 w-9 shrink-0 sm:h-7 sm:w-7 sm:opacity-60 sm:group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); setEditingChapterId(sc.id); setEditChapterTitle(sc.title); setEditChapterCode(sc.code); setEditChapterIcon(sc.thumbnail_url ?? ""); setEditChapterIconMode("url"); }}>
                         <Edit2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                       </Button>
-                      <Button size="icon" variant="ghost" aria-label="Delete chapter" className="h-9 w-9 sm:h-7 sm:w-7 text-destructive sm:opacity-60 sm:group-hover:opacity-100 transition-opacity" onClick={(e) => { e.stopPropagation(); handleDeleteChapter(sc.id); }}>
+                      <Button size="icon" variant="ghost" aria-label="Delete chapter" className="h-9 w-9 shrink-0 sm:h-7 sm:w-7 text-destructive sm:opacity-60 sm:group-hover:opacity-100 transition-opacity" onClick={(e) => { e.stopPropagation(); handleDeleteChapter(sc.id); }}>
                         <Trash2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                       </Button>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary" />
+                      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-primary" />
                     </div>
                   </div>
+
                 )
                 )}
               </SortableCard>
@@ -1202,9 +1224,15 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
                                 <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-7 sm:w-7" aria-label={`Open video for ${l.title} in a new tab`}><ExternalLink className="h-3.5 w-3.5" /></Button>
                               </a>
                             )}
+                            {lessonSupportsQuiz(l.lecture_type) && (
+                              <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-7 sm:w-7 text-primary" onClick={() => openQuizForLesson(l)} aria-label={`Create or edit quiz for ${l.title}`} title="Quiz banao / jodo">
+                                <ClipboardList className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
                             <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-7 sm:w-7" onClick={() => handleEditLesson(l)} aria-label={`Edit lesson ${l.title}`}>
                               <Edit2 className="h-3.5 w-3.5" />
                             </Button>
+
                             <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-7 sm:w-7 text-destructive" onClick={() => handleDeleteLesson(l.id)} aria-label={`Delete lesson ${l.title}`}>
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
@@ -1269,9 +1297,15 @@ const ContentDrillDown = ({ coursesList, onNavigateToUpload, onRefresh }: Conten
                               <Button size="icon" variant="ghost" className="min-h-11 min-w-11" aria-label={`Open video for ${l.title} in a new tab`}><ExternalLink className="h-4 w-4" /></Button>
                             </a>
                           )}
+                          {lessonSupportsQuiz(l.lecture_type) && (
+                            <Button size="icon" variant="ghost" className="min-h-11 min-w-11 text-primary" onClick={() => openQuizForLesson(l)} aria-label={`Create or edit quiz for ${l.title}`} title="Quiz banao / jodo">
+                              <ClipboardList className="h-4 w-4" />
+                            </Button>
+                          )}
                           <Button size="icon" variant="ghost" className="min-h-11 min-w-11" onClick={() => handleEditLesson(l)} aria-label={`Edit lesson ${l.title}`}>
                             <Edit2 className="h-4 w-4" />
                           </Button>
+
                           <Button size="icon" variant="ghost" className="min-h-11 min-w-11 text-destructive" onClick={() => handleDeleteLesson(l.id)} aria-label={`Delete lesson ${l.title}`}>
                             <Trash2 className="h-4 w-4" />
                           </Button>

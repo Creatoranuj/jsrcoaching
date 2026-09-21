@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { reportError } from "@/lib/sentry";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
+import { parseQuizDeepLink, findQuizForLesson } from "@/features/admin-quiz/lib/quizDeepLink";
+
 import { supabase } from "../integrations/supabase/client";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -49,6 +51,9 @@ type QuizAttemptRow = Tables<"quiz_attempts"> & { student_name?: string };
 const AdminQuizManager = () => {
   const confirmAction = useConfirm();
   const navigate = useNavigate();
+  const location = useLocation();
+  const appliedDeepLinkRef = useRef<string | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [courses, setCourses] = useState<CourseOption[]>([]);
@@ -202,6 +207,41 @@ const AdminQuizManager = () => {
     if (quiz.course_id) { fetchLessons(Number(quiz.course_id)); fetchChapters(Number(quiz.course_id)); }
     setView("create");
   };
+
+  // Deep link from the content manager: /admin/quiz?lessonId=…&courseId=…
+  // Existing quiz for that lesson opens for editing; otherwise the create
+  // form opens pre-filled. Runs once per link so admin edits aren't reset.
+  useEffect(() => {
+    if (loading) return;
+    const link = parseQuizDeepLink(location.search);
+    if (!link) return;
+    if (appliedDeepLinkRef.current === location.search) return;
+    appliedDeepLinkRef.current = location.search;
+
+    const existing = findQuizForLesson(quizzes, link.lessonId);
+    if (existing) {
+      openEditDetails(existing);
+      toast.info("Is lesson ka quiz pehle se hai — wahi khul gaya");
+      return;
+    }
+    setEditingDetailsId(null);
+    setQuizForm((prev) => ({
+      ...prev,
+      title: link.lessonTitle || prev.title,
+      type: link.type,
+      course_id: link.courseId,
+      lesson_id: link.lessonId,
+      chapter_id: link.chapterId,
+    }));
+    if (link.courseId) {
+      fetchLessons(Number(link.courseId));
+      fetchChapters(Number(link.courseId));
+    }
+    setView("create");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, quizzes, location.search]);
+
+
 
   const handleCreateQuiz = async () => {
     if (!quizForm.title.trim()) { toast.error("Title is required"); return; }

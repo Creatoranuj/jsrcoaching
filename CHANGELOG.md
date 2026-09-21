@@ -7,6 +7,27 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [v1.12.1] — 2026-09-21
+
+### Fixed
+- **Admin chapter rows no longer overlap on phones.** Subject and chapter rows
+  stack title-over-actions below `sm`, the title truncates instead of wrapping,
+  and every reorder/edit/delete button is `shrink-0` — the reorder arrows can no
+  longer be drawn on top of the chapter name (reported on a 411px device).
+- Reorder arrows in both lists now carry `aria-label`s.
+
+### Added
+- **DPP → Quiz shortcut.** DPP / DPP Attempt / Test lessons get a Quiz button in
+  the admin content manager that opens the Quiz Manager pre-filled with course,
+  chapter, lesson and type. If that lesson already has a quiz, the existing quiz
+  opens for editing instead of creating a duplicate
+  (`src/features/admin-quiz/lib/quizDeepLink.ts`).
+
+### Tests
+- `src/test/quizDeepLink.test.ts`, `src/test/adminRowLayout.test.ts`.
+
+---
+
 ## [v1.12.0] — 2026-09-21
 
 ### Added
