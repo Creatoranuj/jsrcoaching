@@ -31,8 +31,7 @@ import { cn } from "../lib/utils";
 import { Link } from "react-router-dom";
 import { useToast } from "../hooks/use-toast";
 import WhatsAppButton from "../components/common/WhatsAppButton";
-import { SmartImage } from "../components/common/SmartImage";
-import coursePlaceholder from "../assets/thumbnails/course-default.svg";
+import { CourseThumbnail } from "../components/common/CourseThumbnail";
 import { resolveContentUrls } from "../lib/resolveContentUrl";
 import { useEnrollmentArrival } from "../hooks/useEnrollmentArrival";
 import { formatGrade } from "../lib/formatGrade";
@@ -150,15 +149,13 @@ const CourseCard = memo(({ course, onNavigate, onDelete }: {
       type="button"
       onClick={() => { void selectionHaptic(); onNavigate(course.id); }}
       aria-label={`Open ${course.title} — ${course.progressPercent}% complete`}
-      className="relative aspect-[16/9] w-full bg-muted overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+      className="relative aspect-video w-full overflow-hidden bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
     >
-      <SmartImage
-        src={course.thumbnailUrl || course.imageUrl || coursePlaceholder}
+      <CourseThumbnail
+        src={course.thumbnailUrl || course.imageUrl}
         alt={course.title}
-        width={600}
-        height={338}
-        fallbackSrc={coursePlaceholder}
-            className="w-full h-full object-cover group-hover:scale-[1.04] transition-transform [transition-duration:600ms]"
+        className="absolute inset-0"
+        imageClassName="transition-transform group-hover:scale-[1.02] [transition-duration:600ms]"
       />
       {/* Gradient veil for legibility */}
       <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent pointer-events-none" />

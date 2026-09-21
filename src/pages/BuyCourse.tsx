@@ -28,6 +28,7 @@ import { logger } from "@/lib/logger";
 import { loadBuildStamp, formatBuildStamp } from "@/lib/buildStamp";
 import successSound from "@/assets/success.mp3.asset.json";
 import AccessCountdown from "../components/courses/AccessCountdown";
+import { CourseThumbnail } from "../components/common/CourseThumbnail";
 import { APP_LINK_HOSTS } from "@/config/deepLinks";
 import { useCourseAvailability } from "@/hooks/useCourseAvailability";
 
@@ -1041,14 +1042,13 @@ const BuyCourse = () => {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex gap-3 items-center rounded-xl border bg-muted/40 p-3">
-                  {course.imageUrl && (
-                    <img
-                      src={course.imageUrl}
-                      alt={course.title}
-                      loading="lazy"
-                      className="h-16 w-16 shrink-0 rounded-lg object-cover"
-                    />
-                  )}
+                  <CourseThumbnail
+                    src={course.thumbnailUrl || course.imageUrl}
+                    alt={course.title}
+                    className="w-28 shrink-0 rounded-lg"
+                    width={224}
+                    height={126}
+                  />
                   <div className="min-w-0">
                     <h2 className="truncate text-sm font-semibold">{course.title}</h2>
                     <p className="mt-0.5 text-xs text-muted-foreground">Lifetime access · Full course</p>

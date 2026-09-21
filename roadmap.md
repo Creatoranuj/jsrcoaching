@@ -52,3 +52,11 @@
 - [ ] OWNER: update `LOVABLE_API_KEY` in Supabase Edge Functions secrets if chat still shows "server key issue" after this redeploy.
 
 - [ ] Supabase project "Creatoranuj's Project" connect karna (chat se possible nahi — user ko Lovable UI: Project Settings > Connectors > Supabase)
+
+## 2026-09-21 — Course thumbnail display
+- [x] Add one crop-safe 16:9 course artwork frame with full-image display and soft background fill.
+- [x] Apply it to Dashboard, Courses, My Courses, course detail, checkout and admin upload preview.
+- [x] Prefer `thumbnail_url` over legacy `image_url` in the Courses catalog.
+- [x] Add 1280×720 guidance and non-blocking ratio warning to thumbnail upload.
+- [x] Verify typecheck and full automated suite (955 passed, 6 intentionally skipped).
+- [ ] Mobile/desktop live rendering will be confirmed after the repository commit is deployed.

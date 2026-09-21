@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { Breadcrumbs } from "../components/course/Breadcrumbs";
 import { ChapterCard } from "../components/course/ChapterCard";
 import { LectureRow } from "../components/course";
+import { CourseThumbnail } from "../components/common/CourseThumbnail";
 import { useLessonNotesCounts } from "../hooks/useLessonNotesCounts";
 import { LessonAttachmentsSheet } from "../components/lesson/LessonAttachmentsSheet";
 import { downloadAllLessonNotes } from "../utils/downloadLessonNotes";
@@ -992,7 +993,16 @@ const MyCourseDetail = () => {
           {/* ── STATE 1: Chapter grid ── */}
           {!selectedChapterId && !selectedLesson && (
             <>
-              <div className="sticky top-0 z-20 flex gap-6 px-5 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+              <div className="px-5 pt-4">
+                <CourseThumbnail
+                  src={course.thumbnailUrl || course.imageUrl}
+                  alt={course.title}
+                  className="mx-auto max-w-3xl rounded-lg border"
+                  priority
+                />
+                <h1 className="mx-auto mt-3 max-w-3xl text-xl font-bold text-foreground">{course.title}</h1>
+              </div>
+              <div className="sticky top-0 z-20 mt-4 flex gap-6 px-5 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
                 <button
                   onClick={() => setChapterTab("chapters")}
                   className={cn(

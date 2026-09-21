@@ -1,7 +1,9 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { Camera, FileUp, Link as LinkIcon, Loader2 } from "lucide-react";
+import { Camera, FileUp, Link as LinkIcon, Loader2, TriangleAlert } from "lucide-react";
+import { CourseThumbnail } from "@/components/common/CourseThumbnail";
+import { useEffect, useState } from "react";
 
 export interface ThumbnailUploadBlockProps {
   mode: "url" | "file";
@@ -34,6 +36,25 @@ export function ThumbnailUploadBlock({
   onDrop,
   onFilePicked,
 }: ThumbnailUploadBlockProps) {
+  const [selectedRatio, setSelectedRatio] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!thumbnailUrl) {
+      setSelectedRatio(null);
+      return;
+    }
+    const image = new Image();
+    image.onload = () => setSelectedRatio(image.naturalWidth / image.naturalHeight);
+    image.onerror = () => setSelectedRatio(null);
+    image.src = thumbnailUrl;
+    return () => {
+      image.onload = null;
+      image.onerror = null;
+    };
+  }, [thumbnailUrl]);
+
+  const ratioNeedsAttention = selectedRatio !== null && Math.abs(selectedRatio - 16 / 9) > 0.08;
+
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
@@ -77,7 +98,7 @@ export function ThumbnailUploadBlock({
             </div>
           ) : thumbnailFile && thumbnailUrl ? (
             <div className="flex flex-col items-center gap-2">
-              <img src={thumbnailUrl} alt="Thumbnail" className="w-32 h-20 object-cover rounded-lg border" />
+              <CourseThumbnail src={thumbnailUrl} alt="Thumbnail" className="w-full max-w-xs rounded-lg border" />
               <p className="text-xs text-primary font-medium">{thumbnailFile.name}</p>
               <p className="text-[10px] text-muted-foreground">Drop or tap to replace</p>
             </div>
@@ -86,6 +107,8 @@ export function ThumbnailUploadBlock({
               <Camera className="h-8 w-8 text-muted-foreground/50" />
               <p className="text-sm text-muted-foreground font-medium">Drag &amp; drop thumbnail image</p>
               <p className="text-xs text-muted-foreground">or tap to browse • JPG, PNG, WebP (max 10MB)</p>
+              <p className="mt-1 text-xs font-medium text-foreground">Best: 1280×720 px (16:9) • Minimum: 800×450 px</p>
+              <p className="text-[11px] text-muted-foreground">WebP/JPG preferred • target 200–500 KB</p>
             </div>
           )}
         </div>
@@ -93,9 +116,15 @@ export function ThumbnailUploadBlock({
         <>
           <Input placeholder="https://... thumbnail image URL" value={thumbnailUrl} onChange={e => onThumbnailUrlChange(e.target.value)} className="h-11" />
           {thumbnailUrl && (
-            <img src={thumbnailUrl} alt="Thumbnail preview" className="w-24 h-16 object-cover rounded-lg border mt-1" />
+            <CourseThumbnail src={thumbnailUrl} alt="Thumbnail preview" className="mt-2 w-full max-w-xs rounded-lg border" />
           )}
         </>
+      )}
+      {ratioNeedsAttention && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-foreground">
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <span>This image is not 16:9. It will still upload and display fully, but 1280×720 px will look larger and cleaner.</span>
+        </div>
       )}
     </div>
   );

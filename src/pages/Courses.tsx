@@ -71,7 +71,7 @@ const Courses = () => {
       // Storage objects that didn't survive the Supabase project migration
       // resolve to null — fall back to the branded placeholder.
       const signed = await resolveContentUrls(
-        rows.map((item) => item.image_url || item.thumbnail_url || null),
+        rows.map((item) => item.thumbnail_url || item.image_url || null),
       );
 
       return rows.map((item, i: number) => ({

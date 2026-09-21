@@ -38,6 +38,7 @@ describe("ThumbnailUploadBlock", () => {
     render(<ThumbnailUploadBlock {...base} />);
     expect(screen.getByText(/Drag & drop thumbnail image/)).toBeTruthy();
     expect(screen.getByText(/max 10MB/)).toBeTruthy();
+    expect(screen.getByText(/Best: 1280×720 px/)).toBeTruthy();
   });
 
   it("uploading ke waqt progress text dikhata hai", () => {

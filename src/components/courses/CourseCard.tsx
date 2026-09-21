@@ -1,12 +1,11 @@
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { BookOpen, Clock, Star, CheckCircle, PlayCircle, Lock } from "lucide-react";
-import { SmartImage } from "../common/SmartImage";
+import { CourseThumbnail } from "../common/CourseThumbnail";
 import { BuyGate } from "./BuyGate";
 import { cn } from "../../lib/utils";
 import { formatGrade } from "../../lib/formatGrade";
 
-import coursePlaceholder from "../../assets/thumbnails/course-default.svg";
 
 // ✅ Type Definitions
 export interface CourseProps {
@@ -60,15 +59,11 @@ const CourseCard = ({ course, onClick, isAdmin, onAdminEnroll, isEnrolling, isEn
       )}
     >
       {/* Cover — 16:9 with gradient veil + floating pills */}
-      <div className="relative aspect-[16/9] w-full overflow-hidden bg-muted">
-        <SmartImage
-          src={course.image_url || coursePlaceholder}
-          alt={course.title}
-          width={600}
-          height={338}
-          fallbackSrc={coursePlaceholder}
-          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
-        />
+      <CourseThumbnail
+        src={course.image_url}
+        alt={course.title}
+        imageClassName="transition-transform duration-500 group-hover:scale-[1.02]"
+      >
         {/* Gradient veil for text/badge legibility */}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
 
@@ -116,7 +111,7 @@ const CourseCard = ({ course, onClick, isAdmin, onAdminEnroll, isEnrolling, isEn
           </div>
         </div>
 
-      </div>
+      </CourseThumbnail>
 
       {/* Body */}
       <div className="flex flex-1 flex-col p-4">

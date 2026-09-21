@@ -24,8 +24,7 @@ import { useBatch } from "../contexts/BatchContext";
 import HeroCarousel from "../components/dashboard/HeroCarousel";
 import UpcomingSchedule from "../components/dashboard/UpcomingSchedule";
 import LiveBadge from "../components/live/LiveBadge";
-import { SmartImage } from "../components/common/SmartImage";
-import coursePlaceholder from "../assets/thumbnails/course-default.svg";
+import { CourseThumbnail } from "../components/common/CourseThumbnail";
 
 import UpcomingLiveSessions from "../components/live/UpcomingLiveSessions";
 import { Video } from "lucide-react";
@@ -413,19 +412,16 @@ const Dashboard = () => {
                 onClick={() => navigate(`/my-courses/${activeCourse.id}`)}
               >
                 <div className="flex flex-col sm:flex-row">
-                  <div className="sm:w-48 h-36 sm:h-auto bg-muted relative overflow-hidden flex-shrink-0">
-                    <SmartImage 
-                      src={activeCourse.thumbnailUrl || activeCourse.imageUrl || selectedBatch?.image_url || "/placeholder.svg"} 
-                      alt={activeCourse.title}
-                      width={600}
-                      height={320}
-                      fallbackSrc={coursePlaceholder}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
+                  <CourseThumbnail
+                    src={activeCourse.thumbnailUrl || activeCourse.imageUrl || selectedBatch?.image_url}
+                    alt={activeCourse.title}
+                    className="h-36 flex-shrink-0 sm:h-auto sm:w-48"
+                    imageClassName="transition-transform duration-500 group-hover:scale-[1.02]"
+                  >
                     <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                       <PlayCircle className="h-10 w-10 text-white" />
                     </div>
-                  </div>
+                  </CourseThumbnail>
                   <div className="p-4 flex-1 flex flex-col justify-center gap-2">
                     <div className="flex items-center justify-between">
                       <Badge variant="secondary" className="text-xs">
