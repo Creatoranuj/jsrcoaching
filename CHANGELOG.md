@@ -7,6 +7,27 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [v1.16.2] — 2026-09-21
+
+### Fixed — My Library
+- Tapping a file row now opens the file. Previously only the small "Open"
+  text button did; a tap on the name/icon did nothing.
+
+### CI — Playwright E2E (second pass, from run artifacts)
+- `pdf-offline`: after a reload the spec clicked the folder-switcher menu
+  trigger (labelled with the current folder name) instead of the folder card;
+  the open Radix menu swallowed every later click. The spec now checks the
+  breadcrumb, targets non-menu buttons, and opens documents via the row's
+  "Open" action.
+- `lesson-completion`: presses play (headless never autoplays) and accepts
+  the player's progress slider as proof the tracker mounted when the embed
+  cannot start in CI.
+- `learning-journey › quiz`: when `E2E_QUIZ_ID` is not attemptable by the
+  E2E account the app bounces to the dashboard; the spec now skips with the
+  reason instead of clicking the banner carousel for 45 s.
+
+---
+
 ## [v1.16.1] — 2026-09-21
 
 ### Fixed — My Library

@@ -50,18 +50,50 @@ function uploadedItem(page: Page) {
   return page.getByText(/^test(\.pdf)?$/i).first();
 }
 
+/**
+ * True when the breadcrumb already shows `name` — the folder is open.
+ * The header also renders a folder-switcher DropdownMenuTrigger whose label
+ * is the CURRENT folder name; `getByRole("button", { name }).first()` used
+ * to hit that trigger after a reload, opening a Radix menu that sets
+ * `pointer-events: none` on <body> and swallowed every later click
+ * ("<html> intercepts pointer events" in the CI trace).
+ */
+async function folderIsOpen(page: Page, name: string): Promise<boolean> {
+  return page
+    .getByRole("navigation")
+    .getByRole("button", { name: new RegExp(name, "i") })
+    .first()
+    .isVisible()
+    .catch(() => false);
+}
+
+/** A folder card — any matching button that is NOT a menu trigger. */
+function folderCard(page: Page, name: string) {
+  return page.locator("button:not([aria-haspopup])").filter({ hasText: new RegExp(name, "i") }).first();
+}
+
 async function ensureFolder(page: Page, name: string) {
-  // If folder already exists, just open it.
-  const existing = page.getByRole("button", { name: new RegExp(name, "i") }).first();
+  if (await folderIsOpen(page, name)) return;
+  const existing = folderCard(page, name);
   if (await existing.isVisible().catch(() => false)) {
     await existing.click();
-    return;
+  } else {
+    await page.getByRole("button", { name: /new folder/i }).first().click();
+    // Create Folder dialog: a single "Name" field plus colour swatches.
+    await page.getByRole("alertdialog").getByRole("textbox").first().fill(name);
+    await page.getByRole("button", { name: /^create$/i }).click();
+    await folderCard(page, name).click();
   }
-  await page.getByRole("button", { name: /new folder/i }).first().click();
-  // Create Folder dialog: a single "Name" field plus colour swatches.
-  await page.getByRole("alertdialog").getByRole("textbox").first().fill(name);
-  await page.getByRole("button", { name: /^create$/i }).click();
-  await page.getByRole("button", { name: new RegExp(name, "i") }).first().click();
+  await expect
+    .poll(() => folderIsOpen(page, name), { timeout: 10000, message: `folder "${name}" did not open` })
+    .toBe(true);
+}
+
+/** Open the uploaded document through its row's explicit "Open" action. */
+async function openUploadedItem(page: Page) {
+  const row = page.getByTestId("library-item").filter({ has: uploadedItem(page) }).first();
+  await expect(row).toBeVisible({ timeout: 10000 });
+  await row.getByRole("button", { name: /^open$/i }).click();
 }
 
 test.describe("PDF offline persistence (web/IndexedDB)", () => {
@@ -89,8 +121,8 @@ test.describe("PDF offline persistence (web/IndexedDB)", () => {
     // Hard reload — the critical assertion: blob must come back from IndexedDB.
     await page.reload();
     await openMyLibrary(page);
-    await page.getByRole("button", { name: /e2e test/i }).first().click();
-    await uploadedItem(page).click();
+    await ensureFolder(page, "E2E Test");
+    await openUploadedItem(page);
 
     // PDF.js renders pages into <canvas>. If the blob URL was dead we'd see
     // "Could not load PDF" instead.
@@ -106,7 +138,7 @@ test.describe("PDF offline persistence (web/IndexedDB)", () => {
       await pdfPicker(page).setInputFiles(FIXTURE);
       await expect(item).toBeVisible({ timeout: 20000 });
     }
-    await item.click();
+    await openUploadedItem(page);
     await expect(page.locator("canvas").first()).toBeVisible({ timeout: 20000 });
 
     // Open AutoScroll FAB and pick the slowest speed.

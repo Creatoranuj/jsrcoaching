@@ -377,9 +377,23 @@ export default function FolderView({ folder, allFolders, onRefreshOuter, sort = 
                   ? "relative flex flex-col gap-2 p-3 rounded-xl border bg-card hover:bg-accent/5 transition-colors"
                   : "flex items-center gap-3 p-3 bg-card hover:bg-accent/5 transition-colors") +
                 (isChecked ? (view === "grid" ? " border-primary/60 bg-primary/5" : " bg-primary/5") : "") +
-                (selectMode ? " cursor-pointer select-none active:scale-[0.99] transition-transform duration-150 ease-out" : "")
+                " cursor-pointer select-none" +
+                (selectMode ? " active:scale-[0.99] transition-transform duration-150 ease-out" : "")
               }
-              onClick={selectMode ? () => toggleSelect(it.id) : undefined}
+              data-testid="library-item"
+              onClick={(e) => {
+                if (selectMode) {
+                  toggleSelect(it.id);
+                  return;
+                }
+                // Tapping the row opens the file — students expect a file
+                // row to behave like one, not only the small "Open" text
+                // button. Controls inside the row (Open, priority, options
+                // menu, links) keep their own handlers.
+                const target = e.target as HTMLElement | null;
+                if (target?.closest("button, a, [role='menu'], [role='menuitem'], input")) return;
+                void handleOpen(it.id, it.title, it.file_name);
+              }}
               onContextMenu={(e) => {
                 if (selectMode) return;
                 e.preventDefault();
