@@ -7,6 +7,24 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [v1.14.0] — 2026-09-21
+
+### Added
+- **Backend Guardian (admin-only, read-only).** New `/admin/guardian` screen plus
+  `public.admin_guardian_snapshot()` (STABLE SECURITY DEFINER, `search_path =
+  public, pg_catalog`, raises `forbidden` 42501 for anon/non-admin). Reports live
+  proof per gate: RLS on every public table, enrollment INSERT policies that check
+  admin/payment, open write policies on `user_roles`, a stray `profiles.role`
+  column, public storage buckets, any policy with `USING/WITH CHECK true`,
+  SECURITY DEFINER functions missing `search_path`, `cron.job` activity,
+  `audit_security_policies()` regressions, completed Razorpay payments without a
+  matching enrollment, and the 8 largest tables (free-tier bandwidth watch).
+  Guard: `src/test/admin-guardian-gates.test.ts` (7 cases) asserts every gate
+  turns red on its own failure shape. No Capacitor plugin change, so no
+  `cap sync` needed.
+
+---
+
 ## [v1.13.1] — 2026-09-22
 
 ### Fixed

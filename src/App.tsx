@@ -132,6 +132,7 @@ const AdminAppUpdate = lazyWithRetry(() => import("./pages/AdminAppUpdate"));
 const AdminReleases = lazyWithRetry(() => import("./pages/AdminReleases"));
 const AdminPdfHealth = lazyWithRetry(() => import("./pages/AdminPdfHealth"));
 const AdminAiHealth = lazyWithRetry(() => import("./pages/AdminAiHealth"));
+const AdminGuardian = lazyWithRetry(() => import("./pages/AdminGuardian"));
 const AdminUsers = lazyWithRetry(() => import("./pages/AdminUsers"));
 const AdminStudentDetail = lazyWithRetry(() => import("./pages/AdminStudentDetail"));
 const AdminModeration = lazyWithRetry(() => import("./pages/AdminModeration"));
@@ -430,6 +431,7 @@ const App = () => (
                     <Route path="/admin/releases" element={<AdminRoute element={<AdminReleases />} />} />
                     <Route path="/admin/pdf-health" element={<AdminRoute element={<AdminPdfHealth />} />} />
                     <Route path="/admin/ai-health" element={<AdminRoute element={<AdminAiHealth />} />} />
+                    <Route path="/admin/guardian" element={<AdminRoute element={<AdminGuardian />} />} />
                     <Route path="/admin/security" element={<AdminRoute element={<AdminSecurity />} />} />
                     <Route path="/admin/system" element={<AdminRoute element={<AdminSystem />} />} />
                     <Route path="/admin/users" element={<AdminRoute element={<AdminUsers />} />} />
