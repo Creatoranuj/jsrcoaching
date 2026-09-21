@@ -36,6 +36,7 @@ import coursePlaceholder from "../assets/thumbnails/course-default.svg";
 import { resolveContentUrls } from "../lib/resolveContentUrl";
 import { useEnrollmentArrival } from "../hooks/useEnrollmentArrival";
 import { formatGrade } from "../lib/formatGrade";
+import { MYCOURSES_CACHE_PREFIX } from "@/lib/enrollmentFreshness";
 
 
 
@@ -291,7 +292,7 @@ const CourseCard = memo(({ course, onNavigate, onDelete }: {
 });
 CourseCard.displayName = "CourseCard";
 
-const CACHE_PREFIX = "nb_mycourses_v1_";
+const CACHE_PREFIX = MYCOURSES_CACHE_PREFIX;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const FOCUS_REFETCH_MS = 60_000;
 

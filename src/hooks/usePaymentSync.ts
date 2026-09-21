@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { recoverEnrollment } from "@/utils/paymentApi";
-import { logger } from "@/lib/logger";
-
-const POLL_INTERVAL_MS = 3000;
-const MAX_POLLS = 15; // ~45s window for a late webhook
+import { useAuth } from "@/contexts/AuthContext";
+import { waitForEnrollment } from "@/utils/reconcileEnrollment";
+import { markEnrollmentChanged } from "@/lib/enrollmentFreshness";
 
 interface Options {
   /** Course being opened right after checkout. */
@@ -24,11 +22,16 @@ interface Options {
  * Access is NEVER granted from the frontend success callback. When the user
  * lands on `/my-courses/:id?payment=success`, this hook keeps a syncing state
  * on until the *server* confirms the enrollment (idempotent `recover-enrollment`
- * + query refetch). Self-limits to ~45s and issues zero extra requests on a
- * normal visit (no `payment=success` param).
+ * + query refetch). Zero extra requests on a normal visit (no `payment=success`).
+ *
+ * Polling goes through the shared `waitForEnrollment` schedule. The old
+ * hand-rolled 3 s loop burned the server's 5 calls / 60 s rate limit inside
+ * ~15 s, and every rejected call looked like "not enrolled yet" — the exact
+ * window a slow UPI settlement misses.
  */
 export function usePaymentSync({ courseId, hasPurchased, loading, refetch }: Options) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { user } = useAuth();
   const isPaymentReturn = searchParams.get("payment") === "success";
 
   const [syncing, setSyncing] = useState(isPaymentReturn);
@@ -56,48 +59,41 @@ export function usePaymentSync({ courseId, hasPurchased, loading, refetch }: Opt
     if (!isPaymentReturn || !hasPurchased || celebratedRef.current) return;
     celebratedRef.current = true;
     setSyncing(false);
+    markEnrollmentChanged(courseId, user?.id);
     toast.success("🎉 Course unlocked — happy learning!");
     stripParam();
      
-  }, [isPaymentReturn, hasPurchased]);
+  }, [isPaymentReturn, hasPurchased, courseId, user?.id]);
 
   // Reconcile loop — only while we're waiting for the webhook to land.
   useEffect(() => {
     if (!isPaymentReturn || hasPurchased || loading || !courseId) return;
     let cancelled = false;
-    let polls = 0;
-    let timer = 0;
     setSyncing(true);
 
-    const tick = async () => {
+    void (async () => {
+      const result = await waitForEnrollment(courseId, {
+        isCancelled: () => cancelled,
+      });
       if (cancelled) return;
-      polls += 1;
-      try {
-        await recoverEnrollment(courseId);
-      } catch (err) {
-        logger.warn("[payment-sync] recover failed", err);
-      }
-      if (cancelled) return;
-      await refetchRef.current();
-      if (cancelled) return;
-      if (polls >= MAX_POLLS) {
-        setSyncing(false);
-        toast.info(
-          "Still confirming your payment. If the amount was deducted, access unlocks automatically — please check back in a few minutes.",
-        );
-        stripParam();
+      if (result === "recovered") {
+        markEnrollmentChanged(courseId, user?.id);
+        await refetchRef.current();
         return;
       }
-      timer = window.setTimeout(tick, POLL_INTERVAL_MS);
-    };
+      if (result === "cancelled") return;
+      setSyncing(false);
+      toast.info(
+        "Still confirming your payment. If the amount was deducted, access unlocks automatically — please check back in a few minutes.",
+      );
+      stripParam();
+    })();
 
-    timer = window.setTimeout(tick, 800);
     return () => {
       cancelled = true;
-      window.clearTimeout(timer);
     };
      
-  }, [isPaymentReturn, hasPurchased, loading, courseId]);
+  }, [isPaymentReturn, hasPurchased, loading, courseId, user?.id]);
 
   return { syncing: syncing && !hasPurchased };
 }

@@ -20,6 +20,7 @@ import { resolveContentUrl } from "../lib/resolveContentUrl";
 import { withTimeout, isOnline } from "../lib/supabaseHelpers";
 import { safeGet, safeSet, safeRemove } from "../lib/storage";
 import { rememberPendingPayment } from "../lib/pendingPayment";
+import { markEnrollmentChanged } from "@/lib/enrollmentFreshness";
 import { logger } from "@/lib/logger";
 import { loadBuildStamp, formatBuildStamp } from "@/lib/buildStamp";
 import successSound from "@/assets/success.mp3.asset.json";
@@ -264,6 +265,7 @@ const BuyCourse = () => {
       if (error) throw error;
 
       playSuccessSound();
+      markEnrollmentChanged(courseIdNum, user.id);
       toast.success("Free enrollment successful! Starting your course...");
       navigate(`/my-courses`);
     } catch (error: unknown) {
@@ -287,6 +289,7 @@ const BuyCourse = () => {
           .maybeSingle();
 
         if (enrollment) {
+          markEnrollmentChanged(courseId, user.id);
           toast.info("You're already enrolled in this course!", { id: "already-enrolled" });
           navigate(`/my-courses`);
           return;
@@ -309,6 +312,7 @@ const BuyCourse = () => {
 
             if (ok) {
               playSuccessSound();
+              markEnrollmentChanged(courseId, user.id);
               toast.success("🎉 Enrollment recovered! You are now enrolled.");
               navigate(`/my-courses`);
               return;
@@ -530,6 +534,7 @@ const BuyCourse = () => {
       // send them straight to the course instead of letting them pay twice.
       if (apiError?.code === "ALREADY_ENROLLED" || apiError?.code === "ALREADY_PAID") {
         toast.info(apiError.message);
+        markEnrollmentChanged(courseId, user.id);
         clearIdemKey(user.id, String(courseId));
         if (apiError.code === "ALREADY_PAID") void attemptReconcile(Number(courseId));
         navigate(`/my-courses/${courseId}?payment=success`, { replace: true, state: { justPurchased: Number(courseId) } });
@@ -800,12 +805,13 @@ const BuyCourse = () => {
 
       playSuccessSound();
       void notifySuccess();
+      markEnrollmentChanged(courseId, user?.id);
       showEnrollmentToast();
       setStep("razorpay-success");
       if (user && courseId) clearIdemKey(user.id, String(courseId));
       redirectTimerRef.current = window.setTimeout(() => {
         if (isMountedRef.current) navigate(`/my-courses/${courseId}?payment=success`, { replace: true, state: { justPurchased: Number(courseId) } });
-      }, 1500);
+      }, 600);
 
     } catch (error: unknown) {
       logger.error("Verification error:", error);
@@ -827,6 +833,7 @@ const BuyCourse = () => {
         if (recovered) {
           playSuccessSound();
           void notifySuccess();
+          markEnrollmentChanged(courseId, user?.id);
           showEnrollmentToast();
           if (user && courseId) clearIdemKey(user.id, String(courseId));
           navigate(`/my-courses/${courseId}?payment=success`, { replace: true, state: { justPurchased: Number(courseId) } });
