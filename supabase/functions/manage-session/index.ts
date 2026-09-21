@@ -84,10 +84,14 @@ async function handle(req: Request, corsHeaders: Record<string, string>): Promis
 
   // ── CREATE ──────────────────────────────────────────────────────────────────
   if (action === "create") {
-    // 1. Count current active sessions
+    // 1. Active sessions for this user.
+    // PERF 2026-09-21: this used to be TWO selects per login (list +
+    // same-device lookup) - together the #1 slow query on the project.
+    // One select now carries device_type/user_agent so the same-device match
+    // happens in memory. Same behaviour, half the reads.
     const { data: activeSessions, error: listError } = await admin
       .from("user_sessions")
-      .select("id, session_token, logged_in_at")
+      .select("id, session_token, logged_in_at, device_type, user_agent")
       .eq("user_id", userId)
       .eq("is_active", true)
       .order("logged_in_at", { ascending: true }); // oldest first
@@ -101,17 +105,11 @@ async function handle(req: Request, corsHeaders: Record<string, string>): Promis
     // 1b. PERF 2026-09-20: reuse the active slot for the same device instead of
     // inserting a fresh row on every relaunch. The client persists its token
     // now, but cleared app storage would otherwise still add a row each time.
-    const { data: sameDevice } = await admin
-      .from("user_sessions")
-      .select("id, session_token")
-      .eq("user_id", userId)
-      .eq("is_active", true)
-      .eq("device_type", device_type ?? "web")
-      .eq("user_agent", user_agent ?? null)
-      .order("logged_in_at", { ascending: false })
-      .limit(1);
-
-    const reusable = sameDevice?.[0];
+    const wantedDevice = device_type ?? "web";
+    const wantedAgent = user_agent ?? null;
+    const reusable = [...sessions]
+      .reverse() // newest first, mirroring the old logged_in_at DESC limit 1
+      .find((s) => s.device_type === wantedDevice && (s.user_agent ?? null) === wantedAgent);
     if (reusable?.session_token) {
       await admin
         .from("user_sessions")
