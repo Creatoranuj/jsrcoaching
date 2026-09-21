@@ -11,8 +11,9 @@ import {
 } from "lucide-react";
 import { useAdminEnrollment } from "../hooks/useAdminEnrollment";
 import { openRazorpayCheckout, formatRazorpayError, buildRazorpayPrefill, buildUpiCheckoutConfig, type RazorpaySuccessResponse } from "../utils/razorpay";
-import { openNativeRazorpayCheckout, type NativeCheckoutStep, RazorpayCancelledError, RazorpayNativeError, RazorpayBridgeMissingError, RazorpayLaunchTimeoutError, RazorpayInvalidResponseError, RazorpaySheetUnresponsiveError, describePayFailure } from "../utils/razorpayNative";
+import { openNativeRazorpayCheckout, onNativeCheckoutLateSuccess, type NativeCheckoutStep, RazorpayCancelledError, RazorpayNativeError, RazorpayBridgeMissingError, RazorpayLaunchTimeoutError, RazorpayInvalidResponseError, RazorpaySheetUnresponsiveError, RazorpayCheckoutBusyError, describePayFailure } from "../utils/razorpayNative";
 import { invokePaymentFunction, recoverEnrollment, PaymentApiError } from "../utils/paymentApi";
+import { waitForEnrollment, hasActiveEnrollment, onEnrollmentLanded } from "../utils/reconcileEnrollment";
 import { listUpiApps, type UpiApp } from "../utils/upiApps";
 import { tapLight, tapMedium, notifySuccess, notifyError } from "../lib/nativeChrome";
 import { LoadingSpinner } from "../components/ui/loading-spinner";
@@ -466,6 +467,13 @@ const BuyCourse = () => {
   const attemptReconcile = async (cid: number): Promise<boolean> =>
     (await recoverEnrollment(cid)) === "recovered";
 
+  // True once THIS screen has celebrated + navigated for the current purchase,
+  // so a second signal (event + poller + late result) cannot celebrate twice.
+  const landedRef = useRef(false);
+  // One lost-result watcher at a time per screen.
+  const lostResultWatchRef = useRef(false);
+
+
 
   /**
    * @param opts.forceWeb  Native builds only: bypass the Razorpay Android SDK
@@ -506,6 +514,18 @@ const BuyCourse = () => {
     let orderData: RazorpayOrderData | undefined = opts?.existingOrder;
     try {
       if (!orderData) {
+        // Last look before any money moves: the webhook from an earlier
+        // attempt may have enrolled this student while the page sat open.
+        // One RLS-scoped row read (~100 ms) is far cheaper than a refund.
+        if (await hasActiveEnrollment(Number(courseId), user.id)) {
+          logger.info("Already enrolled at pay time — skipping order creation");
+          clearIdemKey(user.id, String(courseId));
+          setIsRazorpayLoading(false);
+          setPayPhase(null);
+          setPayStep(null);
+          onEnrollmentLandedHere("pay-preflight");
+          return;
+        }
         orderData = await invokePaymentFunction<RazorpayOrderData>("create-razorpay-order", {
           course_id: Number(courseId),
           idempotency_key,
@@ -713,15 +733,25 @@ const BuyCourse = () => {
           // The native sheet stayed on top for the whole wait ceiling without
           // a result. Deliberately NO web fallback here — a second checkout
           // under a possibly-live payment risks a double charge. Reset the CTA
-          // and let webhook/reconciliation own the outcome.
+          // and actively watch for the enrollment (late result / webhook) so
+          // the student is moved to the course instead of paying again.
           logger.warn("Native Razorpay sheet unresponsive past ceiling — no web fallback");
           void notifyError();
           toast.error(e.message);
+          void watchForLostResult("sheet-unresponsive");
+        } else if (e instanceof RazorpayCheckoutBusyError) {
+          // A sheet is already open on the native side and we could not
+          // re-attach to it. Not an error for the student — calm info toast,
+          // then watch for the result of the payment they are finishing.
+          logger.warn("Native Razorpay checkout busy — watching for its result");
+          toast.info(e.message);
+          void watchForLostResult("checkout-busy");
         } else if (e instanceof RazorpayInvalidResponseError) {
           void notifyError();
           toast.error(
             "Payment response complete nahi mili. Agar payment capture hua hai, enrollment webhook se automatically ho jayega — My Courses thodi der mein check karein."
           );
+          void watchForLostResult("invalid-response");
         } else if (e instanceof RazorpayNativeError) {
           // Structured Razorpay failure — pass fields straight through so the
           // formatter renders the actionable message for payment_authentication
@@ -866,6 +896,70 @@ const BuyCourse = () => {
     celebrateEnrollment();
     goToCourse();
   };
+
+  /**
+   * Enrollment landed from ANY source (webhook seen by the global sweep, the
+   * resume poller, a late native result, a direct row read) while this pay
+   * screen is still open → leave it immediately. The 2026-09-21 recording
+   * shows the alternative: course unlocked by webhook, "Pay ₹299" still live,
+   * student pays again.
+   */
+  const onEnrollmentLandedHere = (source: string) => {
+    if (landedRef.current || !isMountedRef.current) return;
+    landedRef.current = true;
+    logger.info("Enrollment landed while on checkout — leaving pay screen", { source });
+    if (user && courseId) markEnrollmentChanged(courseId, user.id);
+    celebrateEnrollment();
+    goToCourse();
+  };
+
+  /**
+   * The native sheet may have completed a payment whose result never reached
+   * JS (watchdog gave up, WebView reloaded, bridge busy). Watch the student's
+   * own enrollment row every few seconds plus the rate-safe recovery schedule
+   * for ~5 minutes and move to the course the moment it lands. The Pay button
+   * must never stay live over money that was already captured.
+   */
+  const watchForLostResult = async (reason: string) => {
+    if (!user || !courseId || lostResultWatchRef.current || landedRef.current) return;
+    lostResultWatchRef.current = true;
+    logger.warn("Native checkout result lost — watching for enrollment", { reason });
+    try {
+      const result = await waitForEnrollment(Number(courseId), {
+        isCancelled: () => !isMountedRef.current || landedRef.current,
+        userId: user.id,
+      });
+      if (result === "recovered") onEnrollmentLandedHere(`lost-result:${reason}`);
+    } catch (err) {
+      logger.error("Lost-result watch failed", err);
+    } finally {
+      lostResultWatchRef.current = false;
+    }
+  };
+
+  useEffect(() => {
+    if (!user || !courseId) return;
+    const cid = Number(courseId);
+    const stopLanded = onEnrollmentLanded(cid, (detail) => onEnrollmentLandedHere(detail.source));
+    // A signed success the native SDK delivered AFTER the watchdog stopped
+    // waiting: verify it like a normal in-time result instead of dropping it.
+    const stopLate = onNativeCheckoutLateSuccess((resp) => {
+      if (!isMountedRef.current || landedRef.current) return;
+      logger.info("Late native checkout success — verifying", {
+        order_prefix: resp.razorpay_order_id.slice(0, 14),
+      });
+      void verifyRazorpayPayment(resp).catch((err) => {
+        logger.error("Late verify failed", err);
+        void watchForLostResult("late-verify-failed");
+      });
+    });
+    return () => {
+      stopLanded();
+      stopLate();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, courseId]);
+
 
 
   const retryCourseFetch = () => {

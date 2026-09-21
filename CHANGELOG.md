@@ -7,6 +7,57 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [v1.15.0] — 2026-09-21
+
+End-to-end repair of the pay → enrollment → course path, from three student
+screen recordings (2026-09-21 12:58 / 12:59 / 13:08). Root cause in every case:
+the app stopped believing a payment that was actually alive or already done.
+
+### Fixed
+- **Watchdog abandoned a live payment sheet.** The native watchdog only trusted
+  the bridge's `dismissed:false` when our WebView reported itself hidden. But
+  Razorpay's CheckoutActivity is a *translucent* overlay, so Android keeps
+  reporting the WebView as visible while the sheet is open. Result: at 5 s the
+  app declared the launch dead, dropped the eventual success callback, and the
+  student landed back on an active "Pay ₹299" button with money already
+  captured. The bridge is now the only authority, and the launch window is 8 s
+  to cover a cold Activity start on mid-range phones.
+- **"A checkout is already open" red error.** A second tap for the same order
+  now re-attaches to the live sheet and resolves with its real result. When no
+  handle exists (WebView reloaded), a calm `RazorpayCheckoutBusyError` asks the
+  student to finish the open payment — no second checkout is ever opened under
+  a possibly-live one.
+- **Late success no longer lost.** A signed result that arrives after the
+  watchdog gave up is delivered on a late-success channel and verified normally.
+  Partial payloads (no signature) are left to webhook recovery.
+- **Endless "Enrollment confirm ho raha hai".** The payment-return screen keyed
+  its effect on the `user` object, so every token refresh cancelled the waiter
+  and restarted it — 29 s of spinner over an already-unlocked course. It now
+  keys on the user id, cancels only on unmount, and always reaches a terminal
+  state with "Dobara check karein" / "My Courses" after 20 s.
+- **Double charge risk.** A last enrollment check runs immediately before order
+  creation, and any screen showing a pay CTA leaves it the moment enrollment
+  lands from any source.
+- **Silent edge-function skip.** `deploy-functions.yml` returned green when
+  `SUPABASE_ACCESS_TOKEN` was missing, so live functions silently drifted behind
+  `main`. A push that changes functions now fails loudly.
+
+### Added
+- `nb:enrollment-landed` broadcast — webhook sweep, recovery, direct read and
+  verify all announce a landing, so every open screen moves at once.
+- Rate-safe enrollment waiting: a direct RLS-scoped read of the student's own
+  enrollment row every 3 s, interleaved with a `recover-enrollment` schedule
+  that never exceeds the server's 5-calls-per-60 s limit and now covers ~5 min.
+- Identity-stable auth state (`src/lib/authIdentity.ts`).
+
+### Tests
+- 928 passing. New: `authIdentity.test.ts`, `reconcileEnrollment.test.ts`
+  (rate-limit budget, cancellation, per-course broadcast) and six new native
+  guards incl. translucent-sheet waiting, 8 s window, late success, partial
+  payload rejection, re-attach and busy checkout.
+
+---
+
 ## [v1.14.1] — 2026-09-21
 
 ### Added

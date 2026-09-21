@@ -2,6 +2,8 @@ import { useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { recoverEnrollmentDetailed, EnrollmentRecoveryError } from "@/utils/paymentApi";
+import { announceEnrollmentLanded } from "@/utils/reconcileEnrollment";
+import { invalidateEnrollmentsCache } from "@/hooks/useEnrollments";
 import { addBreadcrumb, reportError } from "@/lib/sentry";
 import { toast } from "sonner";
 
@@ -57,7 +59,10 @@ async function reconcileOne(uid: string, order: PendingOrder): Promise<boolean> 
     return false;
   }
 
-  // Fast path: already enrolled? Just clear the key.
+  // Fast path: already enrolled? Clear the key and tell every open screen —
+  // the checkout page for this course may still be showing a live "Pay"
+  // button (recording 2026-09-21 12:56: enrolled by webhook, CTA still active,
+  // student paid a second time).
   try {
     const { data: existing } = await supabase
       .from("enrollments")
@@ -68,6 +73,7 @@ async function reconcileOne(uid: string, order: PendingOrder): Promise<boolean> 
       .maybeSingle();
     if (existing) {
       try { localStorage.removeItem(order.key); } catch { /* ignore */ }
+      announceEnrollmentLanded(Number(order.courseId), "sweep");
       return false;
     }
   } catch { /* fall through to server */ }
@@ -79,6 +85,8 @@ async function reconcileOne(uid: string, order: PendingOrder): Promise<boolean> 
   if (result.outcome === "recovered") {
     try { localStorage.removeItem(order.key); } catch { /* ignore */ }
     addBreadcrumb("payments", "enrollment auto-recovered", { courseId: order.courseId });
+    invalidateEnrollmentsCache();
+    announceEnrollmentLanded(Number(order.courseId), "recovery");
     return true;
   }
   if (result.outcome === "failed") {

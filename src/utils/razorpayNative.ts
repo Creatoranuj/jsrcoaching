@@ -93,8 +93,126 @@ export class RazorpaySheetUnresponsiveError extends Error {
   }
 }
 
-/** How long we wait for the native sheet before declaring it stuck. */
-export const NATIVE_LAUNCH_TIMEOUT_MS = 5000;
+/**
+ * The native bridge already has a checkout in flight (`ALREADY_IN_PROGRESS`)
+ * and this JS side has no handle to it — e.g. the WebView was reloaded while
+ * the Razorpay Activity stayed alive. Nothing is broken and no money is lost:
+ * the caller must NOT open a second checkout, just tell the student to finish
+ * the one that is open and let enrollment recovery pick up the result.
+ */
+export class RazorpayCheckoutBusyError extends Error {
+  constructor() {
+    super("Payment screen pehle se khuli hai — wahin payment poora karein.");
+    this.name = "RazorpayCheckoutBusyError";
+  }
+}
+
+/**
+ * How long we wait for the native sheet before asking the bridge whether it
+ * is really alive. 5 s tripped on mid-range phones during a cold Razorpay
+ * Activity start (recording 2026-09-21 12:56: "Opening payment…" → sheet at
+ * ~6 s); the watchdog then abandoned a live sheet and the eventual success
+ * was dropped on the floor. 8 s covers the observed cold start with margin,
+ * and a genuinely dead launch is still detected by the bridge's `cancel()`.
+ */
+export const NATIVE_LAUNCH_TIMEOUT_MS = 8000;
+
+/**
+ * Late-success channel.
+ *
+ * When the watchdog gives up on a sheet (launch timeout / unresponsive) the
+ * caller has already been told "no result". If the native SDK later resolves
+ * that same call with a signed success payload, it is delivered here instead
+ * of being lost, so the purchase can still be verified and the student sent
+ * to the course. Only complete `{payment_id, order_id, signature}` payloads
+ * are delivered; partial ones are left to webhook recovery.
+ */
+type LateSuccessListener = (response: RazorpaySuccessResponse) => void;
+const lateSuccessListeners = new Set<LateSuccessListener>();
+
+export const onNativeCheckoutLateSuccess = (cb: LateSuccessListener): (() => void) => {
+  lateSuccessListeners.add(cb);
+  return () => { lateSuccessListeners.delete(cb); };
+};
+
+interface LiveNativeOpen {
+  orderId: string;
+  promise: Promise<unknown>;
+  /** True once a caller has consumed the promise's result (or its failure). */
+  consumed: boolean;
+}
+
+/**
+ * The most recent un-settled native `open()` call on this JS side. Lets a
+ * second `open()` for the SAME order re-attach to the live sheet instead of
+ * being rejected with `ALREADY_IN_PROGRESS` — the "A checkout is already
+ * open" toast in the 2026-09-21 recording.
+ */
+let liveNativeOpen: LiveNativeOpen | null = null;
+
+/** Test hook — never used by app code. */
+export const __resetNativeCheckoutStateForTests = (): void => {
+  liveNativeOpen = null;
+  lateSuccessListeners.clear();
+};
+
+/** Parses whatever the bridge resolved into the three signed fields, or null. */
+const parseNativeSuccess = (result: unknown): RazorpaySuccessResponse | null => {
+  const container = result as { response?: unknown } | null | undefined;
+  let parsed: unknown = container && typeof container === "object" && "response" in container
+    ? container.response
+    : result;
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      // Legacy bridges can return only the payment id.
+      parsed = { razorpay_payment_id: parsed };
+    }
+  }
+  const p = parsed as {
+    razorpay_payment_id?: unknown; razorpay_order_id?: unknown; razorpay_signature?: unknown;
+  } | null | undefined;
+  if (
+    !p || typeof p !== "object"
+    || typeof p.razorpay_payment_id !== "string" || !p.razorpay_payment_id
+    || typeof p.razorpay_order_id !== "string" || !p.razorpay_order_id
+    || typeof p.razorpay_signature !== "string" || !p.razorpay_signature
+  ) {
+    return null;
+  }
+  return {
+    razorpay_payment_id: p.razorpay_payment_id,
+    razorpay_order_id: p.razorpay_order_id,
+    razorpay_signature: p.razorpay_signature,
+  };
+};
+
+/**
+ * Arms the late-success delivery for a sheet the watchdog just gave up on.
+ * Registered only AFTER the primary waiter has stopped listening, so a normal
+ * in-time result is never delivered twice.
+ */
+const armLateSuccess = (live: LiveNativeOpen): void => {
+  void Promise.resolve(live.promise).then(
+    (res) => {
+      if (live.consumed) return;
+      live.consumed = true;
+      const parsed = parseNativeSuccess(res);
+      if (!parsed) return;
+      addBreadcrumb("payment", "razorpay:native-late-success", {
+        order_prefix: live.orderId.slice(0, 14),
+        listeners: lateSuccessListeners.size,
+      });
+      lateSuccessListeners.forEach((cb) => {
+        try { cb(parsed); } catch { /* listener errors must not break others */ }
+      });
+    },
+    () => { live.consumed = true; },
+  );
+};
+
+const isAlreadyInProgress = (msg: string): boolean => /ALREADY_IN_PROGRESS/i.test(msg);
 
 /**
  * Grace period after the user comes back to the app. If the plugin still has
@@ -459,16 +577,20 @@ export const awaitNativeCheckoutResult = async (
     if (outcome !== WATCHDOG) return outcome;
 
     // Watchdog fired — ask the bridge whether the native sheet actually died.
+    //
+    // The bridge is the ONLY authority here. An earlier version also required
+    // `document.visibilityState === "hidden"` before believing `dismissed:false`,
+    // on the theory that "if our WebView is visible nothing can be on top of
+    // it". That theory is wrong on Android: Razorpay's CheckoutActivity is a
+    // translucent overlay, so the WebView frequently keeps reporting `visible`
+    // while the sheet is fully open. The override made the watchdog abandon a
+    // live sheet at the 5 s mark, the eventual success callback was dropped,
+    // and the student landed back on an active "Pay" button with money already
+    // captured (recording 2026-09-21 12:56). Trust the bridge.
     let dismissed = true;
-    // If OUR WebView is the visible surface right now, no Razorpay Activity can
-    // be on top of it. A bridge claiming `dismissed:false` in that state is
-    // stale bookkeeping — believing it is what kept the CTA spinning for
-    // minutes. Treat it as a failed launch and let the caller use web checkout.
-    const weAreForeground =
-      typeof document !== "undefined" && document.visibilityState === "visible";
     try {
       const res = (await plugin.cancel()) as { dismissed?: boolean } | undefined;
-      if (res && res.dismissed === false && !weAreForeground) dismissed = false;
+      if (res && res.dismissed === false) dismissed = false;
     } catch {
       // Older APKs have no cancel(): treat as dead and fall back to web.
     }
@@ -541,17 +663,60 @@ export const openNativeRazorpayCheckout = async (
       () => new RazorpayBridgeMissingError(),
     );
     onStep?.("sheet");
+    // Handle to a sheet a PREVIOUS call may have left alive (watchdog gave up
+    // but the Activity is still open). Captured before this call registers
+    // itself, so `ALREADY_IN_PROGRESS` below can re-attach to it.
+    const previous = liveNativeOpen;
     const openPromise = RazorpayNative.open(payload);
     // The watchdog can abandon this promise; keep a no-op handler so an
     // eventual native rejection never surfaces as an unhandled rejection.
     void Promise.resolve(openPromise).catch(() => {});
-    result = await awaitNativeCheckoutResult(RazorpayNative, openPromise);
+    const live: LiveNativeOpen = { orderId: options.order_id, promise: openPromise, consumed: false };
+    liveNativeOpen = live;
+    void Promise.resolve(openPromise).finally(() => {
+      if (liveNativeOpen === live) liveNativeOpen = null;
+    }).catch(() => {});
+    try {
+      result = await awaitNativeCheckoutResult(RazorpayNative, openPromise);
+      live.consumed = true;
+    } catch (inner: unknown) {
+      const innerMsg = (inner as { message?: string } | null)?.message || String(inner ?? "");
+      if (inner instanceof RazorpayLaunchTimeoutError || inner instanceof RazorpaySheetUnresponsiveError) {
+        // We stopped waiting, but the Activity may still deliver. Route a
+        // late signed success to onNativeCheckoutLateSuccess instead of
+        // dropping it — the 2026-09-21 "Pay button still active after paying".
+        armLateSuccess(live);
+        throw inner;
+      }
+      if (isAlreadyInProgress(innerMsg)) {
+        // The bridge refused because a sheet for a previous open() is still
+        // alive. Re-attach to THAT call when we still hold it (same order),
+        // otherwise surface a calm "finish the open payment" error. Never
+        // fall through to the generic mapper: that produced the red
+        // "A checkout is already open" toast on top of a live payment.
+        live.consumed = true;
+        if (previous && previous.orderId === options.order_id && !previous.consumed) {
+          addBreadcrumb("payment", "razorpay:native-reattach", {
+            order_prefix: options.order_id.slice(0, 14),
+          });
+          previous.consumed = true; // late-success channel must not double-deliver
+          liveNativeOpen = previous; // keep tracking the sheet that is really open
+          result = await awaitNativeCheckoutResult(RazorpayNative, previous.promise);
+        } else {
+          throw new RazorpayCheckoutBusyError();
+        }
+      } else {
+        live.consumed = true;
+        throw inner;
+      }
+    }
   } catch (e: unknown) {
     // Structural failures are re-thrown untouched so the caller can react
     // (fall back to web / show the "didn't open" message).
     if (e instanceof RazorpayLaunchTimeoutError) throw e;
     if (e instanceof RazorpayBridgeMissingError) throw e;
     if (e instanceof RazorpaySheetUnresponsiveError) throw e;
+    if (e instanceof RazorpayCheckoutBusyError) throw e;
     const errObj = e as { message?: string; errorMessage?: string } | null | undefined;
     const msg = errObj?.message || errObj?.errorMessage || String(e ?? "");
     if (looksLikeCancel(msg)) throw new RazorpayCancelledError();

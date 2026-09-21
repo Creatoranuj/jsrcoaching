@@ -24,6 +24,9 @@ import {
   RazorpayLaunchTimeoutError,
   RazorpayInvalidResponseError,
   RazorpaySheetUnresponsiveError,
+  RazorpayCheckoutBusyError,
+  onNativeCheckoutLateSuccess,
+  __resetNativeCheckoutStateForTests,
   RazorpayCancelledError,
   RazorpayNativeError,
   NATIVE_LAUNCH_TIMEOUT_MS,
@@ -60,6 +63,8 @@ beforeEach(() => {
   // Default: the bridge confirms the native sheet is really gone.
   cancelMock.mockReset().mockResolvedValue({ dismissed: true });
   isPluginAvailable.mockReset().mockReturnValue(true);
+  // No sheet is carried over between tests.
+  __resetNativeCheckoutStateForTests();
 });
 
 afterEach(() => {
@@ -217,18 +222,118 @@ describe("native checkout launch guards", () => {
     await assertion;
   });
 
-  it("ignores a stale dismissed:false while our WebView is the visible surface", async () => {
+  it("keeps waiting on a live sheet even while our WebView still reports visible", async () => {
     vi.useFakeTimers();
-    // Bridge bookkeeping says a sheet is alive, but we are clearly on screen —
-    // nothing can be on top of us, so this must NOT keep the CTA spinning.
+    // Razorpay's CheckoutActivity is a TRANSLUCENT overlay, so Android keeps
+    // reporting our WebView as "visible" while the sheet is fully open. An
+    // earlier build treated that combination as a dead launch, abandoned a
+    // live sheet, dropped the success callback, and left the student on an
+    // active Pay button with money captured (recording 2026-09-21 12:56).
+    // The bridge's dismissed:false is the only authority.
     setVisibilityStateSilently("visible");
     cancelMock.mockResolvedValue({ dismissed: false });
     openMock.mockImplementation(() => new Promise(() => {}));
     const promise = openNativeRazorpayCheckout(opts);
+    const assertion = expect(promise).rejects.toBeInstanceOf(RazorpaySheetUnresponsiveError);
+    await vi.advanceTimersByTimeAsync(NATIVE_LAUNCH_TIMEOUT_MS + 50);
+    // Still waiting — NOT a launch timeout, so no web fallback is offered.
+    await vi.advanceTimersByTimeAsync(
+      NATIVE_RESUME_TIMEOUT_MS * (MAX_LIVE_SHEET_WAITS + 1) + 500,
+    );
+    await assertion;
+  });
+
+  it("waits long enough for a cold Razorpay Activity start", () => {
+    // 5s tripped on mid-range phones during a cold start; the watchdog then
+    // abandoned a sheet that was about to appear.
+    expect(NATIVE_LAUNCH_TIMEOUT_MS).toBeGreaterThanOrEqual(8000);
+  });
+
+  it("delivers a signed success that arrives after the watchdog gave up", async () => {
+    vi.useFakeTimers();
+    __resetNativeCheckoutStateForTests();
+    let settle: ((v: unknown) => void) | undefined;
+    openMock.mockImplementation(() => new Promise((res) => { settle = res; }));
+    const late: unknown[] = [];
+    const stop = onNativeCheckoutLateSuccess((r) => late.push(r));
+
+    const promise = openNativeRazorpayCheckout(opts);
     const assertion = expect(promise).rejects.toBeInstanceOf(RazorpayLaunchTimeoutError);
     await vi.advanceTimersByTimeAsync(NATIVE_LAUNCH_TIMEOUT_MS + 50);
     await assertion;
+
+    // The Activity finally reports a captured, signed payment.
+    settle?.({
+      response: {
+        razorpay_payment_id: "pay_late",
+        razorpay_order_id: opts.order_id,
+        razorpay_signature: "sig_late",
+      },
+    });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(late).toEqual([
+      { razorpay_payment_id: "pay_late", razorpay_order_id: opts.order_id, razorpay_signature: "sig_late" },
+    ]);
+    stop();
   });
+
+  it("never forwards a partial late payload to verification", async () => {
+    vi.useFakeTimers();
+    __resetNativeCheckoutStateForTests();
+    let settle: ((v: unknown) => void) | undefined;
+    openMock.mockImplementation(() => new Promise((res) => { settle = res; }));
+    const late: unknown[] = [];
+    const stop = onNativeCheckoutLateSuccess((r) => late.push(r));
+
+    const promise = openNativeRazorpayCheckout(opts);
+    const assertion = expect(promise).rejects.toBeInstanceOf(RazorpayLaunchTimeoutError);
+    await vi.advanceTimersByTimeAsync(NATIVE_LAUNCH_TIMEOUT_MS + 50);
+    await assertion;
+
+    // No signature → cannot be verified; webhook recovery owns this case.
+    settle?.({ response: { razorpay_payment_id: "pay_partial" } });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(late).toEqual([]);
+    stop();
+  });
+
+  it("re-attaches to the live sheet instead of surfacing ALREADY_IN_PROGRESS", async () => {
+    vi.useFakeTimers();
+    __resetNativeCheckoutStateForTests();
+    let settleFirst: ((v: unknown) => void) | undefined;
+    openMock.mockImplementationOnce(() => new Promise((res) => { settleFirst = res; }));
+
+    // First attempt: watchdog gives up, but the sheet is still alive.
+    const first = openNativeRazorpayCheckout(opts);
+    const firstAssertion = expect(first).rejects.toBeInstanceOf(RazorpayLaunchTimeoutError);
+    await vi.advanceTimersByTimeAsync(NATIVE_LAUNCH_TIMEOUT_MS + 50);
+    await firstAssertion;
+
+    // Student taps Pay again for the SAME order: the bridge refuses because a
+    // checkout is in flight. We must re-attach to that sheet, not show a red
+    // "A checkout is already open" error.
+    openMock.mockImplementationOnce(() => Promise.reject(new Error("ALREADY_IN_PROGRESS")));
+    cancelMock.mockResolvedValue({ dismissed: false });
+    const second = openNativeRazorpayCheckout(opts);
+    await vi.advanceTimersByTimeAsync(50);
+    settleFirst?.({
+      response: {
+        razorpay_payment_id: "pay_reattached",
+        razorpay_order_id: opts.order_id,
+        razorpay_signature: "sig_reattached",
+      },
+    });
+    await vi.advanceTimersByTimeAsync(50);
+    await expect(second).resolves.toMatchObject({ razorpay_payment_id: "pay_reattached" });
+  });
+
+  it("reports a busy checkout instead of a generic failure when re-attach is impossible", async () => {
+    // WebView reloaded while the Activity stayed alive: no JS handle exists.
+    __resetNativeCheckoutStateForTests();
+    openMock.mockRejectedValue(new Error("ALREADY_IN_PROGRESS"));
+    await expect(openNativeRazorpayCheckout(opts)).rejects.toBeInstanceOf(RazorpayCheckoutBusyError);
+  });
+
 
   it("treats a bridge that never loads as a missing bridge instead of hanging", async () => {
     vi.useFakeTimers();

@@ -4,6 +4,7 @@ import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { queryClient, SELF_PROFILE_KEY } from "../lib/queryClient";
 import { checkPasswordStrength } from "../lib/passwordStrength";
 import { leakedPasswordError } from "../lib/leakedPassword";
+import { keepIfSameUser, keepIfSameProfile, keepIfSameRole } from "../lib/authIdentity";
 
 export type AppRole = "admin" | "student" | "teacher";
 
@@ -167,12 +168,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const isMounted = useRef(true);
   const loadCounter = useRef(0);
 
+  // Identity-stable: a value-equal user/profile keeps the PREVIOUS object, so
+  // effects keyed on `user` do not re-run (and cancel their work) on every
+  // token refresh or default→enriched pass. See src/lib/authIdentity.ts.
   const applyUser = useCallback((data: { user: User; profile: UserProfile; role: AppRole } | null) => {
     if (!isMounted.current) return;
     if (data) {
-      setUser(data.user);
-      setProfile(data.profile);
-      setRole(data.role);
+      setUser(keepIfSameUser(data.user));
+      setProfile(keepIfSameProfile(data.profile));
+      setRole(keepIfSameRole(data.role));
     } else {
       setUser(null);
       setProfile(null);
