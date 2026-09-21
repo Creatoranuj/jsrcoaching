@@ -24,6 +24,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { clearPendingPayment, readPendingPayment } from "@/lib/pendingPayment";
 import { waitForEnrollment } from "@/utils/reconcileEnrollment";
+import { buildPostEnrollmentPath, postEnrollmentState } from "@/config/paymentReturn";
 
 const PaymentResume = (): null => {
   usePaymentResume();
@@ -47,8 +48,13 @@ export const usePaymentResume = (): void => {
   // over the redirect.
   const onCallbackPage = pathname.startsWith("/payment-callback");
   const onBuyPage = pathname.startsWith("/buy-course");
+  // Every confirmed purchase now lands on the My Courses LIST with
+  // `?payment=success`, so the gate must cover the list itself as well as the
+  // older detail URL — otherwise this hook starts a second poller on exactly
+  // the screen that is already waiting for the same enrollment.
   const onSyncGate =
-    pathname.startsWith("/my-courses/") && new URLSearchParams(search).get("payment") === "success";
+    pathname.startsWith("/my-courses") &&
+    new URLSearchParams(search).get("payment") === "success";
   const anotherPollerOwnsIt = onCallbackPage || onBuyPage || onSyncGate;
 
   useEffect(() => {
@@ -78,8 +84,8 @@ export const usePaymentResume = (): void => {
           clearPendingPayment();
           toast.dismiss("payment-resume");
           toast.success("🎉 Course unlock ho gaya! Aapka access ab live hai.");
-          navigate(`/my-courses/${pending.courseId}?payment=success`, {
-            state: { justPurchased: pending.courseId },
+          navigate(buildPostEnrollmentPath(pending.courseId, "success"), {
+            state: postEnrollmentState(pending.courseId),
           });
           return;
         }

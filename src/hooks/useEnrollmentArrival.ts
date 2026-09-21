@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { recoverEnrollmentDetailed, type RecoverResult } from "@/utils/paymentApi";
 import { addBreadcrumb } from "@/lib/sentry";
@@ -73,7 +73,19 @@ export function useEnrollmentArrival({
   onRecovered,
 }: Options) {
   const location = useLocation();
-  const justPurchased = (location.state as { justPurchased?: number } | null)?.justPurchased;
+  const [searchParams] = useSearchParams();
+  // A just-purchased course can arrive two ways: router state (in-app
+  // navigation) or `?payment=success&course=<id>` (browser-UPI return, where
+  // router state does not survive the full page load). Both must be honoured,
+  // otherwise a paid student sees an empty list with no reconciliation.
+  const stateHint = (location.state as { justPurchased?: number } | null)?.justPurchased;
+  const queryHint = Number(searchParams.get("course"));
+  const justPurchased =
+    typeof stateHint === "number" && stateHint > 0
+      ? stateHint
+      : Number.isInteger(queryHint) && queryHint > 0
+        ? queryHint
+        : undefined;
 
   const [reconciling, setReconciling] = useState(false);
 

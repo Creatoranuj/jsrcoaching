@@ -641,7 +641,12 @@ const MyCourses = () => {
           <div className="min-w-0 flex-1">
             <h1 className="text-xl font-bold text-foreground truncate">My Courses</h1>
             <p className="text-sm text-muted-foreground truncate">
-              {courses.length} {courses.length === 1 ? 'course' : 'courses'} enrolled
+              {/* Never announce "0 courses enrolled" while the list is still
+                  loading — a student who just paid reads that as "mera course
+                  gayab hai" and pays again. */}
+              {loading
+                ? 'Aapke courses laa rahe hain…'
+                : `${courses.length} ${courses.length === 1 ? 'course' : 'courses'} enrolled`}
               {duplicateCount > 0 && (
                 <span className="ml-2 text-destructive font-medium">• {duplicateCount} duplicate{duplicateCount > 1 ? 's' : ''} found</span>
               )}

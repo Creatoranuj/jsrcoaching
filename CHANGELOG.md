@@ -7,6 +7,39 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [v1.16.0] — 2026-09-21
+
+### Fixed — "paisa kat gaya, course nahi aaya"
+
+- **Browser UPI return said "Link poora nahi mila".** `/pay` wrote
+  `?payment=success&course=<id>` while `/payment-callback` only read
+  `course_id=`. Both sides now go through ONE parser
+  (`parsePaymentReturnParams`) that also accepts every legacy name, so no
+  return link — old APK, support link, Razorpay redirect — can be misread.
+- **Every confirmed enrollment now lands on the My Courses LIST**
+  (`buildPostEnrollmentPath`), never a course detail page. In-app checkout,
+  callback screen and the interrupted-payment resume all use the same
+  destination, so a paying student always sees the new course sitting there.
+- **App Links could not open the app.** `assetlinks.json` published a
+  fingerprint that no shipped APK was signed with. It now publishes the real
+  release key (`B2:8B:E6:…`), with the old one kept for existing installs, and
+  a test fails the build if they ever drift apart again.
+- **Paid students bounced to "Please purchase this course".** The 7-day
+  LessonView bundle and the warm chapter cache carry `hasPurchased`, and both
+  guards fired before the server answered. Lesson pages now redirect only
+  after a fresh access answer, and `markEnrollmentChanged()` clears all four
+  enrollment-bearing caches (shared list, My Courses snapshot, chapter bundle,
+  LessonView bundle) the moment an enrollment lands.
+- **My Courses announced "0 courses enrolled" while still loading** — read as
+  "mera course gayab hai". It now says the list is loading.
+- **My Courses missed browser returns.** The arrival/reconcile hook now also
+  accepts `?course=<id>`, not just router state, which does not survive a full
+  page load.
+- **Two pollers on one purchase.** The resume hook now stands down on the My
+  Courses list too, not just the old detail URL.
+
+---
+
 ## [v1.15.1] — 2026-09-21
 
 ### Fixed

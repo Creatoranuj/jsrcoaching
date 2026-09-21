@@ -16,12 +16,33 @@
  *   4. a hard patience ceiling that always ends in a terminal state with
  *      actions, instead of an endless spinner.
  *
+ * WHAT WENT WRONG NEXT (recording 2026-09-21 15:10, browser UPI)
+ *   5. `/pay` wrote `course=<id>` (shared `PAYMENT_RETURN_PARAMS`) but this
+ *      screen only read `course_id=` — every browser-UPI return hit "Link
+ *      poora nahi mila" with the course already unlocked. The link is now read
+ *      through the ONE shared parser, legacy names included.
+ *   6. Success sent the student to the course page, not My Courses. Product
+ *      rule: every confirmed enrollment lands on the My Courses list, where the
+ *      new card is visible — nobody panics about "course nahi aaya".
+ *   7. In a plain browser with no session (App Link not yet verified, app not
+ *      installed, or Chrome kept the tab) the student was silently pushed to
+ *      the login form. They now get a calm choice: open the app, or sign in
+ *      here in the browser — the payment is acknowledged either way.
+ *
  * SECURITY: this screen grants nothing. Enrollment comes from the HMAC-verified
  * webhook or the server-side verify/recover functions.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
-import { CheckCircle2, Loader2, XCircle, RefreshCw, BookOpen } from "lucide-react";
+import {
+  CheckCircle2,
+  Loader2,
+  XCircle,
+  RefreshCw,
+  BookOpen,
+  Smartphone,
+  LogIn,
+} from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { recoverEnrollmentDetailed } from "@/utils/paymentApi";
 import {
@@ -30,12 +51,21 @@ import {
   onEnrollmentLanded,
   announceEnrollmentLanded,
 } from "@/utils/reconcileEnrollment";
-import { invalidateEnrollmentsCache } from "@/hooks/useEnrollments";
+import { markEnrollmentChanged } from "@/lib/enrollmentFreshness";
+import {
+  parsePaymentReturnParams,
+  buildPostEnrollmentPath,
+  postEnrollmentState,
+  buildPaymentReturnIntentUrl,
+  buildPaymentReturnUrl,
+  RETURN_HANDOFF_STEP_MS,
+} from "@/config/paymentReturn";
+import { isNativePlatform } from "@/lib/native/core";
 import { Button } from "@/components/ui/button";
 import { logger } from "@/lib/logger";
 import { addBreadcrumb } from "@/lib/sentry";
 
-type Phase = "checking" | "syncing" | "done" | "failed" | "cancelled";
+type Phase = "checking" | "syncing" | "done" | "failed" | "cancelled" | "signed-out-web";
 
 /**
  * After this long without an enrollment we stop showing an open-ended spinner
@@ -44,10 +74,8 @@ type Phase = "checking" | "syncing" | "done" | "failed" | "cancelled";
  */
 export const SYNC_PATIENCE_MS = 20_000;
 
-const parseCourseId = (raw: string | null): number | null => {
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? n : null;
-};
+/** Short beat so the student sees the green tick before My Courses opens. */
+export const SUCCESS_REDIRECT_DELAY_MS = 900;
 
 const PaymentCallback = () => {
   const navigate = useNavigate();
@@ -56,8 +84,8 @@ const PaymentCallback = () => {
 
   // Primitive keys only — objects would restart the effect on token refresh.
   const userId = user?.id ?? null;
-  const courseId = parseCourseId(params.get("course_id") ?? params.get("courseId"));
-  const status = (params.get("status") ?? "").toLowerCase();
+  const parsed = useMemo(() => parsePaymentReturnParams(params), [params]);
+  const { courseId, status, orderId } = parsed;
   const paramsKey = `${courseId ?? ""}|${status}`;
 
   const [phase, setPhase] = useState<Phase>("checking");
@@ -77,32 +105,51 @@ const PaymentCallback = () => {
     };
   }, []);
 
+  const loginHref = `/login?redirect=${encodeURIComponent(`/payment-callback?${params.toString()}`)}`;
+
   const succeed = useMemo(
     () => (cid: number, source: string) => {
       if (settledRef.current || !mountedRef.current) return;
       settledRef.current = true;
       addBreadcrumb("payments", "callback settled", { source, courseId: cid });
-      invalidateEnrollmentsCache();
+      // Drop every enrollment-bearing cache so My Courses / lesson pages read
+      // fresh, then tell any other open screen.
+      markEnrollmentChanged(cid, userId);
       announceEnrollmentLanded(cid, "verify");
       setPhase("done");
-      // Short beat so the student sees the confirmation, then into the course.
       window.setTimeout(() => {
-        if (mountedRef.current) navigate(`/course/${cid}`, { replace: true });
-      }, 900);
+        if (!mountedRef.current) return;
+        navigate(buildPostEnrollmentPath(cid, "success"), {
+          replace: true,
+          state: postEnrollmentState(cid),
+        });
+      }, SUCCESS_REDIRECT_DELAY_MS);
     },
-    [navigate],
+    [navigate, userId],
   );
 
   useEffect(() => {
     if (authLoading) return;
 
-    // Signed out on return (cold start / killed app): send to login and come
-    // back here afterwards instead of showing a false failure.
+    // Signed out on return (cold start / killed app / plain browser tab).
     if (!userId) {
-      navigate(`/login?redirect=${encodeURIComponent(`/payment-callback?${params.toString()}`)}`, {
-        replace: true,
-      });
-      return;
+      let alive = true;
+      void isNativePlatform()
+        .catch(() => false)
+        .then((native) => {
+          if (!alive || !mountedRef.current) return;
+          if (native) {
+            // Inside the app: sign in and come straight back here.
+            navigate(loginHref, { replace: true });
+          } else {
+            // Plain browser: offer "open the app" or "sign in here" instead of
+            // a bare login form — the payment itself is acknowledged.
+            setPhase("signed-out-web");
+          }
+        });
+      return () => {
+        alive = false;
+      };
     }
 
     if (courseId === null) {
@@ -114,6 +161,7 @@ const PaymentCallback = () => {
     if (runKeyRef.current === runKey) return; // identity churn — keep going
     runKeyRef.current = runKey;
     settledRef.current = false;
+    setPhase("checking");
 
     let stopLanded: (() => void) | undefined;
     let patienceTimer: number | undefined;
@@ -192,6 +240,30 @@ const PaymentCallback = () => {
     }
   };
 
+  /**
+   * Browser-only: a real tap that hands the same link to the installed app.
+   * `intent://` first (Chrome's documented form), custom scheme as follow-up.
+   * Both are user-gesture navigations here, so Chrome honours them.
+   */
+  const openInApp = () => {
+    const s = status === "cancelled" ? "cancelled" : "success";
+    const opts = { courseId, orderId };
+    addBreadcrumb("payments", "callback:open-in-app", { courseId, order_id: orderId });
+    try {
+      window.location.href = buildPaymentReturnIntentUrl(s, opts);
+    } catch {
+      /* fall through to the custom scheme below */
+    }
+    window.setTimeout(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      try {
+        window.location.href = buildPaymentReturnUrl(s, opts);
+      } catch {
+        /* the login button remains as the manual path */
+      }
+    }, RETURN_HANDOFF_STEP_MS);
+  };
+
   const shell = (children: React.ReactNode) => (
     <div className="min-h-[100dvh] flex items-center justify-center px-5 py-10 bg-background">
       <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
@@ -200,13 +272,49 @@ const PaymentCallback = () => {
     </div>
   );
 
+  if (phase === "signed-out-web") {
+    const paid = status !== "cancelled" && status !== "failed";
+    return shell(
+      <>
+        {paid ? (
+          <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-500" aria-hidden />
+        ) : (
+          <XCircle className="mx-auto h-12 w-12 text-muted-foreground" aria-hidden />
+        )}
+        <h1 className="mt-4 text-lg font-semibold text-foreground">
+          {paid ? "Payment mil gaya" : "Payment poora nahi hua"}
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {paid
+            ? "Aapka paisa surakshit hai — course My Courses me unlock ho raha hai. Aage kahan dekhna chahenge?"
+            : "Koi paisa nahi kata. App me wapas jaakar jab chahein dobara try kar sakte hain."}
+        </p>
+        <div className="mt-5 flex flex-col gap-2">
+          <Button className="h-12 text-base" onClick={openInApp}>
+            <Smartphone className="mr-2 h-4 w-4" aria-hidden />
+            App me kholein
+          </Button>
+          <Button variant="outline" className="h-12" asChild>
+            <Link to={loginHref}>
+              <LogIn className="mr-2 h-4 w-4" aria-hidden />
+              Browser me login karke dekhein
+            </Link>
+          </Button>
+        </div>
+        <p className="mt-4 text-xs text-muted-foreground">
+          App khud bhi khol sakte hain — course apne aap My Courses me aa jayega.
+        </p>
+      </>,
+    );
+  }
+
   if (phase === "done") {
     return shell(
       <>
         <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-500" aria-hidden />
         <h1 className="mt-4 text-lg font-semibold text-foreground">Payment successful</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Course unlock ho gaya — le ja rahe hain…
+          Course unlock ho gaya — My Courses khol rahe hain…
         </p>
       </>,
     );

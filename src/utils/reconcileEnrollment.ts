@@ -30,7 +30,7 @@
  * student; this is purely "ask the server whether it happened yet".
  */
 import { recoverEnrollmentDetailed, type RecoverOutcome } from "@/utils/paymentApi";
-import { invalidateEnrollmentsCache } from "@/hooks/useEnrollments";
+import { markEnrollmentChanged } from "@/lib/enrollmentFreshness";
 import { supabase } from "@/integrations/supabase/client";
 
 /**
@@ -100,11 +100,22 @@ export const onEnrollmentLanded = (
   return () => window.removeEventListener(ENROLLMENT_LANDED_EVENT, handler);
 };
 
+/**
+ * Last student id this module resolved. The per-user My Courses snapshot key
+ * needs it, and `landed()` has no `userId` argument of its own.
+ */
+let lastKnownUserId: string | null = null;
+
 const resolveUserId = async (explicit?: string | null): Promise<string | null> => {
-  if (explicit) return explicit;
+  if (explicit) {
+    lastKnownUserId = explicit;
+    return explicit;
+  }
   try {
     const { data } = await supabase.auth.getSession();
-    return data?.session?.user?.id ?? null;
+    const uid = data?.session?.user?.id ?? null;
+    if (uid) lastKnownUserId = uid;
+    return uid;
   } catch {
     return null;
   }
@@ -159,9 +170,11 @@ export type ReconcileResult = "recovered" | "not-yet" | "cancelled";
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
 const landed = (courseId: number, source: EnrollmentLandedSource): "recovered" => {
-  // The student just got the course — drop the shared 60s list cache so
-  // every screen shows it immediately, and tell every open screen.
-  invalidateEnrollmentsCache();
+  // The student just got the course — drop EVERY enrollment-bearing cache
+  // (shared list, My Courses snapshot, chapter bundle, LessonView bundle) so
+  // no screen can still believe `hasPurchased: false`, then tell every open
+  // screen so they move forward at the same moment.
+  markEnrollmentChanged(courseId, lastKnownUserId);
   announceEnrollmentLanded(courseId, source);
   return "recovered";
 };

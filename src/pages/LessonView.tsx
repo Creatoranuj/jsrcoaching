@@ -141,6 +141,17 @@ const LessonView = () => {
   
   // Access Control
   const [hasPurchased, setHasPurchased] = useState(false);
+  /**
+   * True only once THIS mount has heard from the server about access.
+   *
+   * The 7-day offline bundle carries `hasPurchased`, so a student who browsed
+   * the course before paying had `hasPurchased: false` sitting in cache. The
+   * old guard fired on `!loading`, and the cache sets `loading = false`
+   * synchronously — so a freshly paid student was bounced to "Please purchase
+   * this course" before `get_course_bundle` even answered. The redirect now
+   * waits for the real answer; caches may unlock the UI, never lock it.
+   */
+  const [accessResolved, setAccessResolved] = useState(false);
   
   // Notes state (local storage based for persistence)
   const [noteContent, setNoteContent] = useState("");
@@ -1272,7 +1283,8 @@ const LessonView = () => {
         };
 
         const enrolled = !!b.is_enrolled;
-        if (enrolled) setHasPurchased(true);
+        setHasPurchased(enrolled);
+        setAccessResolved(true); // server has spoken — the guard may act now
         if (!b.course) throw new Error('Course not found');
 
         setCourse(b.course);
@@ -1354,11 +1366,11 @@ const LessonView = () => {
 
   // Enrollment guard: redirect unenrolled non-admin users
   useEffect(() => {
-    if (!loading && !hasPurchased && !isAdminOrTeacher && courseId && user) {
+    if (accessResolved && !hasPurchased && !isAdminOrTeacher && courseId && user) {
       toast.error("Please purchase this course to access lessons.", { id: "course-locked" });
       navigate(`/buy-course?id=${courseId}`, { replace: true });
     }
-  }, [loading, hasPurchased, isAdminOrTeacher, courseId, user, navigate]);
+  }, [accessResolved, hasPurchased, isAdminOrTeacher, courseId, user, navigate]);
 
   // Refetch comments when lesson changes
   useEffect(() => {

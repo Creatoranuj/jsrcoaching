@@ -112,6 +112,23 @@ export async function readBundle(courseId: string | number): Promise<LessonViewB
   }
 }
 
+/**
+ * Drops the cached bundle for one course. Called the moment an enrollment is
+ * granted: the cached bundle carries `hasPurchased`, and a 7-day-old
+ * `hasPurchased: false` is exactly what bounced a freshly paid student to
+ * "Please purchase this course" in the 2026-09-21 recording.
+ */
+export async function clearLessonViewBundle(courseId: string | number): Promise<void> {
+  const key = BUNDLE_KEY(courseId);
+  safeRemove(key);
+  try {
+    const storage = await getStorage();
+    await storage.remove(key);
+  } catch {
+    /* noop — the sync removal above already covers the WebView hot path */
+  }
+}
+
 export async function writeBundle(
   courseId: string | number,
   bundle: Omit<LessonViewBundle, "cachedAt">,

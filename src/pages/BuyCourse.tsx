@@ -23,6 +23,7 @@ import { safeGet, safeSet, safeRemove } from "../lib/storage";
 import { rememberPendingPayment } from "../lib/pendingPayment";
 import { settlePayment, dismissSafetyCheck } from "@/lib/paymentEngine";
 import { markEnrollmentChanged } from "@/lib/enrollmentFreshness";
+import { buildPostEnrollmentPath, postEnrollmentState } from "@/config/paymentReturn";
 import { logger } from "@/lib/logger";
 import { loadBuildStamp, formatBuildStamp } from "@/lib/buildStamp";
 import successSound from "@/assets/success.mp3.asset.json";
@@ -553,7 +554,7 @@ const BuyCourse = () => {
         markEnrollmentChanged(courseId, user.id);
         clearIdemKey(user.id, String(courseId));
         if (apiError.code === "ALREADY_PAID") void attemptReconcile(Number(courseId));
-        navigate(`/my-courses/${courseId}?payment=success`, { replace: true, state: { justPurchased: Number(courseId) } });
+        navigate(buildPostEnrollmentPath(courseId, "success"), { replace: true, state: postEnrollmentState(courseId) });
         setIsRazorpayLoading(false);
         setPayPhase(null);
         setPayStep(null);
@@ -574,7 +575,7 @@ const BuyCourse = () => {
           playSuccessSound();
           toast.success("🎉 Enrollment recovered!");
           clearIdemKey(user.id, String(courseId));
-          navigate(`/my-courses/${courseId}?payment=success`, { replace: true, state: { justPurchased: Number(courseId) } });
+          navigate(buildPostEnrollmentPath(courseId, "success"), { replace: true, state: postEnrollmentState(courseId) });
           setIsRazorpayLoading(false);
           setPayPhase(null);
           setPayStep(null);
@@ -838,9 +839,9 @@ const BuyCourse = () => {
   /** Where every confirmed (or very-likely-confirmed) purchase lands. */
   const goToCourse = () => {
     if (!isMountedRef.current) return;
-    navigate(`/my-courses/${courseId}?payment=success`, {
+    navigate(buildPostEnrollmentPath(courseId, "success"), {
       replace: true,
-      state: { justPurchased: Number(courseId) },
+      state: postEnrollmentState(courseId),
     });
   };
 

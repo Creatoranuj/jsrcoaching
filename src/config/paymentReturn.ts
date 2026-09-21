@@ -29,6 +29,84 @@ export const PAYMENT_RETURN_PARAMS = {
 
 export type PaymentReturnStatus = "success" | "cancelled";
 
+/**
+ * Legacy parameter names still accepted by the reader. Older APKs, Razorpay's
+ * own web-redirect form and hand-typed support links used these; a link is
+ * never rejected just because it speaks the previous dialect.
+ */
+export const LEGACY_PAYMENT_RETURN_PARAMS = {
+  status: ["status"],
+  course: ["course_id", "courseId"],
+  order: ["razorpay_order_id", "order_id"],
+} as const;
+
+export interface ParsedPaymentReturn {
+  /** Positive integer course id, or null when the link carried none. */
+  courseId: number | null;
+  /** Lower-cased outcome; `""` when absent. */
+  status: string;
+  /** Razorpay order id for diagnostics only. */
+  orderId: string | null;
+}
+
+/**
+ * ONE reader for every return link the app can receive. Reads the shared
+ * names first, then the legacy names, so `PayBrowser` (writer) and
+ * `PaymentCallback` (reader) can never disagree again — the 2026-09-21 UPI
+ * recording landed on "Link poora nahi mila" purely because the writer said
+ * `course=` and the reader looked for `course_id=`.
+ *
+ * Accepts anything with `.get()` (URLSearchParams, react-router's params).
+ */
+export const parsePaymentReturnParams = (
+  params: { get(name: string): string | null },
+): ParsedPaymentReturn => {
+  const first = (names: readonly string[]): string | null => {
+    for (const n of names) {
+      const v = params.get(n);
+      if (v !== null && v !== "") return v;
+    }
+    return null;
+  };
+  const rawCourse = first([PAYMENT_RETURN_PARAMS.course, ...LEGACY_PAYMENT_RETURN_PARAMS.course]);
+  const n = Number(rawCourse);
+  return {
+    courseId: Number.isFinite(n) && n > 0 && Number.isInteger(n) ? n : null,
+    status: (first([PAYMENT_RETURN_PARAMS.status, ...LEGACY_PAYMENT_RETURN_PARAMS.status]) ?? "")
+      .trim()
+      .toLowerCase(),
+    orderId: first([PAYMENT_RETURN_PARAMS.order, ...LEGACY_PAYMENT_RETURN_PARAMS.order]),
+  };
+};
+
+/**
+ * WHERE EVERY CONFIRMED ENROLLMENT LANDS — the My Courses LIST.
+ *
+ * Product rule (owner, 2026-09-21): the moment a course is unlocked the
+ * student must see it sitting in My Courses, so nobody panics with "paisa kat
+ * gaya par course nahi aaya". Course detail pages are one tap away from there;
+ * they are never the automatic destination. `payment=success&course=<id>`
+ * lets My Courses highlight the new card and reconcile if the row is a few
+ * seconds late; router `state.justPurchased` carries the same hint.
+ */
+export const MY_COURSES_PATH = "/my-courses";
+
+export const buildPostEnrollmentPath = (
+  courseId: number | string | null | undefined,
+  status: "success" | "pending" = "success",
+): string => {
+  const q = new URLSearchParams({ [PAYMENT_RETURN_PARAMS.status]: status });
+  if (courseId !== undefined && courseId !== null && `${courseId}` !== "") {
+    q.set(PAYMENT_RETURN_PARAMS.course, String(courseId));
+  }
+  return `${MY_COURSES_PATH}?${q.toString()}`;
+};
+
+/** Router state that travels with {@link buildPostEnrollmentPath}. */
+export const postEnrollmentState = (courseId: number | string | null | undefined) => ({
+  justPurchased: Number(courseId) > 0 ? Number(courseId) : undefined,
+});
+
 /** Deep link the browser tab navigates to in order to reopen the app. */
 export const buildPaymentReturnUrl = (
   status: PaymentReturnStatus,

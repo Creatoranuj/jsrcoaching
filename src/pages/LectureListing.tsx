@@ -248,12 +248,15 @@ const LectureListing = () => {
 
   // Enrollment guard: redirect unenrolled non-admin users
   useEffect(() => {
-    if (loading || !courseId || !user) return;
+    // `fetched`, not `loading`: the warm module cache clears `loading`
+    // synchronously while `hasPurchased` is still its `false` default, which
+    // bounced freshly paid students out of a course they own.
+    if (!fetched || !courseId || !user) return;
     if (!hasPurchased && !isAdminOrTeacher) {
       toast.error("Please purchase this course to access content.", { id: "course-locked" });
       navigate(`/buy-course?id=${courseId}`, { replace: true });
     }
-  }, [loading, hasPurchased, isAdminOrTeacher, courseId, user, navigate]);
+  }, [fetched, hasPurchased, isAdminOrTeacher, courseId, user, navigate]);
 
   useEffect(() => {
     if (!courseId) return;
