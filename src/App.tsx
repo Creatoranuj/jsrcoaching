@@ -28,6 +28,8 @@ import ScrollToTop from "./components/ScrollToTop";
 import ForceUpdateGate from "./components/ForceUpdateGate";
 import SplashHider from "./components/SplashHider";
 import OfflineBanner from "./components/common/OfflineBanner";
+import SurvivalBanner from "./components/SurvivalBanner";
+import { useSystemSwitches } from "./hooks/useSystemSwitches";
 import AdminEruda from "./components/AdminEruda";
 import RouteTransitions from "./components/RouteTransitions";
 import GlobalBottomNav from "./components/Layout/GlobalBottomNav";
@@ -78,6 +80,7 @@ const NotFound = lazyWithRetry(() => import("./pages/NotFound"));
 const AdminLogin = lazyWithRetry(() => import("./pages/AdminLogin"));
 const AdminRegister = lazyWithRetry(() => import("./pages/AdminRegister"));
 const AdminSecurity = lazyWithRetry(() => import("./pages/AdminSecurity"));
+const AdminSystem = lazyWithRetry(() => import("./pages/AdminSystem"));
 const Attendance = lazyWithRetry(() => import("./pages/Attendance"));
 const Reports = lazyWithRetry(() => import("./pages/Reports"));
 const Students = lazyWithRetry(() => import("./pages/Students"));
@@ -234,6 +237,8 @@ const DeferredChatWidget = () => {
   const [ready, setReady] = useState(false);
   // Admin switch (Admin Panel → Lesson Features → JSR Agent). Defaults ON.
   const agentEnabled = useLessonFeatureFlag("sadguruAgent");
+  // Survival Mode: AI assistant switch + device ka halka mode.
+  const { feature, degraded } = useSystemSwitches();
 
   useEffect(() => {
     if (!isChatWidgetPathAllowed(location.pathname)) return;
@@ -248,6 +253,7 @@ const DeferredChatWidget = () => {
   }, [location.pathname]);
 
   if (!agentEnabled) return null;
+  if (!feature("aiAssistant") || degraded) return null;
   if (!ready || !isChatWidgetPathAllowed(location.pathname)) return null;
   return (
     <Suspense fallback={<div aria-hidden className="h-0 w-0" />}>
@@ -369,6 +375,7 @@ const App = () => (
                 </Suspense>
               )}
               <OfflineBanner />
+              <SurvivalBanner />
               <BrowserRouter>
                 <NavigationHistoryProvider>
                   <ScrollToTop />
@@ -424,6 +431,7 @@ const App = () => (
                     <Route path="/admin/pdf-health" element={<AdminRoute element={<AdminPdfHealth />} />} />
                     <Route path="/admin/ai-health" element={<AdminRoute element={<AdminAiHealth />} />} />
                     <Route path="/admin/security" element={<AdminRoute element={<AdminSecurity />} />} />
+                    <Route path="/admin/system" element={<AdminRoute element={<AdminSystem />} />} />
                     <Route path="/admin/users" element={<AdminRoute element={<AdminUsers />} />} />
                     <Route path="/admin/users/:userId" element={<AdminRoute element={<AdminStudentDetail />} />} />
                     <Route path="/admin/moderation" element={<AdminRoute element={<AdminModeration />} />} />

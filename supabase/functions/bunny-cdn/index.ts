@@ -18,6 +18,7 @@ import { errorResponse, internalError } from "../_shared/errors.ts";
 import { reportError } from "../_shared/errorReporting.ts";
 import { isSafeRelPath, isUuid, isOneOf, isText, readJson } from "../_shared/validate.ts";
 import { isRateLimited } from "../_shared/rateLimit.ts";
+import { guardSwitch } from "../_shared/systemSwitch.ts";
 
 const ALLOWED_PREFIXES = [
   "course-videos/",
@@ -114,6 +115,10 @@ serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  // Survival Mode: admin ne is function ko band kiya ho to yahin ruk jao.
+  const __switchOff = await guardSwitch("bunny-cdn", corsHeaders);
+  if (__switchOff) return __switchOff;
 
   try {
     const BUNNY_API_KEY = Deno.env.get("BUNNY_API_KEY");

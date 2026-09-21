@@ -11,6 +11,7 @@ import {
   SUPPORTED_CHAT_MODELS,
 } from "../_shared/aiGateway.ts";
 import { AI_ASSISTANT_NAME, FOUNDER_HONORIFIC, INSTITUTE_NAME } from "../_shared/persona.ts";
+import { guardSwitch } from "../_shared/systemSwitch.ts";
 
 type SupabaseClient = ReturnType<typeof createClient>;
 
@@ -323,6 +324,10 @@ async function fetchWebContext(query: string): Promise<string> {
 Deno.serve(async (req) => {
   const corsHeaders = buildCorsHeaders(req);
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+
+  // Survival Mode: admin ne is function ko band kiya ho to yahin ruk jao.
+  const __switchOff = await guardSwitch("chatbot", corsHeaders);
+  if (__switchOff) return __switchOff;
 
   // Require a verified JWT — derive userId from it (never trust the body).
   const auth = await requireUser(req, corsHeaders);

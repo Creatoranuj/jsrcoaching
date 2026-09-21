@@ -1,11 +1,16 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { buildCorsHeaders } from "../_shared/cors.ts";
+import { guardSwitch } from "../_shared/systemSwitch.ts";
 
 Deno.serve(async (req) => {
   const corsHeaders = buildCorsHeaders(req);
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  // Survival Mode: admin ne is function ko band kiya ho to yahin ruk jao.
+  const __switchOff = await guardSwitch("initiate-refund", corsHeaders);
+  if (__switchOff) return __switchOff;
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;

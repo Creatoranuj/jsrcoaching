@@ -1,10 +1,15 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors'
+import { guardSwitch } from "../_shared/systemSwitch.ts";
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
+
+  // Survival Mode: admin ne is function ko band kiya ho to yahin ruk jao.
+  const __switchOff = await guardSwitch("request-account-deletion", corsHeaders);
+  if (__switchOff) return __switchOff;
 
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {

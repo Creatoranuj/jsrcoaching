@@ -8,6 +8,7 @@
 // Endpoint: GET /notion-page?id=<pageId-with-or-without-hyphens>
 import { NotionAPI } from "npm:notion-client@7.1.5";
 import { buildCorsHeaders } from "../_shared/cors.ts";
+import { guardSwitch } from "../_shared/systemSwitch.ts";
 
 const PAGE_ID_RE = /^[0-9a-f]{32}$/i;
 
@@ -26,6 +27,10 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
+
+  // Survival Mode: admin ne is function ko band kiya ho to yahin ruk jao.
+  const __switchOff = await guardSwitch("notion-page", corsHeaders);
+  if (__switchOff) return __switchOff;
 
   try {
     const url = new URL(req.url);

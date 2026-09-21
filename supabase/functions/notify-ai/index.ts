@@ -3,12 +3,17 @@ import { requireRole } from "../_shared/auth.ts";
 import { buildCorsHeaders } from "../_shared/cors.ts";
 import { isRateLimited, rateLimitedResponse } from "../_shared/rateLimit.ts";
 import { errorResponse, internalError } from "../_shared/errors.ts";
+import { guardSwitch } from "../_shared/systemSwitch.ts";
 
 type Payload = { type?: string; record?: Record<string, unknown> };
 
 Deno.serve(async (req) => {
   const corsHeaders = buildCorsHeaders(req);
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+
+  // Survival Mode: admin ne is function ko band kiya ho to yahin ruk jao.
+  const __switchOff = await guardSwitch("notify-ai", corsHeaders);
+  if (__switchOff) return __switchOff;
 
   const gate = await requireRole(req, corsHeaders, ['admin', 'teacher']);
   if (!gate.ok) return gate.response;

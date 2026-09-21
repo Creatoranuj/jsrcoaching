@@ -11,6 +11,7 @@ import {
   DEFAULT_CHAT_MODEL,
   SUPPORTED_CHAT_MODELS,
 } from "../_shared/aiGateway.ts";
+import { guardSwitch } from "../_shared/systemSwitch.ts";
 
 let cache: { at: number; body: unknown; status: number } | null = null;
 const TTL_MS = 30_000;
@@ -95,6 +96,10 @@ async function runDiagnostics(req: Request, corsHeaders: Record<string, string>)
 Deno.serve(async (req) => {
   const corsHeaders = buildCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  // Survival Mode: admin ne is function ko band kiya ho to yahin ruk jao.
+  const __switchOff = await guardSwitch("ai-health", corsHeaders);
+  if (__switchOff) return __switchOff;
 
   if (new URL(req.url).searchParams.get("diag") === "1") {
     return await runDiagnostics(req, corsHeaders);

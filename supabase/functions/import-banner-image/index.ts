@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { buildCorsHeaders } from "../_shared/cors.ts";
 import { missingEnvResponse, requireEnvAll } from "../_shared/requireEnv.ts";
+import { guardSwitch } from "../_shared/systemSwitch.ts";
 
 const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 const ALLOWED_MIME = /^image\/(png|jpe?g|webp|gif|avif)$/i;
@@ -42,6 +43,10 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  // Survival Mode: admin ne is function ko band kiya ho to yahin ruk jao.
+  const __switchOff = await guardSwitch("import-banner-image", corsHeaders);
+  if (__switchOff) return __switchOff;
 
   const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), {

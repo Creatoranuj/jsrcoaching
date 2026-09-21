@@ -901,6 +901,7 @@ const Admin = () => {
                   <Button variant="outline" onClick={() => navigate('/admin/pdf-health')} className="gap-2"><ShieldAlert className="h-4 w-4" /> PDF Source Health</Button>
                   <Button variant="outline" onClick={() => navigate('/admin/ai-health')} className="gap-2"><ShieldAlert className="h-4 w-4" /> AI Health / Diagnostics</Button>
                   <Button variant="outline" onClick={() => navigate('/admin/security')} className="gap-2"><ShieldAlert className="h-4 w-4" /> Dependency Security Scan</Button>
+                  <Button variant="outline" onClick={() => navigate('/admin/system')} className="gap-2"><ShieldAlert className="h-4 w-4" /> System & Survival Mode</Button>
                   <Button variant="outline" onClick={() => navigate('/admin/users')} className="gap-2"><ShieldAlert className="h-4 w-4" /> Users & Block</Button>
                   <Button variant="outline" onClick={() => navigate('/admin/moderation')} className="gap-2"><ShieldAlert className="h-4 w-4" /> Content Moderation</Button>
                   <Button variant="outline" onClick={() => navigate('/admin/fraud-watch')} className="gap-2"><ShieldAlert className="h-4 w-4" /> Fraud Watch (Bypass Enrollments)</Button>

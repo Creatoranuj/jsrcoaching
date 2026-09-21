@@ -11,6 +11,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { buildCorsHeaders } from "../_shared/cors.ts";
+import { guardSwitch } from "../_shared/systemSwitch.ts";
 
 // Only these folders inside the `content` bucket are eligible for public
 // signing. Everything else (course-videos, receipts, etc.) must go through
@@ -39,6 +40,10 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
+
+  // Survival Mode: admin ne is function ko band kiya ho to yahin ruk jao.
+  const __switchOff = await guardSwitch("content-redirect", corsHeaders);
+  if (__switchOff) return __switchOff;
   if (req.method !== "GET") {
     return badRequest("method_not_allowed", 405);
   }

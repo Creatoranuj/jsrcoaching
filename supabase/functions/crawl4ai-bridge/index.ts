@@ -1,6 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { errorResponse, internalError } from "../_shared/errors.ts";
 import { buildCorsHeaders } from "../_shared/cors.ts";
+import { guardSwitch } from "../_shared/systemSwitch.ts";
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -27,6 +28,10 @@ function splitIntoChunks(content: string, title: string, maxLen = 1500): Array<{
 Deno.serve(async (req) => {
   const corsHeaders = buildCorsHeaders(req);
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+
+  // Survival Mode: admin ne is function ko band kiya ho to yahin ruk jao.
+  const __switchOff = await guardSwitch("crawl4ai-bridge", corsHeaders);
+  if (__switchOff) return __switchOff;
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 

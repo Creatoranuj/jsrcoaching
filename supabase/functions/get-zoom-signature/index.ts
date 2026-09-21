@@ -1,6 +1,7 @@
 import { requireUser } from "../_shared/auth.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { buildCorsHeaders } from "../_shared/cors.ts";
+import { guardSwitch } from "../_shared/systemSwitch.ts";
 
 // Generate HMAC-SHA256 signature for Zoom Meeting SDK
 async function generateSignature(
@@ -61,6 +62,10 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  // Survival Mode: admin ne is function ko band kiya ho to yahin ruk jao.
+  const __switchOff = await guardSwitch("get-zoom-signature", corsHeaders);
+  if (__switchOff) return __switchOff;
 
   try {
     // Verify the JWT — a bare Authorization header used to be accepted.

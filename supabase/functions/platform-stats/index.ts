@@ -4,6 +4,7 @@
 // three aggregate counts; returns no PII.
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { buildCorsHeaders } from "../_shared/cors.ts";
+import { guardSwitch } from "../_shared/systemSwitch.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -17,6 +18,10 @@ Deno.serve(async (req) => {
     "Cache-Control": "public, max-age=3600",
   };
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  // Survival Mode: admin ne is function ko band kiya ho to yahin ruk jao.
+  const __switchOff = await guardSwitch("platform-stats", corsHeaders);
+  if (__switchOff) return __switchOff;
 
   try {
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE);

@@ -8,6 +8,7 @@
 // ever enrolled from client input.
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "npm:jose@5";
+import { guardSwitch } from "../_shared/systemSwitch.ts";
 
 const GITHUB_OIDC_ISSUER = "https://token.actions.githubusercontent.com";
 const GITHUB_JWKS = createRemoteJWKSet(new URL(`${GITHUB_OIDC_ISSUER}/.well-known/jwks`));
@@ -36,6 +37,10 @@ function timingSafeEqual(a: string, b: string): boolean {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  // Survival Mode: admin ne is function ko band kiya ho to yahin ruk jao.
+  const __switchOff = await guardSwitch("reconcile-pending-payments", corsHeaders);
+  if (__switchOff) return __switchOff;
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405, headers: corsHeaders,

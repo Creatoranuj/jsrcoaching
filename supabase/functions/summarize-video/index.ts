@@ -3,6 +3,7 @@ import { sanitizeAiField } from "../_shared/sanitize.ts";
 import { buildCorsHeaders } from "../_shared/cors.ts";
 import { isRateLimited, rateLimitedResponse } from "../_shared/rateLimit.ts";
 import { callAiGateway } from "../_shared/aiGateway.ts";
+import { guardSwitch } from "../_shared/systemSwitch.ts";
 
 
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
@@ -11,6 +12,10 @@ Deno.serve(async (req) => {
   const corsHeaders = buildCorsHeaders(req);
   if (req.method === "OPTIONS")
     return new Response(null, { headers: corsHeaders });
+
+  // Survival Mode: admin ne is function ko band kiya ho to yahin ruk jao.
+  const __switchOff = await guardSwitch("summarize-video", corsHeaders);
+  if (__switchOff) return __switchOff;
 
   const auth = await requireUser(req, corsHeaders);
   if (!auth.ok) return auth.response;

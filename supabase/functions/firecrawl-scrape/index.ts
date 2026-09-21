@@ -1,12 +1,17 @@
 import { requireRole } from "../_shared/auth.ts";
 import { errorResponse, internalError } from "../_shared/errors.ts";
 import { buildCorsHeaders } from "../_shared/cors.ts";
+import { guardSwitch } from "../_shared/systemSwitch.ts";
 
 const SSRF_BLOCKLIST = /^(localhost|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|0\.0\.0\.0|::1|fd[0-9a-f]{2}:)/i;
 
 Deno.serve(async (req) => {
   const corsHeaders = buildCorsHeaders(req);
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+
+  // Survival Mode: admin ne is function ko band kiya ho to yahin ruk jao.
+  const __switchOff = await guardSwitch("firecrawl-scrape", corsHeaders);
+  if (__switchOff) return __switchOff;
 
   const auth = await requireRole(req, corsHeaders, ["admin", "teacher"]);
   if (!auth.ok) return auth.response;

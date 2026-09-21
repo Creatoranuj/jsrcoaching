@@ -2,6 +2,7 @@ import { buildCorsHeaders } from "../_shared/cors.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { requireRole, requireUser } from "../_shared/auth.ts";
 import { callAiGateway } from "../_shared/aiGateway.ts";
+import { guardSwitch } from "../_shared/systemSwitch.ts";
 
 
 
@@ -59,6 +60,10 @@ Deno.serve(async (req) => {
   const corsHeaders = buildCorsHeaders(req);
   if (req.method === "OPTIONS")
     return new Response(null, { headers: corsHeaders });
+
+  // Survival Mode: admin ne is function ko band kiya ho to yahin ruk jao.
+  const __switchOff = await guardSwitch("generate-embedding", corsHeaders);
+  if (__switchOff) return __switchOff;
 
   try {
     const { text, knowledgeBaseId, action } = await req.json();

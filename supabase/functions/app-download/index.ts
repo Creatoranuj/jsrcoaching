@@ -19,6 +19,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { buildCorsHeaders } from "../_shared/cors.ts";
+import { guardSwitch } from "../_shared/systemSwitch.ts";
 
 /** Fixed-name asset of the newest release — CI always attaches JSRCoaching.apk. */
 const LATEST_APK_FALLBACK =
@@ -35,6 +36,10 @@ function isAllowed(url: unknown): url is string {
 Deno.serve(async (req) => {
   const corsHeaders = buildCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  // Survival Mode: admin ne is function ko band kiya ho to yahin ruk jao.
+  const __switchOff = await guardSwitch("app-download", corsHeaders);
+  if (__switchOff) return __switchOff;
   if (req.method !== "GET" && req.method !== "HEAD") {
     return new Response("Method not allowed", { status: 405, headers: corsHeaders });
   }

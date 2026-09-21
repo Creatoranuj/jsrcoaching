@@ -7,6 +7,7 @@ import { useIsMobile } from "../../hooks/use-mobile";
 import { selectionHaptic } from "@/lib/native/haptics";
 import logoIcon from "../../assets/branding/jsr-mark.webp";
 import NotificationDropdown from "./NotificationDropdown";
+import { useSystemSwitches } from "@/hooks/useSystemSwitches";
 import ProfileAvatar from "../profile/ProfileAvatar";
 
 interface HeaderProps {
@@ -18,6 +19,8 @@ const Header = ({ onMenuClick, userName }: HeaderProps) => {
   const { user, profile, isAuthenticated } = useAuth();
   const isMobile = useIsMobile();
   const displayName = profile?.fullName ?? userName;
+  // Survival Mode: admin notifications band kar sake.
+  const { feature } = useSystemSwitches();
 
   return (
     <>
@@ -51,7 +54,7 @@ const Header = ({ onMenuClick, userName }: HeaderProps) => {
       </div>
 
       <div className="flex items-center gap-2">
-        <NotificationDropdown />
+        {feature("notifications") && <NotificationDropdown />}
         {isAuthenticated ? (
           <Link to="/profile" onClick={() => { void selectionHaptic(); }}>
             <Button variant="ghost" size="icon" className="text-foreground hover:bg-muted h-11 w-11 relative active:scale-95 transition-transform duration-150" aria-label="Profile">

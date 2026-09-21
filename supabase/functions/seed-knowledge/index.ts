@@ -2,10 +2,15 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { requireRole } from "../_shared/auth.ts";
 import { errorResponse, internalError } from "../_shared/errors.ts";
 import { buildCorsHeaders } from "../_shared/cors.ts";
+import { guardSwitch } from "../_shared/systemSwitch.ts";
 
 Deno.serve(async (req) => {
   const corsHeaders = buildCorsHeaders(req);
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+
+  // Survival Mode: admin ne is function ko band kiya ho to yahin ruk jao.
+  const __switchOff = await guardSwitch("seed-knowledge", corsHeaders);
+  if (__switchOff) return __switchOff;
 
   const gate = await requireRole(req, corsHeaders, ['admin']);
   if (!gate.ok) return gate.response;

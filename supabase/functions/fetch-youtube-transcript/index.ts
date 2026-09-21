@@ -17,6 +17,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { buildCorsHeaders } from "../_shared/cors.ts";
 import { requireUser } from "../_shared/auth.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { guardSwitch } from "../_shared/systemSwitch.ts";
 
 const TIMEOUT_MS = 5000;
 const MAX_CHARS = 12000;
@@ -123,6 +124,10 @@ async function resolveTranscript(youtubeId: string): Promise<{ text: string; lan
 serve(async (req) => {
   const corsHeaders = buildCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  // Survival Mode: admin ne is function ko band kiya ho to yahin ruk jao.
+  const __switchOff = await guardSwitch("fetch-youtube-transcript", corsHeaders);
+  if (__switchOff) return __switchOff;
 
   // Require a valid user JWT — this endpoint mutates lesson rows and hits YouTube
   // on the app's behalf, so anonymous callers must not be allowed.

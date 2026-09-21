@@ -10,6 +10,7 @@ import {
   DEFAULT_CHAT_MODEL,
 } from "../_shared/aiGateway.ts";
 import { AI_ASSISTANT_NAME, FOUNDER_HONORIFIC, INSTITUTE_NAME } from "../_shared/persona.ts";
+import { guardSwitch } from "../_shared/systemSwitch.ts";
 
 // v5: added per-user rate limit (C-1) — lesson-scoped chat accepts { lesson, message, history }
 // Redeployed 2026-07-31: pick up rotated LOVABLE_API_KEY.
@@ -20,6 +21,10 @@ serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  // Survival Mode: admin ne is function ko band kiya ho to yahin ruk jao.
+  const __switchOff = await guardSwitch("resolve-doubt", corsHeaders);
+  if (__switchOff) return __switchOff;
 
   const auth = await requireUser(req, corsHeaders);
   if (!auth.ok) return auth.response;
