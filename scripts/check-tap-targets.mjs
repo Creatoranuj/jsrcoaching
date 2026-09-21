@@ -17,11 +17,11 @@
  */
 import { spawnSync } from "node:child_process";
 
-// Snapshot 2026-09-19: 43 single-line icon-button matches (tests excluded). Most are
+// Snapshot 2026-09-21: 31 single-line icon-button matches (tests excluded). Most are
 // icons rendered inside padded parents (safe), but the ceiling prevents
 // NEW violations from landing without review. Ratchet down after the
 // on-device tap sweep at 360px.
-const BUDGET = 43;
+const BUDGET = 31;
 
 const PATTERN = String.raw`<[Bb]utton[^>]*\bh-[6-9]\b[^>]*\bw-[6-9]\b|<[Bb]utton[^>]*\bw-[6-9]\b[^>]*\bh-[6-9]\b`;
 const PATHS = ["src/components", "src/pages"];

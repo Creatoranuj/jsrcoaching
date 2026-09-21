@@ -7,6 +7,17 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [v1.15.1] — 2026-09-21
+
+### Fixed
+- **Tap targets below the 44px minimum.** The markdown toolbar in the lecture
+  notes editor (10 buttons), the remove-attachment button in Messages, and the
+  rename confirm/cancel buttons in the Smart Notes sheet were 24–32px. All are
+  now `h-11 w-11`. The `check-tap-targets` guard ratchets from 43 to 31, which
+  un-reds the Code Guards job.
+
+---
+
 ## [v1.15.0] — 2026-09-21
 
 End-to-end repair of the pay → enrollment → course path, from three student

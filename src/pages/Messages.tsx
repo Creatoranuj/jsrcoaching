@@ -451,7 +451,7 @@ const Messages = () => {
                 <div className="px-4 py-2 bg-muted/50 border-t border-border flex items-center gap-2">
                   <Paperclip className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm truncate flex-1">{attachmentFile.name}</span>
-                  <Button aria-label="Remove attachment" variant="ghost" size="icon" className="h-6 w-6" onClick={() => setAttachmentFile(null)}>
+                  <Button aria-label="Remove attachment" variant="ghost" size="icon" className="h-11 w-11" onClick={() => setAttachmentFile(null)}>
                     <X className="h-4 w-4" />
                   </Button>
                 </div>

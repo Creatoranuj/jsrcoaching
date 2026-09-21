@@ -301,36 +301,36 @@ const ObsidianNotes: React.FC<ObsidianNotesProps> = ({
         <CardContent>
           {/* Formatting Toolbar */}
           <div className="flex flex-wrap gap-1 mb-3 p-2 bg-muted/50 rounded-lg">
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => insertMarkdown('**', '**')}>
+            <Button variant="ghost" size="icon" className="h-11 w-11" onClick={() => insertMarkdown('**', '**')}>
               <Bold className="w-4 h-4" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => insertMarkdown('*', '*')}>
+            <Button variant="ghost" size="icon" className="h-11 w-11" onClick={() => insertMarkdown('*', '*')}>
               <Italic className="w-4 h-4" />
             </Button>
             <div className="w-px h-8 bg-border mx-1" />
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => insertMarkdown('# ')}>
+            <Button variant="ghost" size="icon" className="h-11 w-11" onClick={() => insertMarkdown('# ')}>
               <Heading1 className="w-4 h-4" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => insertMarkdown('## ')}>
+            <Button variant="ghost" size="icon" className="h-11 w-11" onClick={() => insertMarkdown('## ')}>
               <Heading2 className="w-4 h-4" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => insertMarkdown('### ')}>
+            <Button variant="ghost" size="icon" className="h-11 w-11" onClick={() => insertMarkdown('### ')}>
               <Heading3 className="w-4 h-4" />
             </Button>
             <div className="w-px h-8 bg-border mx-1" />
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => insertMarkdown('- ')}>
+            <Button variant="ghost" size="icon" className="h-11 w-11" onClick={() => insertMarkdown('- ')}>
               <List className="w-4 h-4" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => insertMarkdown('1. ')}>
+            <Button variant="ghost" size="icon" className="h-11 w-11" onClick={() => insertMarkdown('1. ')}>
               <ListOrdered className="w-4 h-4" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => insertMarkdown('> ')}>
+            <Button variant="ghost" size="icon" className="h-11 w-11" onClick={() => insertMarkdown('> ')}>
               <Quote className="w-4 h-4" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => insertMarkdown('`', '`')}>
+            <Button variant="ghost" size="icon" className="h-11 w-11" onClick={() => insertMarkdown('`', '`')}>
               <Code className="w-4 h-4" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => insertMarkdown('[[', ']]')}>
+            <Button variant="ghost" size="icon" className="h-11 w-11" onClick={() => insertMarkdown('[[', ']]')}>
               <Link className="w-4 h-4" />
             </Button>
           </div>

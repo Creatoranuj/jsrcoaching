@@ -120,10 +120,10 @@ export default function SmartNotesListSheet({
                             }}
                             className="h-8 text-sm"
                           />
-                          <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={(e) => { e.stopPropagation(); void commitRename(n); }}>
+                          <Button size="icon" variant="ghost" className="h-11 w-11 shrink-0" onClick={(e) => { e.stopPropagation(); void commitRename(n); }}>
                             <Check className="h-4 w-4" />
                           </Button>
-                          <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={(e) => { e.stopPropagation(); setEditingId(null); }}>
+                          <Button size="icon" variant="ghost" className="h-11 w-11 shrink-0" onClick={(e) => { e.stopPropagation(); setEditingId(null); }}>
                             <X className="h-4 w-4" />
                           </Button>
                         </div>
