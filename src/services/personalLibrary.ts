@@ -788,6 +788,13 @@ export async function addFileToFolder(
           }
         }
       }
+      // Tell every mounted list (MyLibrary folders AND the open FolderView)
+      // that a file landed. The root "+" FAB in MyLibrary calls this service
+      // directly and then refreshes only its own folder list, so the folder
+      // the student was looking at stayed empty until re-opened — the
+      // Playwright pdf-offline spec caught exactly that ("992 KB used", no
+      // row). useFolderItems coalesces bursts, so a 25-file batch is fine.
+      emitLibraryRefresh();
       return rec;
     } finally {
       release(file.size);

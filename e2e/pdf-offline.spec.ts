@@ -36,6 +36,20 @@ async function openMyLibrary(page: Page) {
   if (await enable.isVisible().catch(() => false)) await enable.click();
 }
 
+/**
+ * The library renders several hidden `<input type="file">`s (root "+" picker,
+ * per-folder picker, replace picker). Address the one that accepts PDFs so
+ * the fixture is never handed to a picker that ignores it.
+ */
+function pdfPicker(page: Page) {
+  return page.locator('input[type="file"][accept*="pdf"]').first();
+}
+
+/** The uploaded row: title is the file name without extension ("test"). */
+function uploadedItem(page: Page) {
+  return page.getByText(/^test(\.pdf)?$/i).first();
+}
+
 async function ensureFolder(page: Page, name: string) {
   // If folder already exists, just open it.
   const existing = page.getByRole("button", { name: new RegExp(name, "i") }).first();
@@ -64,18 +78,19 @@ test.describe("PDF offline persistence (web/IndexedDB)", () => {
 
     // Add PDF via hidden file input. The "Add PDF" button triggers it; we
     // attach the file directly to the input element.
-    const fileInput = page.locator('input[type="file"]').first();
-    await fileInput.setInputFiles(FIXTURE);
+    await pdfPicker(page).setInputFiles(FIXTURE);
 
-    // Item appears in the folder list.
-    const item = page.getByText(/test\.pdf|^test$/i).first();
-    await expect(item).toBeVisible({ timeout: 10000 });
+    // Item appears in the folder list — the service broadcasts
+    // personalLibrary:refresh, so the open folder re-reads IndexedDB at once.
+    // 1 MB through the serial write queue on a CI runner can take a few s.
+    const item = uploadedItem(page);
+    await expect(item).toBeVisible({ timeout: 20000 });
 
     // Hard reload — the critical assertion: blob must come back from IndexedDB.
     await page.reload();
     await openMyLibrary(page);
     await page.getByRole("button", { name: /e2e test/i }).first().click();
-    await page.getByText(/test\.pdf|^test$/i).first().click();
+    await uploadedItem(page).click();
 
     // PDF.js renders pages into <canvas>. If the blob URL was dead we'd see
     // "Could not load PDF" instead.
@@ -86,10 +101,10 @@ test.describe("PDF offline persistence (web/IndexedDB)", () => {
   test("2. Autoscroll moves the document at 0.1×", async ({ page }) => {
     await openMyLibrary(page);
     await ensureFolder(page, "E2E Test");
-    const item = page.getByText(/test\.pdf|^test$/i).first();
+    const item = uploadedItem(page);
     if (!(await item.isVisible().catch(() => false))) {
-      await page.locator('input[type="file"]').first().setInputFiles(FIXTURE);
-      await expect(item).toBeVisible({ timeout: 10000 });
+      await pdfPicker(page).setInputFiles(FIXTURE);
+      await expect(item).toBeVisible({ timeout: 20000 });
     }
     await item.click();
     await expect(page.locator("canvas").first()).toBeVisible({ timeout: 20000 });

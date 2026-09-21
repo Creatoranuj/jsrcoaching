@@ -114,6 +114,23 @@ describe("Suite 6: Web local PDF bytes (#8)", () => {
     expect(await getItemUri(item.id)).toBe(`nb-personal-library:${item.id}`);
   });
 
+  it("6.1b adding a file broadcasts personalLibrary:refresh so the OPEN folder re-reads", async () => {
+    // Regression: the root "+" picker in MyLibrary calls the service directly
+    // and refreshed only its own folder list; the FolderView the student was
+    // looking at stayed empty until re-opened (CI pdf-offline spec: "992 KB
+    // used", no row). The broadcast is what useFolderItems listens for.
+    const heard = vi.fn();
+    window.addEventListener("personalLibrary:refresh", heard);
+    try {
+      const folder = await getOrCreateFolder("Broadcast uploads");
+      const file = new File([pdf], "broadcast.pdf", { type: "application/pdf" });
+      await addFileToFolder(folder.id, file);
+      expect(heard).toHaveBeenCalled();
+    } finally {
+      window.removeEventListener("personalLibrary:refresh", heard);
+    }
+  });
+
   it("6.2 web downloads open through a stable IndexedDB URI", async () => {
     const id = await addDownload({
       title: "Saved PDF",

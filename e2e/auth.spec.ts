@@ -136,14 +136,20 @@ test.describe("Authentication Flow", () => {
     test("should show error for existing email", async ({ page }) => {
       test.skip(!HAS_USER, "TEST_USER_EMAIL / TEST_USER_PASSWORD not set");
 
+      // Leaked-password protection is ON in production auth: a textbook
+      // password like "Password123!" is rejected with "appeared in a known
+      // data breach" BEFORE the duplicate-email check ever runs, so the test
+      // never saw the outcome it asserts. Use a unique, never-breached value.
+      const freshPassword = `E2e!Dup-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}Q`;
+
       await openSignup(page);
       // Same hydration race as the login form: retry the whole fill+submit
       // cycle if the controlled fields were wiped before the click landed.
       await expect(async () => {
         await fillStableLocator(page.locator('input[id="name"]'), "Existing User");
         await fillStableLocator(page.locator('input[id="email"]'), TEST_USER.email);
-        await fillStableLocator(page.locator('input[id="password"]'), "Password123!");
-        await fillStableLocator(page.locator('input[id="confirmPassword"]'), "Password123!");
+        await fillStableLocator(page.locator('input[id="password"]'), freshPassword);
+        await fillStableLocator(page.locator('input[id="confirmPassword"]'), freshPassword);
         await page.locator('button[type="submit"]').first().click();
         await expect(page.getByText("Please fill in all fields")).toHaveCount(0, {
           timeout: 1_500,

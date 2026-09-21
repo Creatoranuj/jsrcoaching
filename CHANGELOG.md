@@ -7,6 +7,28 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [v1.16.1] — 2026-09-21
+
+### Fixed — My Library
+- Adding a file with the "+" button while a folder was open did not show the
+  file until the folder was re-opened (the bytes were saved, the list was not
+  told). Every add now broadcasts the library refresh event the open folder
+  listens for, so the new row appears immediately.
+
+### CI — Playwright E2E (5 failures diagnosed from run artifacts, none were timing)
+- `learning-journey` / `lesson-completion`: the helper clicked the first
+  chapter card, which is the synthetic "All Content" folder (renders
+  sub-chapter folders, never lesson cards). It now opens the first chapter
+  with a non-zero lecture count and descends folders when needed.
+- `auth › existing email`: leaked-password protection rejected the textbook
+  test password ("appeared in a known data breach") before the duplicate-email
+  check ran. The spec now uses a unique, never-breached password.
+- `pdf-offline`: the spec set the fixture on whichever `<input type="file">`
+  came first; it now targets the PDF-accepting picker and waits for the
+  refresh broadcast above.
+
+---
+
 ## [v1.16.0] — 2026-09-21
 
 ### Fixed — "paisa kat gaya, course nahi aaya"
