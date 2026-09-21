@@ -13,7 +13,7 @@ export interface UploadTypeTabsProps {
 /** Pill tabs that pick the content type being uploaded. Presentational only. */
 export const UploadTypeTabs = memo(function UploadTypeTabs({ value, onChange }: UploadTypeTabsProps) {
   return (
-    <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+    <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 min-w-0 w-full max-w-full">
       {UPLOAD_TYPES.map((type) => {
         const icon = uploadTypeIcon(type);
         return (

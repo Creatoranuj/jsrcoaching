@@ -818,7 +818,7 @@ const AdminUpload = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => navigate('/admin')} className="text-white border-white/30 hover:bg-white/10 text-xs hidden sm:flex">
+            <Button variant="outline" size="sm" onClick={() => navigate('/admin')} className="bg-transparent text-white border-white/30 hover:bg-white/10 text-xs hidden sm:flex">
               Dashboard
             </Button>
             <Button variant="ghost" size="sm" onClick={handleLogout} className="text-white hover:bg-white/10" aria-label="Log out">
@@ -1087,7 +1087,7 @@ const AdminUpload = () => {
 
             <div className="grid lg:grid-cols-2 gap-6">
               {/* Upload Form */}
-              <Card className="border-2 border-primary/20 shadow-lg">
+              <Card className="border-2 border-primary/20 shadow-lg min-w-0">
                 <CardHeader className="bg-primary/5 border-b">
                   <CardTitle className="flex items-center gap-2 text-base">
                     <Upload className="h-5 w-5" />
@@ -1103,7 +1103,7 @@ const AdminUpload = () => {
               </Card>
 
               {/* Existing Lessons */}
-              <Card className="shadow-lg">
+              <Card className="shadow-lg min-w-0">
                 <CardHeader className="bg-muted/30 border-b">
                   <CardTitle className="flex items-center gap-2 text-base">
                     <BookOpen className="h-5 w-5" />

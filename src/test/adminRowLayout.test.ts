@@ -69,3 +69,37 @@ describe("upload centre row actions are reachable on touch devices", () => {
     }
   });
 });
+
+/**
+ * Width guards. On a 411px phone the Upload Center card measured 843px because
+ * the 8-button type strip (a nowrap flex row) fed its min-content width to the
+ * grid item; and the shared Radix ScrollArea viewport laid its child out as a
+ * table, sizing lesson rows to max-content. Both need an explicit clamp.
+ */
+describe("upload centre fits a phone screen", () => {
+  it("clamps the upload form card", () => {
+    expect(uploadSrc).toContain('<Card className="border-2 border-primary/20 shadow-lg min-w-0">');
+  });
+
+  it("clamps the lesson list card", () => {
+    expect(uploadSrc).toContain('<Card className="shadow-lg min-w-0">');
+  });
+
+  it("keeps the type strip a shrinkable scroll container", () => {
+    const tabs = readFileSync(
+      resolve(process.cwd(), "src/features/admin-upload/components/UploadTypeTabs.tsx"),
+      "utf8",
+    );
+    expect(tabs).toContain("overflow-x-auto");
+    expect(tabs).toContain("min-w-0 w-full max-w-full");
+  });
+
+  it("forces the shared ScrollArea viewport child to a block box", () => {
+    const sa = readFileSync(resolve(process.cwd(), "src/components/ui/scroll-area.tsx"), "utf8");
+    expect(sa).toContain("[&>div]:!block");
+  });
+
+  it("keeps the Upload Center back button readable on its light header", () => {
+    expect(uploadSrc).toContain("bg-transparent text-white border-white/30");
+  });
+});

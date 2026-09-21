@@ -7,6 +7,30 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [v1.13.1] — 2026-09-22
+
+### Fixed
+- **Mobile Upload Center form was cut off on the right.** The upload form card
+  measured 843px inside a 411px phone viewport because the upload-type tab strip
+  (`flex gap-2 overflow-x-auto`) has nowrap buttons summing to ~800px min-content,
+  and the grid item's default `min-width: auto` expanded the card to fit. Added
+  `min-w-0` to both Upload Center cards and `min-w-0 w-full max-w-full` to the tab
+  strip. Verified live at 411x745: cards 379px, document overflow 0.
+- **Lesson rows overflowed to 527px on phones.** Radix ScrollArea's viewport child
+  is `display: table; min-width: 100%`, which sizes to the widest row's max-content.
+  Forced a block box on the viewport child in `src/components/ui/scroll-area.tsx`.
+- **Upload Center "Dashboard" back button was invisible** (white text on the default
+  white outline background). It now uses a transparent background.
+
+### Added
+- `src/test/adminRowLayout.test.ts` — 5 more regression tests (form card min-w-0,
+  lesson card min-w-0, shrinkable tab strip, ScrollArea viewport block, readable
+  back button).
+- `src/test/survivalMode.test.ts` — 15 tests locking survival-mode defaults, the
+  protected critical paths, and the admin wiring.
+
+---
+
 ## [v1.13.0] — 2026-09-21
 
 ### Fixed
