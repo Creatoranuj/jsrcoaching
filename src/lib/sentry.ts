@@ -366,14 +366,71 @@ export function reportError(err: unknown, context?: Record<string, unknown>): vo
   captureException(err, context);
 }
 
-function describeError(err: unknown): string {
+interface ErrorLike {
+  message?: unknown;
+  code?: unknown;
+  details?: unknown;
+  hint?: unknown;
+  status?: unknown;
+  name?: unknown;
+}
+
+function asErrorLike(err: unknown): ErrorLike | null {
+  return err && typeof err === "object" ? (err as ErrorLike) : null;
+}
+
+export function describeError(err: unknown): string {
   if (err instanceof Error) return `${err.name}: ${err.message}`;
-  if (err && typeof err === "object") {
-    const o = err as { code?: unknown; message?: unknown };
-    if (o.message || o.code) return `${o.code ?? ""} ${o.message ?? ""}`.trim();
+  const o = asErrorLike(err);
+  if (o) {
+    // Audit 2026-09-22: PostgrestError/StorageError carry the actionable part
+    // in `.details` / `.hint` (e.g. the violated constraint); dropping them
+    // made every Supabase failure read as a bare "23505 duplicate key".
+    if (o.message || o.code) {
+      return [o.code, o.message, o.details, o.hint]
+        .filter((p) => p !== undefined && p !== null && p !== "")
+        .map(String)
+        .join(" — ")
+        .trim();
+    }
     try { return JSON.stringify(err); } catch { return String(err); }
   }
   return String(err ?? "");
+}
+
+/**
+ * Normalise anything thrown into a real `Error` before it reaches Sentry.
+ *
+ * Audit 2026-09-22: Supabase clients reject with plain objects
+ * (`{ code, details, hint, message }`), and `captureException(rawObject)`
+ * produced the live issue "Object captured as exception with keys: code,
+ * details, hint, message" — an unsearchable, ungroupable event. We now send a
+ * proper Error whose message is the Postgrest message, whose `name` groups all
+ * Supabase failures together, and which keeps the original payload on
+ * `cause` (and in `extra`) for debugging.
+ */
+export function toError(input: unknown): Error {
+  if (input instanceof Error) return input;
+  const o = asErrorLike(input);
+  if (o && (o.message !== undefined || o.code !== undefined)) {
+    const message = typeof o.message === "string" && o.message
+      ? o.message
+      : describeError(input) || "Unknown error";
+    const err = new Error(message);
+    err.name =
+      typeof o.name === "string" && o.name && o.name !== "Error"
+        ? o.name
+        : o.code !== undefined
+          ? "SupabaseError"
+          : "NonErrorThrown";
+    (err as Error & { cause?: unknown }).cause = input;
+    return err;
+  }
+  if (typeof input === "string") return new Error(input);
+  const err = new Error(describeError(input) || "Unknown error");
+  err.name = "NonErrorThrown";
+  (err as Error & { cause?: unknown }).cause = input;
+  return err;
 }
 
 export function captureException(err: unknown, context?: Record<string, unknown>) {
@@ -385,13 +442,19 @@ export function captureException(err: unknown, context?: Record<string, unknown>
     addBreadcrumb(kind, describeError(err).slice(0, 200), context);
     return;
   }
+  const normalized = toError(err);
+  const o = asErrorLike(err);
+  const supabaseExtra =
+    o && !(err instanceof Error)
+      ? { code: o.code, details: o.details, hint: o.hint, status: o.status }
+      : {};
   loadSentry().then((mod) => {
     if (!mod || !initialized) return;
     try {
-      mod.captureException(err, {
+      mod.captureException(normalized, {
         level: levelForKind(kind),
         tags: { nb_kind: kind },
-        ...(context ? { extra: context } : {}),
+        extra: { ...supabaseExtra, ...(context ?? {}) },
       });
     } catch {
       /* ignore */

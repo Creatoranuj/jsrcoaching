@@ -98,20 +98,32 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Cache-first for static images, fonts, icons
+  // Cache-first for static images, fonts, icons.
+  // Audit 2026-09-22: (a) `fetch()` had no catch, so an offline/failed image
+  // rejected respondWith() and the browser rendered a network error instead of
+  // the cached copy; (b) opaque cross-origin responses (jsDelivr thumbnails
+  // loaded via <img>) were being stored — their status is always 0, so they
+  // were re-fetched anyway and only bloated the cache; (c) SmartImage retries
+  // with `?_r=N`, which must still hit the same-origin cache entry.
   if (
     url.pathname.match(/\.(png|jpg|jpeg|svg|gif|webp|woff2?|ttf|eot|ico)$/)
   ) {
+    const sameOrigin = url.origin === self.location.origin;
+    const matchOpts = sameOrigin ? { ignoreSearch: true } : undefined;
     event.respondWith(
-      caches.match(request).then((cached) => {
+      caches.match(request, matchOpts).then((cached) => {
         if (cached) return cached;
-        return fetch(request).then((response) => {
-          if (response.ok) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-          }
-          return response;
-        });
+        return fetch(request)
+          .then((response) => {
+            if (response.ok && response.type !== 'opaque') {
+              const clone = response.clone();
+              caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+            }
+            return response;
+          })
+          .catch(() =>
+            caches.match(request, matchOpts).then((fallback) => fallback || Response.error())
+          );
       })
     );
     return;

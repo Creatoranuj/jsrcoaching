@@ -22,6 +22,20 @@ import {
  *      was the "Mr Anuj Kumar Yadav" text-in-avatar bug on APK.
  *   4. Keeps <img> visually hidden until it decodes, so alt text can't flash
  *      during retries.
+ *
+ * Audit 2026-09-22 (P0 "course thumbnails never load"):
+ *   The reveal logic depended on React's `onLoad`. Android WebView / Firefox
+ *   can satisfy a memory-cached image *synchronously* while the element is
+ *   being committed, and then never dispatch `load`. A layout-effect guard
+ *   (`img.complete && naturalWidth > 0 → setLoaded(true)`) existed, but the
+ *   unconditional reset effect below it (`setLoaded(false)` on `[src, width]`)
+ *   ran *after* it on mount and undid the reveal, so the image stayed at
+ *   `opacity: 0` behind the grey tile forever — exactly the "thumbnails not
+ *   loading" symptom on second visits / in the APK. The reset now only runs
+ *   when `src`/`width` genuinely change, the completion probe also treats a
+ *   `complete && naturalWidth === 0` image as a failed load (lost `error`
+ *   event), and a single delayed re-check catches a `load` that was lost
+ *   after commit. A decoded image is never left invisible.
  */
 export interface SmartImageProps extends Omit<ImgHTMLAttributes<HTMLImageElement>, "loading"> {
   src: string;
@@ -43,6 +57,15 @@ const DEFAULT_FALLBACK =
   encodeURIComponent(
     `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'><rect width='40' height='40' fill='%23e5e7eb'/><circle cx='20' cy='16' r='7' fill='%239ca3af'/><path d='M6 36c2-8 8-12 14-12s12 4 14 12z' fill='%239ca3af'/></svg>`
   );
+
+/**
+ * How long after an attempt is committed we re-probe `img.complete`. Covers a
+ * `load` event lost *after* commit (the layout-effect probe only sees images
+ * that were already decoded at commit time). 1.5s is far below the 6s
+ * storage-call ceiling, so a genuinely slow image is simply probed once and
+ * left alone until its own `load` fires.
+ */
+const LOST_EVENT_RECHECK_MS = 1500;
 
 // Supabase image transformations are a paid feature. On this project the
 // /render/image endpoint returns 403 (FeatureNotEnabled), which caused every
@@ -92,6 +115,10 @@ export const SmartImage = forwardRef<HTMLImageElement, SmartImageProps>(
     const [failed, setFailed] = useState(false);
     const retriesRef = useRef(0);
     const timerRef = useRef<number | null>(null);
+    const recheckTimerRef = useRef<number | null>(null);
+    // Identity of the (src, width) pair the current attempt chain belongs to.
+    // Lets the reset effect distinguish "mounted" from "props changed".
+    const attemptKeyRef = useRef(`${width}|${src}`);
 
     const setRefs = useCallback(
       (node: HTMLImageElement | null) => {
@@ -105,30 +132,41 @@ export const SmartImage = forwardRef<HTMLImageElement, SmartImageProps>(
       [ref]
     );
 
+    const clearTimers = useCallback(() => {
+      if (timerRef.current) {
+        window.clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      if (recheckTimerRef.current) {
+        window.clearTimeout(recheckTimerRef.current);
+        recheckTimerRef.current = null;
+      }
+    }, []);
+
+    // Reset the retry chain ONLY when src/width actually change — never on
+    // mount (see header comment: the mount-time reset used to clobber the
+    // synchronous "already decoded" reveal below).
     useEffect(() => {
+      const key = `${width}|${src}`;
+      if (attemptKeyRef.current === key) return;
+      attemptKeyRef.current = key;
+      clearTimers();
       retriesRef.current = 0;
       setLoaded(false);
       setFailed(false);
       setAttempt(toSupabaseRender(src, width));
-      return () => {
-        if (timerRef.current) window.clearTimeout(timerRef.current);
-      };
-    }, [src, width]);
+    }, [src, width, clearTimers]);
 
-    useLayoutEffect(() => {
-      const img = imgRef.current;
-      if (!img) return;
+    useEffect(() => clearTimers, [clearTimers]);
 
-      // Firefox/Android WebView can satisfy cached image requests before React's
-      // onLoad handler runs. Without this guard the image stays at opacity:0,
-      // which looks like thumbnails never loaded even though naturalWidth > 0.
-      if (img.complete && img.naturalWidth > 0) {
-        setLoaded(true);
-      }
-    }, [attempt]);
-
-    const handleError = useCallback(
-      (e: SyntheticEvent<HTMLImageElement, Event>) => {
+    /**
+     * Advance the fallback chain after a failed attempt. Shared by the DOM
+     * `error` handler and the completion probe (which handles a lost `error`
+     * event: `complete === true` with `naturalWidth === 0` means the browser
+     * already gave up on this URL).
+     */
+    const advanceAfterFailure = useCallback(
+      (e?: SyntheticEvent<HTMLImageElement, Event>) => {
         // Step 1: Supabase Storage render endpoint failed (403/FeatureNotEnabled
         // on Free tier) → cache the flag and fall back to the raw src. Guard
         // narrowly on the render URL so cache-bust retries (?_r=N) below don't
@@ -141,7 +179,9 @@ export const SmartImage = forwardRef<HTMLImageElement, SmartImageProps>(
         // Step 2: original URL failed — retry with cache-bust.
         if (retriesRef.current < maxRetries) {
           const n = ++retriesRef.current;
+          if (timerRef.current) window.clearTimeout(timerRef.current);
           timerRef.current = window.setTimeout(() => {
+            timerRef.current = null;
             const bust = src.includes("?") ? "&" : "?";
             setAttempt(`${src}${bust}_r=${n}`);
           }, retryDelay * n);
@@ -151,10 +191,48 @@ export const SmartImage = forwardRef<HTMLImageElement, SmartImageProps>(
         if (attempt !== fallbackSrc) {
           setFailed(true);
           setAttempt(fallbackSrc);
-          onError?.(e);
+          if (e) onError?.(e);
         }
       },
       [attempt, src, fallbackSrc, maxRetries, retryDelay, onError]
+    );
+
+    // Completion probe: runs synchronously after every attempt commit, then
+    // once more shortly after, so a lost `load`/`error` event can never leave a
+    // decoded image hidden or a broken one stuck on the grey tile.
+    useLayoutEffect(() => {
+      const probe = (): boolean => {
+        const img = imgRef.current;
+        if (!img || !img.complete) return false;
+        if (img.naturalWidth > 0) {
+          setLoaded(true);
+          return true;
+        }
+        // Decoded-but-empty means the browser already failed this URL.
+        if (img.getAttribute("src")) advanceAfterFailure();
+        return true;
+      };
+
+      if (probe()) return;
+      if (recheckTimerRef.current) window.clearTimeout(recheckTimerRef.current);
+      recheckTimerRef.current = window.setTimeout(() => {
+        recheckTimerRef.current = null;
+        probe();
+      }, LOST_EVENT_RECHECK_MS);
+      return () => {
+        if (recheckTimerRef.current) {
+          window.clearTimeout(recheckTimerRef.current);
+          recheckTimerRef.current = null;
+        }
+      };
+      // `advanceAfterFailure` changes identity with `attempt`, which is the
+      // dependency we actually want to re-run on.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [attempt]);
+
+    const handleError = useCallback(
+      (e: SyntheticEvent<HTMLImageElement, Event>) => advanceAfterFailure(e),
+      [advanceAfterFailure]
     );
 
     const handleLoad = useCallback(

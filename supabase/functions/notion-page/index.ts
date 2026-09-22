@@ -7,6 +7,7 @@
 //
 // Endpoint: GET /notion-page?id=<pageId-with-or-without-hyphens>
 import { NotionAPI } from "npm:notion-client@7.1.5";
+import { createClient } from "npm:@supabase/supabase-js@2";
 import { buildCorsHeaders } from "../_shared/cors.ts";
 import { guardSwitch } from "../_shared/systemSwitch.ts";
 
@@ -31,6 +32,30 @@ Deno.serve(async (req) => {
   // Survival Mode: admin ne is function ko band kiya ho to yahin ruk jao.
   const __switchOff = await guardSwitch("notion-page", corsHeaders);
   if (__switchOff) return __switchOff;
+
+  // Audit 2026-09-22: this proxy answered anonymous callers, so anyone on the
+  // internet could burn our Notion quota / read any public page through our
+  // origin. Require a signed-in JSR user (same pattern as manage-session).
+  const authHeader = req.headers.get("Authorization") ?? "";
+  if (!authHeader.startsWith("Bearer ")) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  const authClient = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_ANON_KEY")!,
+    { global: { headers: { Authorization: authHeader } }, auth: { persistSession: false } },
+  );
+  const { data: authData, error: authError } = await authClient.auth.getUser();
+  if (authError || !authData?.user) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
 
   try {
     const url = new URL(req.url);

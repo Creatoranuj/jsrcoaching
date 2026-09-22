@@ -2,6 +2,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { errorResponse, internalError } from "../_shared/errors.ts";
 import { buildCorsHeaders } from "../_shared/cors.ts";
 import { guardSwitch } from "../_shared/systemSwitch.ts";
+import { validatePublicUrl } from "../_shared/safeUrl.ts";
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -63,17 +64,16 @@ Deno.serve(async (req) => {
       return errorResponse("INVALID_INPUT", corsHeaders, { message: "url is required" });
     }
 
-    let targetUrl: URL;
-    try {
-      targetUrl = new URL(url.startsWith('http') ? url : `https://${url}`);
-    } catch {
-      return errorResponse("INVALID_INPUT", corsHeaders, { message: "Invalid URL format" });
+    // Audit 2026-09-22: the inline regex missed decimal/hex/octal IPv4 forms,
+    // IPv4-mapped IPv6, `*.internal` / `*.localhost` and URL credentials.
+    // The fetch itself is done by Firecrawl (fixed host), so this is hygiene
+    // for what we ask a third party to crawl on our behalf, not a hole into
+    // our own network — but the shared validator is the single place to fix.
+    const check = validatePublicUrl(url);
+    if (!check.ok || !check.url) {
+      return errorResponse("INVALID_INPUT", corsHeaders, { message: check.reason ?? "URL not allowed" });
     }
-
-    const SSRF_BLOCKLIST = /^(localhost|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|0\.0\.0\.0|::1|fd[0-9a-f]{2}:)/i;
-    if (!['https:', 'http:'].includes(targetUrl.protocol) || SSRF_BLOCKLIST.test(targetUrl.hostname)) {
-      return errorResponse("INVALID_INPUT", corsHeaders, { message: "URL not allowed" });
-    }
+    const targetUrl: URL = check.url;
 
     const apiKey = Deno.env.get('FIRECRAWL_API_KEY');
     if (!apiKey) {

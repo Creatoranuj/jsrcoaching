@@ -1,8 +1,10 @@
 // Admin broadcast push notification via FCM HTTP v1.
 //
 // Auth: caller MUST be an authenticated admin (has_role(uid,'admin')).
-// verify_jwt is off platform-wide for this project, so the check below is the
-// security boundary — never remove it.
+// Audit 2026-09-22: supabase/config.toml only disables verify_jwt for
+// `app-download`; this function runs with the platform default (JWT verified
+// at the gateway). The in-code admin check below is still the real security
+// boundary (a valid student JWT passes the gateway) — never remove it.
 //
 // Secret required: FCM_SERVICE_ACCOUNT_JSON — the full Firebase service account
 // JSON (project_id, client_email, private_key). Never stored in the database.

@@ -74,10 +74,25 @@ export function useSmartNotesList({ lessonId, courseId }: Args) {
         content_md: args.content_md ?? "",
       };
       try {
-        const { data, error } = await supabase.from("smart_notes").insert(payload).select().single();
+        // Audit 2026-09-22: the live table carries UNIQUE indexes
+        // `smart_notes_user_lesson_uniq` (user_id, lesson_id) and
+        // `smart_notes_user_course_uniq` (user_id, course_id). A plain insert
+        // therefore failed with 23505 on the second save from a retried/offline
+        // mutation, surfacing as "Object captured as exception" in Sentry.
+        // Upsert on the matching key so a replay updates the existing note.
+        const { data, error } = await supabase
+          .from("smart_notes")
+          .upsert(payload, { onConflict: lessonId ? "user_id,lesson_id" : "user_id,course_id" })
+          .select()
+          .single();
         if (error) throw error;
-        setNotes((prev) => [data as SmartNoteRow, ...prev]);
-        return data as SmartNoteRow;
+        const row = data as SmartNoteRow;
+        setNotes((prev) =>
+          prev.some((n) => n.id === row.id)
+            ? prev.map((n) => (n.id === row.id ? row : n))
+            : [row, ...prev]
+        );
+        return row;
       } catch (err) {
         captureException(err, { surface: "useSmartNotesList.create", lessonId, courseId });
         throw err;
