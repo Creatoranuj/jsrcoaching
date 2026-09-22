@@ -71,7 +71,15 @@ export default defineConfig({
     // becomes ready in ~1s and matches what users actually run.
     // `npm run build` is skipped when dist/ already exists (CI builds it in a
     // prior step); a local `playwright test` builds once on demand.
-    command: "[ -f dist/index.html ] || npm run build; PORT=8080 npm run start",
+    //
+    // NODE_ENV=production is what actually selects the static server:
+    // server/index.js mounts Vite's dev middleware whenever NODE_ENV is not
+    // "production". Without it every CI run silently tested the dev bundle —
+    // on-demand transforms (login page 40 s+ cold), React StrictMode's
+    // double-invoked effects (the PDF reader pushed two back-button sentinels,
+    // so closing the autoscroll sheet closed the document) — none of which a
+    // student ever sees.
+    command: "[ -f dist/index.html ] || npm run build; NODE_ENV=production PORT=8080 npm run start",
     url: "http://localhost:8080",
     reuseExistingServer: !process.env.CI,
     timeout: 180 * 1000,

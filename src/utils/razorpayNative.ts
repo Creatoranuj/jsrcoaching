@@ -732,16 +732,19 @@ export const openNativeRazorpayCheckout = async (
 
   // The plugin returns `{ response: string | object }` — newer versions
   // already parse the JSON, older versions return a stringified payload.
-  let parsed: { razorpay_payment_id?: string; razorpay_order_id?: string; razorpay_signature?: string } | string | undefined =
-    result?.response as typeof parsed ?? (result as typeof parsed);
-  if (typeof parsed === "string") {
+  type SignedFields = { razorpay_payment_id?: string; razorpay_order_id?: string; razorpay_signature?: string };
+  const raw: unknown = result?.response ?? result;
+  let parsed: SignedFields | undefined;
+  if (typeof raw === "string") {
     try {
-      parsed = JSON.parse(parsed) as { razorpay_payment_id?: string; razorpay_order_id?: string; razorpay_signature?: string };
+      parsed = JSON.parse(raw) as SignedFields;
     } catch {
       // Legacy bridges can return only the payment id. Preserve the shape here
       // so the completeness check below raises a dedicated recovery error.
-      parsed = { razorpay_payment_id: parsed };
+      parsed = { razorpay_payment_id: raw };
     }
+  } else {
+    parsed = (raw ?? undefined) as SignedFields | undefined;
   }
 
   // A successful order payment must return all three signed fields. Treating a

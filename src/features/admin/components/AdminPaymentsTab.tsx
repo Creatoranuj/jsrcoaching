@@ -159,7 +159,7 @@ function AdminPaymentsTabImpl({
                             <Button size="sm" className="flex-1 bg-success hover:bg-success/90 text-success-foreground" onClick={() => onApprove(req)}>
                               <CheckCircle className="h-4 w-4 mr-1" />Approve
                             </Button>
-                            <Button size="sm" variant="destructive" className="flex-1" onClick={() => onReject(req.id)}>
+                            <Button size="sm" variant="destructive" className="flex-1" onClick={() => onReject(Number(req.id))}>
                               <XCircle className="h-4 w-4 mr-1" />Reject
                             </Button>
                           </div>

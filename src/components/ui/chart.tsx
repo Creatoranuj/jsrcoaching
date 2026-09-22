@@ -89,6 +89,22 @@ ${colorConfig
 
 const ChartTooltip = RechartsPrimitive.Tooltip;
 
+/** One entry of the recharts 3 tooltip / legend payload (fields we render). */
+type TooltipItem = {
+  name?: string | number;
+  dataKey?: string | number;
+  value?: string | number;
+  color?: string;
+  payload?: { fill?: string } & Record<string, unknown>;
+  [k: string]: unknown;
+};
+type LegendItem = {
+  value?: string | number;
+  dataKey?: string | number;
+  color?: string;
+  [k: string]: unknown;
+};
+
 const ChartTooltipContent = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<typeof RechartsPrimitive.Tooltip> &
@@ -98,9 +114,9 @@ const ChartTooltipContent = React.forwardRef<
       indicator?: "line" | "dot" | "dashed";
       nameKey?: string;
       labelKey?: string;
-      payload?: Array<Record<string, unknown>>;
+      payload?: TooltipItem[];
       label?: React.ReactNode;
-      labelFormatter?: (value: React.ReactNode, payload: Array<Record<string, unknown>>) => React.ReactNode;
+      labelFormatter?: (value: React.ReactNode, payload: TooltipItem[]) => React.ReactNode;
       formatter?: (
         value: unknown,
         name: unknown,
@@ -174,11 +190,11 @@ const ChartTooltipContent = React.forwardRef<
           {payload.map((item, index) => {
             const key = `${nameKey || item.name || item.dataKey || "value"}`;
             const itemConfig = getPayloadConfigFromPayload(config, item, key);
-            const indicatorColor = color || item.payload.fill || item.color;
+            const indicatorColor = color || item.payload?.fill || item.color;
 
             return (
               <div
-                key={item.dataKey}
+                key={String(item.dataKey ?? index)}
                 className={cn(
                   "flex w-full flex-wrap items-stretch gap-2 [&>svg]:h-2.5 [&>svg]:w-2.5 [&>svg]:text-muted-foreground",
                   indicator === "dot" && "items-center",
@@ -218,7 +234,7 @@ const ChartTooltipContent = React.forwardRef<
                         {nestLabel ? tooltipLabel : null}
                         <span className="text-muted-foreground">{itemConfig?.label || item.name}</span>
                       </div>
-                      {item.value && (
+                      {item.value != null && item.value !== "" && (
                         <span className="font-mono font-medium tabular-nums text-foreground">
                           {item.value.toLocaleString()}
                         </span>
@@ -242,7 +258,7 @@ const ChartLegendContent = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"div"> &
     {
-      payload?: Array<Record<string, unknown>>;
+      payload?: LegendItem[];
       verticalAlign?: "top" | "bottom";
       hideIcon?: boolean;
       nameKey?: string;
@@ -265,7 +281,7 @@ const ChartLegendContent = React.forwardRef<
 
         return (
           <div
-            key={item.value}
+            key={String(item.value ?? item.dataKey ?? key)}
             className={cn("flex items-center gap-1.5 [&>svg]:h-3 [&>svg]:w-3 [&>svg]:text-muted-foreground")}
           >
             {itemConfig?.icon && !hideIcon ? (

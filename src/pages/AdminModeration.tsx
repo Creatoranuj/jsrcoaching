@@ -58,14 +58,19 @@ const AdminModeration = () => {
     } else {
       const table = tab === "posts" ? "community_posts" : tab === "comments" ? "community_comments" : "doubt_replies";
       const bodyCol = tab === "replies" ? "message" : "body";
+      // community_posts stores its author as `author_id`; the other two use
+      // `user_id`. Selecting `user_id` from posts made PostgREST reject the
+      // whole request (400), so the Posts tab was always empty.
+      const authorCol = tab === "posts" ? "author_id" : "user_id";
       const { data, error } = await supabase
         .from(table as "community_posts" | "community_comments" | "doubt_replies")
-        .select(`id, user_id, ${bodyCol}, created_at, is_hidden, hidden_reason`)
+        .select(`id, ${authorCol}, ${bodyCol}, created_at, is_hidden, hidden_reason`)
         .order("created_at", { ascending: false })
         .limit(200);
       if (error) toast.error(error.message);
-      setItems((data ?? []).map((r: Record<string, unknown>) => ({
-        id: r.id as string, user_id: r.user_id as string | null, body: (r[bodyCol] as string) ?? "", created_at: r.created_at as string,
+      const rows = ((data ?? []) as unknown[]).map((r) => r as Record<string, unknown>);
+      setItems(rows.map((r) => ({
+        id: r.id as string, user_id: (r[authorCol] as string | null) ?? null, body: (r[bodyCol] as string) ?? "", created_at: r.created_at as string,
         is_hidden: !!r.is_hidden, hidden_reason: r.hidden_reason as string | null,
       })));
     }

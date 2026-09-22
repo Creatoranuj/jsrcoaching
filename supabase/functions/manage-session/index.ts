@@ -192,12 +192,17 @@ async function handle(req: Request, corsHeaders: Record<string, string>): Promis
     }
 
 
-    const { error } = await admin
+    // Audit 2026-09-22: return whether the slot is still active so a client
+    // holding a token the idle sweep retired can recreate its session instead
+    // of heartbeating into the void forever (which under-counted Active
+    // Sessions in Admin). `select("id")` makes the UPDATE report matched rows.
+    const { data: touched, error } = await admin
       .from("user_sessions")
       .update({ last_active_at: new Date().toISOString() })
       .eq("session_token", session_token)
       .eq("user_id", userId)
-      .eq("is_active", true);
+      .eq("is_active", true)
+      .select("id");
 
     if (error) {
       console.error("heartbeat error:", error);
@@ -207,7 +212,7 @@ async function handle(req: Request, corsHeaders: Record<string, string>): Promis
       });
     }
 
-    return new Response(JSON.stringify({ ok: true }), {
+    return new Response(JSON.stringify({ ok: true, active: (touched?.length ?? 0) > 0 }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }

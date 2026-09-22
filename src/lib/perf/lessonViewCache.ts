@@ -22,9 +22,10 @@ import { loadPreferences } from "@/lib/native/preferences";
 // just need a stable container shape for the persisted bundle.
 export interface CachedChapter { id: string; code?: string | null; title: string; [k: string]: unknown }
 export interface CachedLesson { id: string; title: string; [k: string]: unknown }
+export interface CachedCourse { id: number; title: string; grade?: string | null; [k: string]: unknown }
 
 export interface LessonViewBundle {
-  course: unknown;
+  course: CachedCourse | null;
   chapters: CachedChapter[];
   lessons: CachedLesson[];
   hasPurchased: boolean;

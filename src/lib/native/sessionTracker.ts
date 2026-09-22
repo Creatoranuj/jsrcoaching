@@ -19,6 +19,12 @@ const HEARTBEAT_MS = 15 * 60_000;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let currentUserId: string | null = null;
 let inflightCreate: Promise<void> | null = null;
+let resumeListener: (() => void) | null = null;
+let lastBeatAt = 0;
+// A resume that comes within this window of the previous beat is ignored so
+// quick app-switching doesn't turn into a write per switch.
+const RESUME_BEAT_MIN_GAP_MS = 5 * 60_000;
+
 
 async function hasLiveSession(): Promise<boolean> {
   try {
@@ -74,17 +80,66 @@ function isVisible(): boolean {
 
 function stopHeartbeat() {
   if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+  if (resumeListener) {
+    try { window.removeEventListener("app:resumed", resumeListener); } catch { /* noop */ }
+    try { document.removeEventListener("visibilitychange", resumeListener); } catch { /* noop */ }
+    resumeListener = null;
+  }
+}
+
+/**
+ * One heartbeat round-trip. Resolves `false` only when the server says the
+ * slot is no longer active (deactivated by the idle sweep or evicted by a
+ * newer device); anything else — including network failure and older edge
+ * function builds that don't return `active` — counts as "still fine".
+ */
+async function beat(token: string): Promise<boolean> {
+  if (!(await hasLiveSession())) return true; // avoid 401 when signed out
+  lastBeatAt = Date.now();
+  try {
+    const { data, error } = await supabase.functions.invoke("manage-session", {
+      body: { action: "heartbeat", session_token: token },
+    });
+    if (error) return true;
+    return (data as { active?: boolean } | null)?.active !== false;
+  } catch { return true; }
 }
 
 function startHeartbeat(token: string) {
   stopHeartbeat();
   heartbeatTimer = setInterval(async () => {
     if (!isVisible()) return; // app in background / tab hidden — nothing to report
-    if (!(await hasLiveSession())) return; // avoid 401 when signed out
-    supabase.functions
-      .invoke("manage-session", { body: { action: "heartbeat", session_token: token } })
-      .catch(() => { /* silent — best-effort */ });
+    const stillActive = await beat(token);
+    if (!stillActive) void recoverInactiveSlot();
   }, HEARTBEAT_MS);
+
+  // Audit 2026-09-22 (Pillar 1 / mobile lifecycle): a 15-min interval that is
+  // skipped while hidden means an app that is foregrounded for two minutes at
+  // a time never reports activity. Beat once on resume (rate-limited) so
+  // "last active" and the admin Active Sessions count reflect real usage.
+  if (typeof window !== "undefined") {
+    resumeListener = () => {
+      if (!isVisible()) return;
+      if (Date.now() - lastBeatAt < RESUME_BEAT_MIN_GAP_MS) return;
+      void beat(token).then((ok) => { if (!ok) void recoverInactiveSlot(); });
+    };
+    try { window.addEventListener("app:resumed", resumeListener); } catch { /* noop */ }
+    try { document.addEventListener("visibilitychange", resumeListener); } catch { /* noop */ }
+  }
+}
+
+/**
+ * The persisted token points at a row the server has since deactivated
+ * (hourly idle sweep after 72h, or evicted by a second device). Drop it and
+ * create a fresh slot so this device shows up as active again.
+ */
+async function recoverInactiveSlot(): Promise<void> {
+  const userId = currentUserId;
+  stopHeartbeat();
+  await clearToken();
+  if (!userId) return;
+  currentUserId = null;
+  await startSessionTracking(userId);
 }
 
 export async function startSessionTracking(userId: string): Promise<void> {
@@ -94,7 +149,13 @@ export async function startSessionTracking(userId: string): Promise<void> {
   if (!(await hasLiveSession())) { currentUserId = null; return; }
 
   const existing = await readToken(userId);
-  if (existing) { startHeartbeat(existing); return; }
+  if (existing) {
+    // Relaunch: confirm the slot is still active before trusting it. If the
+    // idle sweep retired it, fall through and create a new one.
+    const stillActive = await beat(existing);
+    if (stillActive) { startHeartbeat(existing); return; }
+    await clearToken();
+  }
 
   if (inflightCreate) return inflightCreate;
   inflightCreate = (async () => {

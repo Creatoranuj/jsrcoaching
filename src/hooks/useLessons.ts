@@ -42,7 +42,11 @@ export interface LessonInput {
   position?: number;
 }
 
-type LessonRow = Tables<"lessons"> & {
+/** The card columns `fetchLessons` selects; a full row satisfies it too. */
+type LessonRow = Pick<
+  Tables<"lessons">,
+  "id" | "course_id" | "title" | "description" | "video_url" | "is_locked" | "duration" | "created_at" | "lecture_type" | "position" | "chapter_id"
+> & {
   courses?: { title: string; grade: string | null } | null;
 };
 

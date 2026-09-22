@@ -80,7 +80,11 @@ export const SUCCESS_REDIRECT_DELAY_MS = 900;
 const PaymentCallback = () => {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const { user, loading: authLoading } = useAuth();
+  // `isLoading` is the real field. The previous `loading` alias never existed on
+  // the context, so `authLoading` was always undefined and the effect below ran
+  // before the session was restored — on a native cold start that bounced a
+  // paid student to /login even though their session arrived ~300 ms later.
+  const { user, isLoading: authLoading } = useAuth();
 
   // Primitive keys only — objects would restart the effect on token refresh.
   const userId = user?.id ?? null;

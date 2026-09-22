@@ -44,6 +44,9 @@ const EMPTY: ReleaseForm = {
 
 export default function AdminReleases() {
   const navigate = useNavigate();
+  // Header's menu button calls onMenuClick unconditionally; without this
+  // state the hamburger threw on mobile and the drawer could never open.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [releases, setReleases] = useState<AppRelease[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -156,9 +159,9 @@ export default function AdminReleases() {
 
   return (
     <div className="min-h-dvh bg-background">
-      <Header />
+      <Header onMenuClick={() => setSidebarOpen(true)} />
       <div className="flex">
-        <Sidebar />
+        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
         <main className="flex-1 p-4 sm:p-6 max-w-4xl">
           <Button variant="ghost" size="sm" onClick={() => navigate("/admin")} className="gap-2 mb-4">
             <ArrowLeft className="h-4 w-4" /> Admin Home

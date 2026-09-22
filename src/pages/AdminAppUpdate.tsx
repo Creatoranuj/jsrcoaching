@@ -44,6 +44,9 @@ const EMPTY: ConfigForm = {
 
 export default function AdminAppUpdate() {
   const navigate = useNavigate();
+  // Header's menu button calls onMenuClick unconditionally; without this
+  // state the hamburger threw on mobile and the drawer could never open.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [form, setForm] = useState<ConfigForm>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -96,7 +99,6 @@ export default function AdminAppUpdate() {
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const save = async () => {
@@ -172,9 +174,9 @@ export default function AdminAppUpdate() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Header />
+      <Header onMenuClick={() => setSidebarOpen(true)} />
       <div className="flex">
-        <Sidebar />
+        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
         <main className="flex-1 p-4 sm:p-6 space-y-6 max-w-3xl">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon" onClick={() => navigate("/admin")} aria-label="Back">

@@ -1,3 +1,4 @@
+import type React from "react";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import { lazyWithRetry } from "../../lib/lazyWithRetry";
@@ -47,8 +48,9 @@ interface Props {
 function textBlockCount(recordMap: { block?: Record<string, unknown> } | null | undefined): number {
   let n = 0;
   for (const entry of Object.values(recordMap?.block ?? {})) {
-    const raw = (entry as { value?: unknown })?.value;
-    const value = raw?.value ?? raw;
+    type BlockValue = { type?: string; properties?: { title?: unknown[] } } | undefined;
+    const raw = (entry as { value?: { value?: unknown } | BlockValue })?.value;
+    const value = ((raw as { value?: unknown } | undefined)?.value ?? raw) as BlockValue;
     const type = value?.type;
     if (!type || type === "page" || type === "external_object_instance" || type === "embed") continue;
     const text = (value?.properties?.title || [])
@@ -405,7 +407,7 @@ export default function NotionPageRenderer({ url, title, onClose, onReady, onDoc
 
       <Suspense fallback={<div className="p-4 text-sm text-muted-foreground">Rendering…</div>}>
         <NotionRenderer
-          recordMap={recordMap}
+          recordMap={recordMap as unknown as React.ComponentProps<typeof NotionRenderer>["recordMap"]}
           fullPage={false}
           darkMode={false}
           disableHeader

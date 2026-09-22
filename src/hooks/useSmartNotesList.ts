@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { supabase } from "../integrations/supabase/client";
 import { captureException } from "../lib/sentry";
+import { saveSmartNote } from "../lib/notes/saveSmartNote";
 
 export interface SmartNoteRow {
   id: string;
@@ -74,10 +76,23 @@ export function useSmartNotesList({ lessonId, courseId }: Args) {
         content_md: args.content_md ?? "",
       };
       try {
-        const { data, error } = await supabase.from("smart_notes").insert(payload).select().single();
-        if (error) throw error;
-        setNotes((prev) => [data as SmartNoteRow, ...prev]);
-        return data as SmartNoteRow;
+        // Audit 2026-09-22: the live table allows ONE note per user per lesson
+        // (and one course-level note per course) via PARTIAL unique indexes.
+        // A second "New note" therefore hit 23505 and reached Sentry as a
+        // shapeless object. PostgREST `upsert` cannot target a partial index
+        // (42P10 on every insert — see src/lib/notes/saveSmartNote.ts), so we
+        // insert and, on a duplicate, hand back the note that already exists.
+        const { row: saved, outcome } = await saveSmartNote(payload, { onDuplicate: "reuse" });
+        const row = saved as SmartNoteRow;
+        setNotes((prev) =>
+          prev.some((n) => n.id === row.id)
+            ? prev.map((n) => (n.id === row.id ? row : n))
+            : [row, ...prev]
+        );
+        if (outcome === "reused") {
+          toast.info("Is lesson ka note pehle se hai — wahi khol diya.");
+        }
+        return row;
       } catch (err) {
         captureException(err, { surface: "useSmartNotesList.create", lessonId, courseId });
         throw err;

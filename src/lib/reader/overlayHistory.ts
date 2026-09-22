@@ -53,6 +53,43 @@ export function resetSyntheticPop(): void {
   reset();
 }
 
+// ── Sentinel depth ─────────────────────────────────────────────────────────
+//
+// Every sentinel an overlay pushes is stamped with `nbDepth` = (depth of the
+// entry below it) + 1. Router entries and legacy raw `pushState` calls carry no
+// stamp and count as depth 0.
+//
+// Why: an overlay used to decide "my sentinel was popped" by checking that the
+// entry the browser landed on is not its own. That reads *any* pop above it as
+// its own — e.g. the autoscroll sheet closing inside the PDF reader inside the
+// Downloads file viewer. With a depth stamp the outer overlay can tell that the
+// pop landed on an entry still above it and stay open.
+
+/** Depth stamped on a sentinel state; 0 for router entries / unstamped states. */
+export function sentinelDepth(state: unknown): number {
+  const d = (state as { nbDepth?: unknown } | null | undefined)?.nbDepth;
+  return typeof d === "number" && Number.isFinite(d) && d > 0 ? d : 0;
+}
+
+/**
+ * Push a history sentinel one level deeper than the current entry.
+ * Returns the depth it was stamped with (pass it to `poppedAboveOrAt`).
+ */
+export function pushSentinel(state: Record<string, unknown>): number {
+  const depth = sentinelDepth(window.history.state) + 1;
+  window.history.pushState({ ...state, nbDepth: depth }, "");
+  return depth;
+}
+
+/**
+ * True when a popstate landed on an entry that is still at or above
+ * `ownDepth` — i.e. a *nested* overlay popped, not this one.
+ */
+export function poppedAboveOrAt(state: unknown, ownDepth: number): boolean {
+  return ownDepth > 0 && sentinelDepth(state) >= ownDepth;
+}
+
+
 if (typeof window !== "undefined") {
   // Consume one level *after* the current popstate has been delivered to every
   // listener, so ordering between listeners never matters.

@@ -18,7 +18,7 @@ import { lockOrientation, unlockOrientation } from "../../lib/screenOrientation"
 import { tapHaptic, selectionHaptic } from "../../lib/native/haptics";
 import { hideStatusBar, showStatusBar } from "../../lib/nativeChrome";
 import { enterImmersive, exitImmersive } from "../../lib/androidImmersive";
-import { beginSyntheticPop, isSyntheticPop } from "../../lib/reader/overlayHistory";
+import { beginSyntheticPop, isSyntheticPop, pushSentinel } from "../../lib/reader/overlayHistory";
 
 interface Props {
   url: string;
@@ -61,8 +61,18 @@ export default function DocReaderShell({
   // Android hardware-back sentinel: push a history entry on open so the
   // global useAndroidBackButton hook pops us via popstate instead of
   // navigating the enclosing route (Library/Downloads/etc.).
+  //
+  // The sentinel is depth-stamped (`pushSentinel`) so an enclosing overlay
+  // (Downloads / My Library file viewer, `useOverlayBackClose`) can tell that
+  // a pop landing on it is still *above* their own entry and stay open.
   useEffect(() => {
-    try { window.history.pushState({ pdfFullscreen: true }, ""); } catch {}
+    // StrictMode / fast remount: if our sentinel is already the top entry
+    // (cleanup could not pop it because a parent pushed above it), reuse it
+    // instead of stacking a second one — a duplicate leaves a stale entry that
+    // makes the next back press a no-op.
+    try {
+      if (!window.history.state?.pdfFullscreen) pushSentinel({ pdfFullscreen: true });
+    } catch {}
     const onPop = () => {
       // Nested overlays (autoscroll sheet) pop their own sentinel when they
       // close — ignore those so the PDF stays open.

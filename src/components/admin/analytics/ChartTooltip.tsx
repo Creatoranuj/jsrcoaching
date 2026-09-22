@@ -1,7 +1,11 @@
-import type { TooltipProps } from "recharts";
+// recharts 3: `payload`/`label` live on TooltipContentProps (what `content`
+// receives), not on TooltipProps (what <Tooltip> accepts).
+import type { TooltipContentProps } from "recharts";
 import type { NameType, ValueType } from "recharts/types/component/DefaultTooltipContent";
 
-export const ChartTooltip = ({ active, payload, label }: TooltipProps<ValueType, NameType>) => {
+// Partial: charts pass `content={<ChartTooltip />}` and recharts injects the
+// rest at render time.
+export const ChartTooltip = ({ active, payload, label }: Partial<TooltipContentProps<ValueType, NameType>>) => {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-card border border-border rounded-lg px-3 py-2 shadow-lg text-sm">

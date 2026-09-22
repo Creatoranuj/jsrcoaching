@@ -40,13 +40,17 @@ import {
 import { SortableQuestion } from "../components/admin/quiz/SortableQuestion";
 import { defaultQuestion, type Quiz, type QuestionForm } from "../components/admin/quiz/types";
 import { getErrorMessage } from "@/lib/errorMessage";
-import type { Tables } from "@/integrations/supabase/types";
+import type { Tables, TablesInsert } from "@/integrations/supabase/types";
 
 type CourseOption = Pick<Tables<"courses">, "id" | "title">;
 type LessonOption = Pick<Tables<"lessons">, "id" | "title" | "lecture_type">;
 type ChapterOption = Pick<Tables<"chapters">, "id" | "title" | "position">;
 type QuestionRow = Tables<"questions">;
-type QuizAttemptRow = Tables<"quiz_attempts"> & { student_name?: string };
+/** The columns `openAttempts` selects, plus the joined student name. */
+type QuizAttemptRow = Pick<
+  Tables<"quiz_attempts">,
+  "id" | "score" | "percentage" | "passed" | "submitted_at" | "time_taken_seconds" | "user_id"
+> & { student_name?: string };
 
 const AdminQuizManager = () => {
   const confirmAction = useConfirm();
@@ -251,7 +255,7 @@ const AdminQuizManager = () => {
     }
     setSavingQuiz(true);
     try {
-      const payload: Partial<Tables<"quizzes">> = {
+      const payload: TablesInsert<"quizzes"> = {
         title: quizForm.title.trim(),
         type: quizForm.type,
         duration_minutes: quizForm.duration_minutes,

@@ -14,6 +14,7 @@ import {
 } from "@/features/admin/lib/adminFilters";
 import type { AdminUser, ManualPaymentRow, RazorpayPaymentRow, UnifiedPayment } from "@/features/admin/lib/adminFilters";
 import { paymentTotals } from "@/features/admin/lib/adminStats";
+import { loadAdminSnapshot } from "@/features/admin/lib/adminSnapshot";
 import { AdminUsersTab } from "@/features/admin/components/AdminUsersTab";
 import { AdminSessionsTab } from "@/features/admin/components/AdminSessionsTab";
 import type { AdminSession } from "@/features/admin/components/AdminSessionsTab";
@@ -182,84 +183,26 @@ const Admin = () => {
   }, [user, isAdmin]);
 
   // --- FETCH DATA ---
+  // Audit 2026-09-22: was ~12 sequential awaits (one round-trip each). The
+  // snapshot loader fires them concurrently and tolerates partial failures;
+  // see src/features/admin/lib/adminSnapshot.ts.
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      const { data: coursesData } = await supabase.from('courses').select('*');
-      if (coursesData) setCoursesList(coursesData);
-
-      // Active enrollments per course — powers the "x / y enrolled" counter
-      // next to the Batch Full switch.
-      const { data: enrollmentRows } = await supabase
-        .from('enrollments')
-        .select('course_id')
-        .eq('status', 'active');
-      if (enrollmentRows) {
-        const counts: Record<number, number> = {};
-        for (const row of enrollmentRows) {
-          const cid = Number(row.course_id);
-          counts[cid] = (counts[cid] || 0) + 1;
-        }
-        setEnrollmentCounts(counts);
+      const snap = await loadAdminSnapshot(supabase);
+      setCoursesList(snap.courses);
+      setEnrollmentCounts(snap.enrollmentCounts);
+      setPayments(snap.payments);
+      setRazorpayPayments(snap.razorpayPayments);
+      setUsersList(snap.users);
+      setStatsData(snap.stats);
+      if (snap.failures.length) {
+        reportError(new Error(`Admin snapshot partial failure: ${snap.failures.join(", ")}`), {
+          surface: "Admin.fetch",
+          failures: snap.failures,
+        });
+        toast.error(`Some dashboard data failed to load (${snap.failures.join(", ")})`);
       }
-
-      const { data: profilesData } = await supabase.from('profiles').select('*');
-      const profileMap = new Map<string, Tables<"profiles">>((profilesData || []).map((p) => [p.id, p]));
-      const withProfile = <T extends { user_id: string }>(rows: T[] | null) =>
-        (rows || []).map((r) => ({ ...r, profiles: profileMap.get(r.user_id) ?? null }));
-
-      // profiles is not FK-linked to payment tables — join client-side.
-      const { data: payData } = await supabase
-        .from('payment_requests')
-        .select(`*, courses (title)`)
-        .order('created_at', { ascending: false });
-      setPayments(withProfile(payData));
-
-      const { data: rzpData } = await supabase
-        .from('razorpay_payments')
-        .select(`*, courses (title)`)
-        .order('created_at', { ascending: false });
-      setRazorpayPayments(withProfile(rzpData));
-
-      const { data: rolesData } = await supabase.from('user_roles').select('user_id, role');
-      if (profilesData) {
-        const usersWithRoles: UserWithRole[] = profilesData.map(profile => ({
-          id: profile.id,
-          full_name: profile.full_name,
-          email: profile.email,
-          mobile: profile.mobile,
-          created_at: profile.created_at,
-          role: rolesData?.find(r => r.user_id === profile.id)?.role || null
-        }));
-        setUsersList(usersWithRoles);
-      }
-
-      const { count: studentCount } = await supabase.from('user_roles').select('*', { count: 'exact', head: true }).eq('role', 'student');
-      const { count: enrollCount } = await supabase.from('enrollments').select('*', { count: 'exact', head: true });
-      const { count: pendingCount } = await supabase.from('payment_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending');
-
-      // Supabase status values may be capitalised (e.g. 'Approved', 'Completed')
-      // depending on how the row was inserted, so match case-insensitively.
-      const { data: approvedPayments } = await supabase.from('payment_requests').select('amount').ilike('status', 'approved');
-      const { data: completedRzp } = await supabase.from('razorpay_payments').select('amount').ilike('status', 'completed');
-      const manualRevenue = approvedPayments?.reduce((sum, p) => sum + (p.amount || 0), 0) || 0;
-      const rzpRevenue = completedRzp?.reduce((sum, p) => sum + (p.amount || 0), 0) || 0;
-
-      // LibraryManager fetches its own data on mount; no eager fetch needed here.
-
-      const { count: sessionsCount } = await supabase
-        .from("user_sessions")
-        .select("*", { count: "exact", head: true })
-        .eq("is_active", true);
-
-      setStatsData({
-        totalStudents: studentCount || 0,
-        totalCourses: coursesData?.length || 0,
-        pendingPayments: pendingCount || 0,
-        activeEnrollments: enrollCount || 0,
-        totalRevenue: manualRevenue + rzpRevenue,
-        activeSessions: sessionsCount || 0,
-      });
     } catch (error) {
       reportError(error, { surface: "Admin.fetch" });
       toast.error("Failed to load dashboard data");

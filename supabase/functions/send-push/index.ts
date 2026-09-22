@@ -1,8 +1,10 @@
 // Admin broadcast push notification via FCM HTTP v1.
 //
 // Auth: caller MUST be an authenticated admin (has_role(uid,'admin')).
-// verify_jwt is off platform-wide for this project, so the check below is the
-// security boundary — never remove it.
+// Audit 2026-09-22: supabase/config.toml only disables verify_jwt for
+// `app-download`; this function runs with the platform default (JWT verified
+// at the gateway). The in-code admin check below is still the real security
+// boundary (a valid student JWT passes the gateway) — never remove it.
 //
 // Secret required: FCM_SERVICE_ACCOUNT_JSON — the full Firebase service account
 // JSON (project_id, client_email, private_key). Never stored in the database.
@@ -31,15 +33,18 @@ function base64url(bytes: Uint8Array): string {
   return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function pemToPkcs8(pem: string): Uint8Array {
+// Returns the exact-size ArrayBuffer (not a Uint8Array view): newer Deno libs
+// type `crypto.subtle.importKey`'s keyData as `BufferSource` over a plain
+// ArrayBuffer, and a `Uint8Array<ArrayBufferLike>` no longer satisfies it.
+function pemToPkcs8(pem: string): ArrayBuffer {
   const body = pem
     .replace(/-----BEGIN PRIVATE KEY-----/, "")
     .replace(/-----END PRIVATE KEY-----/, "")
     .replace(/\s+/g, "");
   const raw = atob(body);
-  const out = new Uint8Array(raw.length);
+  const out = new Uint8Array(new ArrayBuffer(raw.length));
   for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
-  return out;
+  return out.buffer;
 }
 
 /** Exchange the service account for a short-lived FCM access token. */
@@ -232,4 +237,4 @@ Deno.serve(async (req) => {
     console.error("[send-push] unexpected error", e);
     return json(500, { error: "INTERNAL_ERROR" });
   }
-));
+});
