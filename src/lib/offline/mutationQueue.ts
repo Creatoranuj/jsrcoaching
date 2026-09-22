@@ -186,12 +186,20 @@ export function installMutationQueueRunner(): () => void {
   window.addEventListener("online", onOnline);
   // Capacitor resume doesn't always re-fire "online" — drain explicitly.
   window.addEventListener("app:resumed", onOnline);
+  // Audit 2026-09-22 (mobile lifecycle): the 5s tick used to run while the
+  // WebView was backgrounded — a synchronous localStorage read every tick,
+  // and on Android the OS throttles then batches those timers into a burst
+  // on resume. Skip ticks while hidden and drain once when we come back.
+  const hidden = () => typeof document !== "undefined" && document.visibilityState === "hidden";
+  const onVisibility = () => { if (!hidden()) void runQueue(); };
+  document.addEventListener("visibilitychange", onVisibility);
   // Schedule periodic drain to honour backoff timers even without an online event.
-  const tick = window.setInterval(() => { void runQueue(); }, 5_000);
+  const tick = window.setInterval(() => { if (!hidden()) void runQueue(); }, 5_000);
   void runQueue();
   return () => {
     window.removeEventListener("online", onOnline);
     window.removeEventListener("app:resumed", onOnline);
+    document.removeEventListener("visibilitychange", onVisibility);
     window.clearInterval(tick);
   };
 }

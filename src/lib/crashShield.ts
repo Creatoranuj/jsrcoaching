@@ -186,6 +186,10 @@ function installMemoryMonitor() {
   let lastWarnedAt = 0;
   setInterval(() => {
     try {
+      // Audit 2026-09-22: nothing to protect while backgrounded — the OS may
+      // have already trimmed us, and a burst of throttled ticks on resume
+      // would otherwise fire a spurious memorywarning during hydration.
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
       const used = perf.memory!.usedJSHeapSize;
       // Device-relative pressure: a 400MB absolute threshold never fires on
       // a budget phone whose whole heap limit is ~256MB — it OOMs first. Warn
