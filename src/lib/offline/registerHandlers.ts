@@ -9,6 +9,7 @@
 import { supabase } from "../../integrations/supabase/client";
 import { registerMutationHandler, installMutationQueueRunner } from "./mutationQueue";
 import { captureException } from "../sentry";
+import { saveSmartNote } from "../notes/saveSmartNote";
 
 let installed = false;
 
@@ -17,6 +18,10 @@ export function installOfflineMutationHandlers(): () => void {
   installed = true;
 
   // smart_notes upsert — same payload shape useSmartNote.save uses.
+  // Audit 2026-09-22: `supabase.upsert({ onConflict })` can never match the
+  // table's PARTIAL unique indexes (42P10 on every replay), so an offline save
+  // was dead-lettered every time. Insert, and on a duplicate overwrite the
+  // existing note — the replay is a save, so the newest content wins.
   registerMutationHandler("smart_notes.upsert", async (payload) => {
     const p = payload as {
       user_id: string;
@@ -26,9 +31,9 @@ export function installOfflineMutationHandlers(): () => void {
       content_md: string;
       updated_at: string;
     };
-    const onConflict = p.lesson_id ? "user_id,lesson_id" : "user_id,course_id";
-    const { error } = await supabase.from("smart_notes").upsert(p, { onConflict });
-    if (error) {
+    try {
+      await saveSmartNote(p, { onDuplicate: "update" });
+    } catch (error) {
       captureException(error, { surface: "offline-queue:smart_notes.upsert" });
       throw error;
     }

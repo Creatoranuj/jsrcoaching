@@ -8,8 +8,19 @@
 --    full 30-day TTL (941 "active" sessions for 51 users live), which inflated
 --    the admin "active sessions" metric and every per-user session query.
 
-CREATE INDEX IF NOT EXISTS idx_app_installs_user_id
-  ON public.app_installs (user_id);
+-- app_installs and error_logs exist on the live project but are not part of
+-- the CI schema snapshot (schema-package.sql) or any replayed migration, so
+-- their indexes are created only when the table is present.
+DO $guard$
+BEGIN
+  IF to_regclass('public.app_installs') IS NOT NULL THEN
+    CREATE INDEX IF NOT EXISTS idx_app_installs_user_id ON public.app_installs (user_id);
+  END IF;
+  IF to_regclass('public.error_logs') IS NOT NULL THEN
+    CREATE INDEX IF NOT EXISTS idx_error_logs_user_id ON public.error_logs (user_id);
+  END IF;
+END
+$guard$;
 
 CREATE INDEX IF NOT EXISTS idx_audit_log_created_at
   ON public.audit_log (created_at DESC);
@@ -24,9 +35,6 @@ CREATE INDEX IF NOT EXISTS idx_comments_user_id
 
 CREATE INDEX IF NOT EXISTS idx_doubts_user_created
   ON public.doubts (user_id, created_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_error_logs_user_id
-  ON public.error_logs (user_id);
 
 CREATE INDEX IF NOT EXISTS idx_lesson_likes_user_id
   ON public.lesson_likes (user_id);

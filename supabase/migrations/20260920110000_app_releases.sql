@@ -57,6 +57,18 @@ create trigger update_app_releases_updated_at
 
 -- Seed the first row from the version CI last published, so the page is never
 -- empty right after this migration runs.
+--
+-- Audit 2026-09-22 (CI migration-drift check): `latest_android_version` and
+-- `update_notes` were added to app_config directly on the live project and
+-- never captured in a migration or in schema-package.sql, so this seed failed
+-- with `column "latest_android_version" does not exist` on every CI replay
+-- since 2026-09-20. Converge the CI schema on the live shape first; on the
+-- live database these are no-ops.
+alter table public.app_config add column if not exists latest_android_version text not null default '0.0.0';
+alter table public.app_config add column if not exists latest_ios_version text not null default '0.0.0';
+alter table public.app_config add column if not exists update_notes text;
+alter table public.app_config add column if not exists force_update boolean not null default false;
+
 insert into public.app_releases (version, title, notes, status, is_current)
 select latest_android_version,
        'Current release',
