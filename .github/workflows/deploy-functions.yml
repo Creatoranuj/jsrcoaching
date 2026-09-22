@@ -20,6 +20,7 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF || 'wegamscqtvqhxowlskfm' }}
       SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+      LOVABLE_API_KEY: ${{ secrets.LOVABLE_API_KEY }}
     steps:
       - uses: actions/checkout@v5
 
@@ -39,6 +40,13 @@ jobs:
         if: steps.gate.outputs.ready == 'true'
         with:
           version: latest
+
+      # Keep the AI gateway key in the edge-function runtime in sync with the
+      # repo secret; a stale key makes chatbot/resolve-doubt/ai-health 401.
+      - name: Sync LOVABLE_API_KEY into function secrets
+        if: steps.gate.outputs.ready == 'true' && env.LOVABLE_API_KEY != ''
+        run: |
+          supabase secrets set LOVABLE_API_KEY="$LOVABLE_API_KEY" --project-ref "$SUPABASE_PROJECT_REF"
 
       - name: Deploy all functions
         if: steps.gate.outputs.ready == 'true'
