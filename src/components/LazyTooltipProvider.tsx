@@ -1,38 +1,11 @@
-import { useEffect, useState, type ComponentType, type ReactNode } from "react";
-
-type ProviderProps = { children: ReactNode; delayDuration?: number };
-
 /**
- * Lazy-mounts @radix-ui/react-tooltip's Provider after first paint.
- * Tooltip.Root has its own internal provider fallback, so rendering
- * children without the explicit Provider for a few frames is safe —
- * the only cost is that tooltips triggered in the first ~100ms use
- * default delay timings. This keeps @floating-ui out of the initial
- * entry bundle.
+ * Compatibility shim — the "lazy" tooltip provider is gone.
+ *
+ * The old implementation swapped `<>{children}</>` for
+ * `<Provider>{children}</Provider>` once the tooltip module resolved, which
+ * re-mounted the entire app tree a few hundred ms after first paint (see
+ * AppTooltipProvider.tsx and src/test/appShellMountsOnce.test.tsx). The
+ * module name is kept so App.tsx's import line stays untouched; new code
+ * should import `AppTooltipProvider` directly.
  */
-export function LazyTooltipProvider({ children, delayDuration }: ProviderProps) {
-  const [Provider, setProvider] = useState<ComponentType<ProviderProps> | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = () => {
-      import("@radix-ui/react-tooltip").then((mod) => {
-        if (!cancelled) setProvider(() => mod.Provider as ComponentType<ProviderProps>);
-      });
-    };
-    const w = window as unknown as { requestIdleCallback?: (cb: () => void) => number };
-    if (typeof w.requestIdleCallback === "function") {
-      w.requestIdleCallback(load);
-    } else {
-      setTimeout(load, 200);
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (!Provider) return <>{children}</>;
-  return <Provider delayDuration={delayDuration}>{children}</Provider>;
-}
-
-export default LazyTooltipProvider;
+export { AppTooltipProvider as LazyTooltipProvider, AppTooltipProvider as default } from "./AppTooltipProvider";
