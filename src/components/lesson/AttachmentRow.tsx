@@ -8,7 +8,8 @@ import pdfIconSvg from "@/assets/pdf-icon-grayscale.svg";
 import { getErrorMessage } from "@/lib/errorMessage";
 
 interface AttachmentRowProps {
-  attachment: LessonAttachment;
+  /** Only the display fields — lesson notes (no position/timestamps) fit too. */
+  attachment: Pick<LessonAttachment, "id" | "title" | "file_name" | "file_url" | "file_size" | "mime_type" | "kind">;
   onOpenPdf: (url: string, fileName: string) => void;
   resolveUrl: () => Promise<string | null>;
   onDownloaded?: (title: string, url: string, filename: string, kind: string) => void;

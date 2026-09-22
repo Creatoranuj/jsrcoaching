@@ -15,15 +15,30 @@ import {
 import { format } from "date-fns";
 import type { LucideIcon } from "lucide-react";
 
+// Shape of `admin_get_user_snapshot` (jsonb). Only the keys the page renders
+// are named; everything else stays reachable through the index signature.
+type SnapshotProfile = {
+  full_name?: string | null;
+  email?: string | null;
+  mobile?: string | null;
+  created_at?: string | null;
+  is_blocked?: boolean;
+  blocked_at?: string | null;
+  blocked_reason?: string | null;
+  [k: string]: unknown;
+};
+type SnapshotEnrollment = { course_id: number; course_title?: string | null; enrolled_at?: string | null; [k: string]: unknown };
+type SnapshotPayment = { id: string; status?: string | null; amount?: number | string | null; [k: string]: unknown };
+type SnapshotSession = { created_at?: string | null; platform?: string | null; [k: string]: unknown };
 type Snapshot = {
-  profile: Record<string, unknown> & { is_blocked?: boolean };
-  enrollments: Record<string, unknown>[];
+  profile: SnapshotProfile;
+  enrollments: SnapshotEnrollment[];
   batch_count: number;
-  payments: Record<string, unknown>[];
+  payments: SnapshotPayment[];
   total_spent: number;
   lessons_completed: number;
   quiz_attempts: number;
-  last_session: Record<string, unknown> | null;
+  last_session: SnapshotSession | null;
 };
 
 const AdminStudentDetail = () => {

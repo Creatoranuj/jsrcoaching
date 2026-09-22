@@ -51,6 +51,13 @@ export type RazorpayPaymentRow = Tables<"razorpay_payments"> & {
 
 export interface UnifiedPayment {
   [key: string]: unknown;
+  /** Provider row fields the payments tab reads directly (typed, not `unknown`). */
+  id: number | string;
+  transaction_id?: string | null;
+  razorpay_payment_id?: string | null;
+  razorpay_order_id?: string | null;
+  sender_name?: string | null;
+  screenshot_url?: string | null;
   _method: PaymentMethod;
   _key: string;
   _displayName: string;

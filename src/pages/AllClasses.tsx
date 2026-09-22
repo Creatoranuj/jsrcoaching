@@ -18,6 +18,7 @@ interface Course {
   id: number;
   title: string;
   grade: string | null;
+  imageUrl: string | null;
   lessonCount: number;
   completedCount: number;
 }
@@ -75,6 +76,7 @@ const AllClasses = () => {
           id: c.id,
           title: c.title,
           grade: c.grade,
+          imageUrl: c.image_url ?? null,
           lessonCount: countMap[c.id] || 0,
           completedCount: 0,
         }));
@@ -232,7 +234,7 @@ const AllClasses = () => {
               onClick={() => {
                 // Picking a course here switches the app-wide active course
                 // too, so Home/My Courses follow the same selection.
-                setSelectedBatch({ id: course.id, title: course.title, grade: course.grade ?? null });
+                setSelectedBatch({ id: course.id, title: course.title, grade: course.grade ?? null, image_url: course.imageUrl ?? null });
                 navigate(`/classes/${course.id}/chapters?from=all-classes`);
               }}
               className={cn(

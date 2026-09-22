@@ -55,7 +55,8 @@ interface CourseData {
   id: number;
   title: string;
   description: string | null;
-  grade: number | null;
+  /** `courses.grade` is text in the schema ("11", "12", "Dropper"...). */
+  grade: string | null;
   price: number;
   thumbnailUrl: string | null;
   imageUrl: string | null;

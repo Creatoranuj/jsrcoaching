@@ -131,7 +131,7 @@ const LessonView = () => {
 
   // State
   const [loading, setLoading] = useState(true);
-  const [course, setCourse] = useState<{ id: number; title: string; [key: string]: unknown } | null>(null);
+  const [course, setCourse] = useState<{ id: number; title: string; grade?: string | null; [key: string]: unknown } | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [currentLesson, setCurrentLesson] = useState<Lesson | null>(null);
@@ -1275,8 +1275,8 @@ const LessonView = () => {
         if (cancelled || signal.aborted || !aliveRef.current) return;
         if (bundleErr) throw bundleErr;
 
-        const b = (bundle ?? {}) as {
-          course: { id: number; title: string; [key: string]: unknown } | null;
+        const b = (bundle ?? {}) as unknown as {
+          course: { id: number; title: string; grade?: string | null; [key: string]: unknown } | null;
           chapters: Chapter[];
           lessons: Lesson[];
           is_enrolled: boolean;

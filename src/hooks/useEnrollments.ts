@@ -8,7 +8,7 @@ import { logger } from "@/lib/logger";
 import { getErrorMessage } from "@/lib/errorMessage";
 import type { Tables } from "@/integrations/supabase/types";
 
-type EnrollmentRow = Pick<Tables<"enrollments">, "id" | "user_id" | "course_id" | "purchased_at" | "status"> & {
+type EnrollmentRow = Pick<Tables<"enrollments">, "id" | "user_id" | "course_id" | "purchased_at" | "status" | "progress_percentage"> & {
   courses: Tables<"courses"> | null;
 };
 
@@ -19,6 +19,8 @@ export interface Enrollment {
   courseId: number;
   purchasedAt: string | null;
   status: string | null;
+  /** 0–100 from `enrollments.progress_percentage`; null until first computed. */
+  progress_percentage: number | null;
 }
 
 export interface EnrollmentWithCourse extends Enrollment {
@@ -69,7 +71,7 @@ export const useEnrollments = () => {
     const promise = (async () => {
       const { data, error: dbError } = await supabase
         .from("enrollments")
-        .select("id,user_id,course_id,purchased_at,status,courses(id,title,description,grade,price,image_url,thumbnail_url,created_at)")
+        .select("id,user_id,course_id,purchased_at,status,progress_percentage,courses(id,title,description,grade,price,image_url,thumbnail_url,created_at)")
         .eq("user_id", userId);
 
       if (dbError) throw dbError;
@@ -94,6 +96,7 @@ export const useEnrollments = () => {
         courseId: e.course_id,
         purchasedAt: e.purchased_at,
         status: e.status,
+        progress_percentage: e.progress_percentage ?? null,
         course: e.courses ? {
           id: e.courses.id,
           title: e.courses.title,

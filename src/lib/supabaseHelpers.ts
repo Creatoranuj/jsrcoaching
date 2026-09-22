@@ -41,8 +41,10 @@ export class SupabaseError extends Error {
 /**
  * Wrap any promise with a timeout
  */
+// `PromiseLike` on purpose: Supabase query builders are thenables, not
+// Promises, and callers pass them straight in (see BuyCourse).
 export function withTimeout<T>(
-  promise: Promise<T>,
+  promise: PromiseLike<T>,
   timeoutMs: number = DEFAULT_TIMEOUT
 ): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -50,7 +52,7 @@ export function withTimeout<T>(
       reject(new TimeoutError(`Request timed out after ${timeoutMs}ms`));
     }, timeoutMs);
 
-    promise
+    Promise.resolve(promise)
       .then((result) => {
         clearTimeout(timeoutId);
         resolve(result);

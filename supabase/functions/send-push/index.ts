@@ -33,15 +33,18 @@ function base64url(bytes: Uint8Array): string {
   return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function pemToPkcs8(pem: string): Uint8Array {
+// Returns the exact-size ArrayBuffer (not a Uint8Array view): newer Deno libs
+// type `crypto.subtle.importKey`'s keyData as `BufferSource` over a plain
+// ArrayBuffer, and a `Uint8Array<ArrayBufferLike>` no longer satisfies it.
+function pemToPkcs8(pem: string): ArrayBuffer {
   const body = pem
     .replace(/-----BEGIN PRIVATE KEY-----/, "")
     .replace(/-----END PRIVATE KEY-----/, "")
     .replace(/\s+/g, "");
   const raw = atob(body);
-  const out = new Uint8Array(raw.length);
+  const out = new Uint8Array(new ArrayBuffer(raw.length));
   for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
-  return out;
+  return out.buffer;
 }
 
 /** Exchange the service account for a short-lived FCM access token. */
@@ -234,4 +237,4 @@ Deno.serve(async (req) => {
     console.error("[send-push] unexpected error", e);
     return json(500, { error: "INTERNAL_ERROR" });
   }
-));
+});

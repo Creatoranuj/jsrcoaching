@@ -64,19 +64,25 @@ export function hasNaturalKey(key: SmartNoteKey): boolean {
   return Boolean(key.lesson_id) || (key.lesson_id == null && key.course_id != null);
 }
 
+// Return types are `unknown` on purpose: modelling them as `FilterBuilder`
+// makes TS compare PostgREST's self-referential builder generics recursively
+// ("Type instantiation is excessively deep", TS2589) at every call site.
 type FilterBuilder = {
-  eq: (column: string, value: string | number) => FilterBuilder;
-  is: (column: string, value: null) => FilterBuilder;
+  eq: (column: string, value: string | number) => unknown;
+  is: (column: string, value: null) => unknown;
 };
 
 /** Narrow a smart_notes query to exactly the row a unique index would match. */
-export function scopeToNaturalKey<Q extends FilterBuilder>(q: Q, key: SmartNoteKey): Q {
-  let scoped: FilterBuilder = q.eq("user_id", key.user_id);
+// No `extends FilterBuilder` constraint: checking a PostgREST builder against
+// it is what triggered TS2589 at every call site. The cast below is the only
+// place the structural type is applied.
+export function scopeToNaturalKey<Q>(q: Q, key: SmartNoteKey): Q {
+  let scoped = (q as unknown as FilterBuilder).eq("user_id", key.user_id) as FilterBuilder;
   if (key.lesson_id) {
-    scoped = scoped.eq("lesson_id", key.lesson_id);
+    scoped = scoped.eq("lesson_id", key.lesson_id) as FilterBuilder;
   } else {
-    scoped = scoped.is("lesson_id", null);
-    if (key.course_id != null) scoped = scoped.eq("course_id", key.course_id);
+    scoped = scoped.is("lesson_id", null) as FilterBuilder;
+    if (key.course_id != null) scoped = scoped.eq("course_id", key.course_id) as FilterBuilder;
   }
   return scoped as Q;
 }

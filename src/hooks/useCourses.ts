@@ -32,7 +32,13 @@ export interface CourseInput {
   thumbnailUrl?: string;
 }
 
-function mapCourse(c: Tables<'courses'>): Course {
+/** Exactly the columns every `courses` select in this hook fetches. */
+type CourseCardRow = Pick<
+  Tables<'courses'>,
+  'id' | 'title' | 'description' | 'grade' | 'price' | 'image_url' | 'thumbnail_url' | 'created_at'
+>;
+
+function mapCourse(c: CourseCardRow): Course {
   return {
     id: c.id,
     title: c.title,

@@ -11,9 +11,9 @@ function fakeSupabase(responses: Record<string, unknown>, log: string[]) {
   const releases: Array<() => void> = [];
   const from = (table: string) => {
     let key = table;
-    const builder: any = {};
+    const builder: Record<string, unknown> = {};
     const chain = (name: string) => (...args: unknown[]) => {
-      if (name === "select" && typeof args[1] === "object" && (args[1] as any)?.head) key = `${table}:count`;
+      if (name === "select" && typeof args[1] === "object" && (args[1] as { head?: boolean } | null)?.head) key = `${table}:count`;
       if (name === "eq") key = `${key}:${args[0]}=${args[1]}`;
       return builder;
     };
@@ -32,7 +32,7 @@ function fakeSupabase(responses: Record<string, unknown>, log: string[]) {
     builder.finally = promise.finally.bind(promise);
     return builder;
   };
-  return { client: { from } as any, releaseAll: () => releases.splice(0).forEach((r) => r()) };
+  return { client: { from } as unknown as Parameters<typeof loadAdminSnapshot>[0], releaseAll: () => releases.splice(0).forEach((r) => r()) };
 }
 
 const profiles = [

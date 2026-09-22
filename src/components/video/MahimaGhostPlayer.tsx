@@ -300,7 +300,8 @@ const MahimaGhostPlayer = memo(({
   const youtubeId = videoId || extractYoutubeId(videoUrl);
 
   // YouTube IFrame API Commands
-  const sendCommand = useCallback((func: string, args: string | number | Array<string | number> = "") => {
+  // Booleans are legal IFrame-API args (seekTo(seconds, allowSeekAhead)).
+  const sendCommand = useCallback((func: string, args: string | number | boolean | Array<string | number | boolean> = "") => {
     if (playerRef.current?.contentWindow) {
       try {
         const message = JSON.stringify({

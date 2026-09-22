@@ -56,7 +56,8 @@ export async function loadAdminSnapshot(supabase: Client): Promise<AdminSnapshot
   const settled = await Promise.allSettled(names.map((n) => tasks[n]));
 
   const failures: string[] = [];
-  const pick = <T,>(name: keyof typeof tasks, read: (value: any) => T, fallback: T): T => {
+  type SettledValue = { data?: unknown; count?: number | null; error?: { message?: string } | null };
+  const pick = <T,>(name: keyof typeof tasks, read: (value: SettledValue) => T, fallback: T): T => {
     const result = settled[names.indexOf(name)];
     if (result.status === "rejected") {
       failures.push(String(name));
@@ -67,15 +68,16 @@ export async function loadAdminSnapshot(supabase: Client): Promise<AdminSnapshot
       failures.push(String(name));
       return fallback;
     }
-    return read(result.value);
+    return read(result.value as SettledValue);
   };
 
-  const courses = pick<Tables<"courses">[]>("courses", (r) => r.data ?? [], []);
-  const enrollmentRows = pick<Array<{ course_id: number | null }>>("activeEnrollments", (r) => r.data ?? [], []);
-  const profiles = pick<Tables<"profiles">[]>("profiles", (r) => r.data ?? [], []);
-  const payRows = pick<any[]>("payments", (r) => r.data ?? [], []);
-  const rzpRows = pick<any[]>("razorpay", (r) => r.data ?? [], []);
-  const roles = pick<Array<{ user_id: string; role: string }>>("roles", (r) => r.data ?? [], []);
+  const rows = <R,>(r: SettledValue) => (r.data ?? []) as R[];
+  const courses = pick<Tables<"courses">[]>("courses", rows, []);
+  const enrollmentRows = pick<Array<{ course_id: number | null }>>("activeEnrollments", rows, []);
+  const profiles = pick<Tables<"profiles">[]>("profiles", rows, []);
+  const payRows = pick<ManualPaymentRow[]>("payments", rows, []);
+  const rzpRows = pick<RazorpayPaymentRow[]>("razorpay", rows, []);
+  const roles = pick<Array<{ user_id: string; role: string }>>("roles", rows, []);
   const enrollmentTotal = pick<number>("enrollmentTotal", (r) => r.count ?? 0, 0);
   const activeSessions = pick<number>("activeSessions", (r) => r.count ?? 0, 0);
 

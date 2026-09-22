@@ -270,7 +270,7 @@ const Reports = () => {
                       <XAxis dataKey="name" tick={{ fontSize: 11 }} className="text-muted-foreground" />
                       <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} className="text-muted-foreground" />
                       <Tooltip
-                        formatter={(v: number, _name: string, props: { payload: { count: number } }) => [`${v}% avg (${props.payload.count} attempts)`, "Score"]}
+                        formatter={(v, _name, item) => [`${Number(v)}% avg (${(item.payload as { count?: number } | undefined)?.count ?? 0} attempts)`, "Score"]}
                         contentStyle={{ fontSize: 12, borderRadius: 8 }}
                       />
                       <Bar dataKey="avg" radius={[4, 4, 0, 0]} fill="hsl(var(--primary))" fillOpacity={0.8} />

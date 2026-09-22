@@ -244,7 +244,7 @@ export const ForceUpdateGate = ({ children }: { children: ReactNode }) => {
     // Custom Tab — the tap looks dead. Send the student to our public update
     // page in the phone's real browser, where download + install works.
     if (configured && !isAllowedUpdateUrl(configured)) {
-      logger.warn("[ForceUpdateGate] configured url rejected, using update page", undefined, { configured });
+      logger.warn("[ForceUpdateGate] configured url rejected, using update page", { configured });
     }
     void openInSystemBrowser(UPDATE_PAGE_URL);
   }, [config]);
