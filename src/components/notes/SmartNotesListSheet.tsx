@@ -21,7 +21,12 @@ interface Props {
 
 /**
  * Bottom-sheet picker for the user's personal Smart Notes on this lesson.
- * Supports create · rename · delete · open. Multiple notes per lesson.
+ * Supports create · rename · delete · open.
+ *
+ * The database allows ONE note per user per lesson (and one course-level
+ * note) via partial unique indexes — see src/lib/notes/saveSmartNote.ts.
+ * Once a note exists the primary button therefore opens it instead of
+ * promising a second one that the backend would reject.
  */
 export default function SmartNotesListSheet({
   open, onOpenChange, lessonId, courseId, onOpenNote, seedContent, defaultTitle,
@@ -44,13 +49,20 @@ export default function SmartNotesListSheet({
     catch { toast.error("Rename failed"); }
   };
 
+  const hasNote = notes.length > 0;
+
   const handleCreate = async () => {
     if (creating) return;
+    if (hasNote) {
+      // One note per lesson: open the existing one instead of creating.
+      onOpenNote(notes[0]);
+      onOpenChange(false);
+      return;
+    }
     setCreating(true);
     try {
-      const nextIndex = notes.length + 1;
-      const title = `${defaultTitle || "My note"} ${nextIndex}`;
-      const created = await create({ title, content_md: seedContent && notes.length === 0 ? seedContent : "" });
+      const title = defaultTitle || "My note";
+      const created = await create({ title, content_md: seedContent || "" });
       if (created) { onOpenNote(created); onOpenChange(false); }
     } catch { toast.error("Could not create note"); }
     finally { setCreating(false); }
@@ -80,8 +92,8 @@ export default function SmartNotesListSheet({
             className="mb-3 h-11 w-full justify-start gap-2 rounded-xl"
             variant="secondary"
           >
-            {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-            New note
+            {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : hasNote ? <FileText className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+            {hasNote ? "Open my note" : "New note"}
           </Button>
 
           {loading ? (
