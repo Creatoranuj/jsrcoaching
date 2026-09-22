@@ -1,5 +1,10 @@
 import { useEffect, useRef } from "react";
-import { beginSyntheticPop } from "../lib/reader/overlayHistory";
+import {
+  beginSyntheticPop,
+  isSyntheticPop,
+  poppedAboveOrAt,
+  pushSentinel,
+} from "../lib/reader/overlayHistory";
 
 /**
  * Pushes a `{ overlay: <unique-key> }` history sentinel while `open` is true
@@ -13,6 +18,8 @@ import { beginSyntheticPop } from "../lib/reader/overlayHistory";
  *    OUR entry — never a stranger's (other overlays, real routes).
  *  - `pushedRef` tracks whether we actually pushed, so a rapid open→close
  *    flip can't accidentally call `history.back()` on a real route.
+ *  - Pops caused by a *nested* overlay (closing itself, or a back press that
+ *    lands on its sentinel) are ignored — see `useOverlayBackClose`.
  *
  * Prefer `useOverlayBackClose` for new code (it takes an explicit key).
  * This wrapper is kept for back-compat with existing call sites.
@@ -26,6 +33,7 @@ export function useOverlayHistorySentinel(
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const pushedRef = useRef(false);
+  const depthRef = useRef(0);
   const keyRef = useRef<string>("");
 
   useEffect(() => {
@@ -38,16 +46,17 @@ export function useOverlayHistorySentinel(
     const currentState = window.history.state;
     // Only push if we don't already own this exact sentinel (StrictMode safety).
     if (!currentState || currentState.overlay !== ourKey) {
-      window.history.pushState({ overlay: ourKey }, "");
+      depthRef.current = pushSentinel({ overlay: ourKey });
       pushedRef.current = true;
     }
 
     const onPop = (e: PopStateEvent) => {
+      if (e.state?.overlay === ourKey) return;
+      if (isSyntheticPop()) return;
+      if (poppedAboveOrAt(e.state, depthRef.current)) return;
       // Our sentinel popped — close.
-      if (!e.state || e.state.overlay !== ourKey) {
-        pushedRef.current = false;
-        onCloseRef.current();
-      }
+      pushedRef.current = false;
+      onCloseRef.current();
     };
     window.addEventListener("popstate", onPop);
 
