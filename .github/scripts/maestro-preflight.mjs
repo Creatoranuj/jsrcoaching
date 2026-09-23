@@ -23,7 +23,9 @@
  * `maestro/overlay-back.yaml` flow deep-links to — a lesson in an enrolled
  * course that has an image comment — and exports MAESTRO_COURSE_ID /
  * MAESTRO_LESSON_ID (same discovery as e2e-preflight's E2E_LESSON_ID). Missing
- * fixture is a notice, not a failure: the flow is non-blocking.
+ * fixture is a notice, not a failure: the flow is non-blocking. The fixture is
+ * matched against what the app really renders: unlocked lesson, non-hidden
+ * comment, inside the newest-100 comment window (see useComments.ts).
  */
 import { appendFileSync } from "node:fs";
 
@@ -82,7 +84,30 @@ async function rest(token, pathAndQuery) {
 }
 
 /**
- * Lesson with an image comment inside a course the student can open.
+ * The app only renders comments the student can actually see:
+ * `useComments.ts` selects `is_hidden = false`, newest first, capped at 100.
+ * A fixture that ignores those three rules resolves to a lesson whose image
+ * comment never appears on screen, and the flow fails on a missing element.
+ * Locked lessons are excluded for the same reason — the deep link lands on the
+ * paywall instead of the lesson body.
+ */
+const VISIBLE_COMMENT_WINDOW = 100;
+const UNLOCKED = "or=(is_locked.is.null,is_locked.eq.false)";
+
+/**
+ * True when the lesson's newest image comment is inside the window the app
+ * actually renders (newest 100 non-hidden comments for that lesson).
+ */
+async function imageCommentIsVisible(token, lessonId) {
+  const rows = await rest(
+    token,
+    `comments?select=image_url&lesson_id=eq.${lessonId}&is_hidden=eq.false&order=created_at.desc&limit=${VISIBLE_COMMENT_WINDOW}`,
+  );
+  return rows.some((r) => r.image_url);
+}
+
+/**
+ * Lesson with a visible image comment inside a course the student can open.
  * Order: MAESTRO_LESSON_ID / E2E_LESSON_ID if still valid, then
  * MAESTRO_COURSE_ID / E2E_COURSE_ID, then every enrolled course.
  */
@@ -107,23 +132,25 @@ async function resolveOverlayFixture(token, userId) {
     const id = safeId(configuredLesson);
     const meta = await rest(token, `lessons?select=id,course_id&id=eq.${id}&limit=1`);
     if (meta.length > 0 && searchOrder.includes(safeId(meta[0].course_id))) {
-      const rows = await rest(token, `comments?select=lesson_id&lesson_id=eq.${id}&image_url=not.is.null&limit=1`);
-      if (rows.length > 0) return { lessonId: id, courseId: safeId(meta[0].course_id) };
+      if (await imageCommentIsVisible(token, id)) return { lessonId: id, courseId: safeId(meta[0].course_id) };
     }
     console.log("::notice::maestro-preflight: configured lesson id has no image comment for this student — searching enrolled courses.");
   }
 
   for (const courseId of searchOrder) {
-    const lessons = await rest(token, `lessons?select=id&course_id=eq.${courseId}&order=position.asc&limit=200`);
+    const lessons = await rest(token, `lessons?select=id&course_id=eq.${courseId}&${UNLOCKED}&order=position.asc&limit=200`);
     if (lessons.length === 0) continue;
     const ids = lessons.map((l) => safeId(l.id)).join(",");
     const rows = await rest(
       token,
-      `comments?select=lesson_id&lesson_id=in.(${ids})&image_url=not.is.null&order=created_at.desc&limit=1`,
+      `comments?select=lesson_id&lesson_id=in.(${ids})&is_hidden=eq.false&image_url=not.is.null&order=created_at.desc&limit=20`,
     );
-    if (rows.length > 0) {
-      console.log(`::notice::maestro-preflight: overlay-back fixture → lesson ${rows[0].lesson_id} in course ${courseId} (has an image comment).`);
-      return { lessonId: safeId(rows[0].lesson_id), courseId };
+    for (const row of rows) {
+      const lessonId = safeId(row.lesson_id);
+      if (await imageCommentIsVisible(token, lessonId)) {
+        console.log(`::notice::maestro-preflight: overlay-back fixture → lesson ${lessonId} in course ${courseId} (visible image comment).`);
+        return { lessonId, courseId };
+      }
     }
   }
   console.log(`::notice::maestro-preflight: no lesson with an image comment in ${searchOrder.length} openable course(s) — overlay-back flow will be skipped. Post one comment with an image in the E2E course to enable it.`);
@@ -138,7 +165,9 @@ for (const c of candidates) {
     mask(c.password);
     const fixture = await resolveOverlayFixture(r.body.access_token, r.body.user?.id);
     // Sign out the probe session so the flow's own sign-in is the only live one.
-    await fetch(`${url}/auth/v1/logout`, {
+    // scope=local revokes ONLY this probe token: a global logout also killed the
+    // Playwright suite's sessions whenever both ran on the same test account.
+    await fetch(`${url}/auth/v1/logout?scope=local`, {
       method: "POST",
       headers: { apikey: apiKey, Authorization: `Bearer ${r.body.access_token}` },
     }).catch(() => {});

@@ -80,6 +80,18 @@ async function rest(pathAndQuery) {
   }
 }
 
+const VISIBLE_COMMENT_WINDOW = 100;
+const UNLOCKED = "or=(is_locked.is.null,is_locked.eq.false)";
+
+/** Newest image comment for a lesson is inside the window the app renders. */
+async function imageCommentIsVisible(lessonId) {
+  const rows = await rest(
+    `comments?select=image_url&lesson_id=eq.${lessonId}&is_hidden=eq.false&order=created_at.desc&limit=${VISIBLE_COMMENT_WINDOW}`,
+  );
+  return rows.some((r) => r.image_url);
+}
+
+
 const safeId = (id) => String(id).replace(/[^a-zA-Z0-9_-]/g, "");
 
 const courseIds = [...new Set([
@@ -189,13 +201,18 @@ if (openable.length > 0) {
   if (quizId) resolved.E2E_QUIZ_ID_RESOLVED = quizId;
   else console.log(`::notice::No attemptable quiz with questions in ${searchOrder.length} openable course(s) — quiz spec will skip. Publish a quiz with questions in E2E_COURSE_ID to enable it.`);
 
-  // --- E2E_LESSON_ID (lesson with an image comment) ---------------------------
+  // --- E2E_LESSON_ID (lesson with a *visible* image comment) ------------------
+  // The app renders comments through useComments.ts: is_hidden = false, newest
+  // first, capped at 100 per lesson. A fixture that ignores those rules points
+  // the spec at an image the UI never draws. Locked lessons are skipped too —
+  // the deep link would land on the paywall.
   const configuredLesson = process.env.E2E_LESSON_ID?.trim();
   let lesson = null; // { id, course_id }
   if (configuredLesson) {
-    const rows = await rest(`comments?select=lesson_id&lesson_id=eq.${safeId(configuredLesson)}&image_url=not.is.null&limit=1`);
-    if (rows.length > 0) {
-      const meta = await rest(`lessons?select=id,course_id&id=eq.${safeId(configuredLesson)}&limit=1`);
+    if (await imageCommentIsVisible(safeId(configuredLesson))) {
+      const meta = await rest(
+        `lessons?select=id,course_id&id=eq.${safeId(configuredLesson)}&${UNLOCKED}&limit=1`,
+      );
       if (meta.length > 0 && searchOrder.includes(String(meta[0].course_id))) lesson = meta[0];
     }
   }
@@ -203,15 +220,21 @@ if (openable.length > 0) {
     // Comments RLS is per-lesson; walk openable courses in priority order and
     // stop at the first lesson that has an image comment.
     for (const courseId of searchOrder) {
-      const lessons = await rest(`lessons?select=id&course_id=eq.${courseId}&order=position.asc&limit=200`);
+      const lessons = await rest(
+        `lessons?select=id&course_id=eq.${courseId}&${UNLOCKED}&order=position.asc&limit=200`,
+      );
       if (lessons.length === 0) continue;
       const ids = lessons.map((l) => safeId(l.id)).join(",");
       const rows = await rest(
-        `comments?select=lesson_id&lesson_id=in.(${ids})&image_url=not.is.null&order=created_at.desc&limit=1`,
+        `comments?select=lesson_id&lesson_id=in.(${ids})&is_hidden=eq.false&image_url=not.is.null&order=created_at.desc&limit=20`,
       );
-      if (rows.length > 0) {
-        lesson = { id: rows[0].lesson_id, course_id: courseId };
-        console.log(`::notice::E2E_LESSON_ID resolved to ${lesson.id} in course ${courseId} (has an image comment).`);
+      let picked = null;
+      for (const row of rows) {
+        if (await imageCommentIsVisible(safeId(row.lesson_id))) { picked = row.lesson_id; break; }
+      }
+      if (picked) {
+        lesson = { id: picked, course_id: courseId };
+        console.log(`::notice::E2E_LESSON_ID resolved to ${lesson.id} in course ${courseId} (visible image comment).`);
         break;
       }
     }
@@ -232,3 +255,11 @@ if (process.env.GITHUB_ENV && Object.keys(resolved).length > 0) {
   );
 }
 console.log(`Fixture discovery: ${Object.keys(resolved).join(", ") || "nothing resolved"}.`);
+
+// Release the probe session without touching other suites' tokens on the same
+// account: scope=local revokes this JWT only (a global logout used to sign the
+// Maestro run out mid-flight).
+await fetch(`${baseUrl}/auth/v1/logout?scope=local`, {
+  method: "POST",
+  headers: { apikey: apiKey, Authorization: `Bearer ${session.access_token}` },
+}).catch(() => {});
