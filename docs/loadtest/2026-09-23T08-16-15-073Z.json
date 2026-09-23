@@ -1,0 +1,73 @@
+{
+  "meta": {
+    "startedAt": "2026-09-23T08:16:15.073Z",
+    "baseUrl": "https://jsrcoaching.vercel.app",
+    "users": 8,
+    "durationSec": 20,
+    "maxRequests": 800,
+    "verdict": "PASS",
+    "abortReason": null
+  },
+  "summaries": [
+    {
+      "name": "web:home",
+      "requests": 207,
+      "ok": 207,
+      "failed": 0,
+      "throttled": 0,
+      "serverErrors": 0,
+      "errorRate": 0,
+      "rps": 190.9623053859557,
+      "p50": 17,
+      "p90": 31,
+      "p95": 136,
+      "p99": 430,
+      "max": 550
+    },
+    {
+      "name": "web:courses",
+      "requests": 207,
+      "ok": 207,
+      "failed": 0,
+      "throttled": 0,
+      "serverErrors": 0,
+      "errorRate": 0,
+      "rps": 316.0067735364936,
+      "p50": 17,
+      "p90": 29,
+      "p95": 53,
+      "p99": 169,
+      "max": 180
+    },
+    {
+      "name": "web:manifest",
+      "requests": 207,
+      "ok": 207,
+      "failed": 0,
+      "throttled": 0,
+      "serverErrors": 0,
+      "errorRate": 0,
+      "rps": 374.4139011611839,
+      "p50": 18,
+      "p90": 26,
+      "p95": 31,
+      "p99": 82,
+      "max": 125
+    },
+    {
+      "name": "api:courses",
+      "requests": 207,
+      "ok": 207,
+      "failed": 0,
+      "throttled": 0,
+      "serverErrors": 0,
+      "errorRate": 0,
+      "rps": 25.150876899836504,
+      "p50": 210,
+      "p90": 580,
+      "p95": 635,
+      "p99": 1949,
+      "max": 1957
+    }
+  ]
+}

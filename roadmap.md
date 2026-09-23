@@ -76,3 +76,6 @@
 - [ ] OWNER: connect Supabase project "Creatoranuj's Project" to this Lovable workspace — only possible from the Lovable UI (Project Settings → Connectors → Supabase → choose the project); chat cannot link an existing Supabase project. Once linked, the load-test observer and DB tooling can read metrics directly from chat.
 - [ ] OWNER (asked again 03:25 UTC, new workspace): link Supabase project "Creatoranuj's Project" via Project Settings → Connectors → Supabase — chat can only create a NEW Lovable Cloud project (supabase--enable), which would be the wrong backend; do not call it
 - [ ] (3rd ask 03:27 UTC) Supabase "Creatoranuj's Project" still not visible from the sandbox (no SUPABASE_URL, no DB tools) — owner must finish the link in Project Settings → Connectors → Supabase; re-check env on next turn
+- [x] Load test suite added (`scripts/loadtest/*`, unit tests) — real run PASS (home p95 136ms, courses 53ms, manifest 31ms, api:courses 635ms)
+- [x] Playwright fixture notices fixed by seeding Supabase data: image comment on a lesson in courses 30 & 34, published "E2E Practice Quiz" (3 questions) in course 30 (course 34 already had a 5-question published quiz)
+- [ ] OWNER: update repo secret `E2E_QUIZ_ID` to 07ad6d64-cf9f-4185-a9ea-0afb7e3c2d8d (or 12ebce35-7b49-4ec9-99c2-a5019b4e01cc) — preflight auto-resolves anyway
