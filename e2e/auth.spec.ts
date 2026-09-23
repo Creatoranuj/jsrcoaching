@@ -212,21 +212,36 @@ test.describe("Authenticated student", () => {
 
   test("dashboard should load within 20 seconds after login", async ({ page }) => {
     await openLogin(page);
-    await fillStable(page, "login-email", TEST_USER.email);
-    await fillStable(page, "login-password", TEST_USER.password);
 
-    // The very first click can land before the form's submit handler is
-    // attached (same mount race `signIn()` retries around): the page then
-    // sits on /login with the fields still filled and nothing in flight.
-    // That is not a slow dashboard, so retry the click and time only the
-    // attempt that actually navigated.
+    // Two distinct things can go wrong before the dashboard is even asked
+    // for, and neither is a slow dashboard:
+    //   1. the click lands before React attached the submit handler (the
+    //      browser then does a native form GET and wipes the fields), or
+    //   2. a re-render clears the controlled inputs between fill and click,
+    //      so the app answers "Please fill in all fields".
+    // The previous version re-clicked without re-filling, so after case 1 or
+    // 2 every later attempt submitted an empty form and the test burned its
+    // whole 45 s budget on the Pixel 7 leg. Now every attempt re-fills, and an
+    // attempt only counts once the sign-in request actually left the page.
+    // The stopwatch starts at the click that produced that request.
     let startTime = Date.now();
     await expect(async () => {
+      if (AFTER_LOGIN.test(new URL(page.url()).pathname)) return;
+      await fillStable(page, "login-email", TEST_USER.email);
+      await fillStable(page, "login-password", TEST_USER.password);
+      const signInRequest = page
+        .waitForRequest((req) => /\/auth\/v1\/token/.test(req.url()) && req.method() === "POST", {
+          timeout: 3_000,
+        })
+        .then(() => true, () => false);
       startTime = Date.now();
       await page.getByTestId("login-submit").click();
-      await page.waitForURL(AFTER_LOGIN, { timeout: 8_000 });
-    }).toPass({ timeout: 60_000, intervals: [500, 1_000] });
+      if (!(await signInRequest)) {
+        throw new Error("submit click did not start a sign-in request (form not interactive yet)");
+      }
+    }).toPass({ timeout: 40_000, intervals: [500, 1_000] });
 
+    await page.waitForURL(AFTER_LOGIN, { timeout: 20_000 });
     expect(Date.now() - startTime).toBeLessThan(20_000);
   });
 });

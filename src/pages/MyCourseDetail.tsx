@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { reportError } from "@/lib/sentry";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../integrations/supabase/client";
 import type { Tables } from "../integrations/supabase/types";
 import { useAuth } from "../contexts/AuthContext";
@@ -24,6 +24,7 @@ import { useLessonNotesCounts } from "../hooks/useLessonNotesCounts";
 import { LessonAttachmentsSheet } from "../components/lesson/LessonAttachmentsSheet";
 import { downloadAllLessonNotes } from "../utils/downloadLessonNotes";
 import { readBundleSync as readChapterBundleSync, writeBundle as writeChapterBundle } from "../lib/perf/chapterBundleCache";
+import { courseDetailQueryKey, recomputeChapterCounts, syncLessonCompletion } from "../lib/perf/courseProgressCache";
 import { isNative as isNativePlatform } from "../lib/platform";
 import StudyMaterialsList from "../components/course/StudyMaterialsList";
 import { prefetchIdle } from "../lib/idlePrefetch";
@@ -92,20 +93,8 @@ const tabs: { id: ContentType; label: string }[] = [
 // upload never ends up hidden behind a chip that is not drawn).
 const NCERT_COURSE_RE = /vip\s*offline/i;
 
-// ── Derives exact chapter completion counts from the source-of-truth sets ──────
-// Prevents double-counting on re-entry, hot-reload, or concurrent updates.
-const recomputeChapterCounts = (
-  completedSet: Set<string>,
-  allLessons: { id: string; chapterId: string | null }[],
-  prevChapters: Chapter[]
-): Chapter[] =>
-  prevChapters.map(ch => {
-    if (ch.id === "__all__") {
-      return { ...ch, completedLessons: allLessons.filter(l => completedSet.has(l.id)).length };
-    }
-    const chLessons = allLessons.filter(l => l.chapterId === ch.id);
-    return { ...ch, completedLessons: chLessons.filter(l => completedSet.has(l.id)).length };
-  });
+// `recomputeChapterCounts` lives in lib/perf/courseProgressCache so the
+// lesson player can keep this screen's caches in step too.
 
 const MyCourseDetail = () => {
   const navigate = useNavigate();
@@ -113,6 +102,7 @@ const MyCourseDetail = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, profile, isAdmin, isTeacher } = useAuth();
   const isAdminOrTeacher = isAdmin || isTeacher;
+  const queryClient = useQueryClient();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [courseSidebarOpen, setCourseSidebarOpen] = useState(false);
@@ -182,7 +172,7 @@ const MyCourseDetail = () => {
   // global queryPersister snapshots it to Preferences so a cold reopen
   // without network paints last-known content immediately.
   const courseQuery = useQuery({
-    queryKey: ["my-course-detail", courseId, user?.id ?? null],
+    queryKey: courseDetailQueryKey(courseId ?? "", user?.id),
     enabled: !!courseId,
     staleTime: 2 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
@@ -686,6 +676,7 @@ const MyCourseDetail = () => {
           .eq("lesson_id", lessonId);
         if (error) throw error;
         progressMarkedRef.current.delete(lessonId);
+        syncLessonCompletion(queryClient, courseId, user.id, lessonId, false);
         toast.success("Marked as not done");
       } else {
         const { error } = await supabase.from("user_progress").upsert({
@@ -698,6 +689,10 @@ const MyCourseDetail = () => {
         }, { onConflict: "user_id,lesson_id" });
         if (error) throw error;
         progressMarkedRef.current.add(lessonId);
+        // Confirmed on the server → push the new state into the React-Query
+        // entry and the reload bundle, otherwise a refresh inside the 2-minute
+        // stale window paints the old snapshot and the tick disappears.
+        syncLessonCompletion(queryClient, courseId, user.id, lessonId, true);
         toast.success("Marked as complete! 🎉");
       }
     } catch (err) {
@@ -711,7 +706,7 @@ const MyCourseDetail = () => {
       });
       toast.error(wasCompleted ? "Failed to update" : "Failed to mark complete");
     }
-  }, [user, courseId]);
+  }, [user, courseId, queryClient]);
 
   // Lesson-object overload — preserved for the few legacy callers that still
   // pass a full Lesson (LessonView resume callback, etc.).

@@ -4,6 +4,8 @@ import { formatGrade } from "../lib/formatGrade";
 import { getErrorMessage } from "@/lib/errorMessage";
 import { mark, measure } from "@/lib/perf/marks";
 import { useSearchParams, useNavigate, useParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { syncLessonCompletion } from "@/lib/perf/courseProgressCache";
 import { supabase } from "../integrations/supabase/client";
 import { Button } from "../components/ui/button";
 import { ScrollArea } from "../components/ui/scroll-area";
@@ -111,6 +113,7 @@ const LessonView = () => {
 
   // Support both URL params and query params
   const { courseId: paramCourseId } = useParams();
+  const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const queryCourseId = searchParams.get("courseId");
   const lessonIdParam = searchParams.get("lessonId") || searchParams.get("lesson");
@@ -1051,12 +1054,15 @@ const LessonView = () => {
           last_watched_at: new Date().toISOString(),
         }, { onConflict: 'user_id,lesson_id' });
         setCompletedLessonIds(prev => new Set([...prev, lessonId]));
+        // Keep My Courses' cached bundle in step so the tick is already there
+        // when the student goes back (or reloads) inside its stale window.
+        syncLessonCompletion(queryClient, courseId, user.id, lessonId, true);
         void notifySuccess();
       } catch (err) {
         logger.error('Progress save error:', err);
       }
     }
-  }, [user, currentLesson?.id, courseId, reportLessonProgress]);
+  }, [user, currentLesson?.id, courseId, reportLessonProgress, queryClient]);
 
   // Reset ready flag whenever the lesson changes.
   useEffect(() => {

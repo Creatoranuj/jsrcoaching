@@ -7,6 +7,28 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [Unreleased] — 2026-09-23
+
+### Fixed — lesson completion survives a reload
+- "Mark as done" (My Courses) and the 80 %-watched auto-complete (lesson
+  player) only wrote `user_progress` and component state. The course-detail
+  screen hydrates from a 2-minute-fresh React-Query entry and a localStorage
+  bundle (`initialData`), so a refresh inside that window painted the
+  pre-toggle snapshot and the tick vanished until the next background
+  refetch. New `lib/perf/courseProgressCache.syncLessonCompletion()` patches
+  both layers after the confirmed write (no extra network) — root cause of
+  the red `lesson-completion › sticks across a reload` E2E spec on desktop
+  and Pixel 7. Unit-tested (`courseProgressCache.test.ts`).
+
+### CI — Playwright E2E
+- `auth › dashboard within 20 s`: the retry loop re-clicked without
+  re-filling, so after one wiped render every attempt submitted an empty
+  form and the Pixel 7 leg burned its whole budget (flaky). Each attempt now
+  re-fills and only counts once the sign-in request left the page; the
+  stopwatch starts at that click.
+
+---
+
 ## [v1.16.3] — 2026-09-21
 
 ### CI — Playwright E2E (third pass, from run artifacts)
