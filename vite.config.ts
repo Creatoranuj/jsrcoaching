@@ -210,7 +210,9 @@ export default defineConfig(({ mode }) => ({
           // captured into vendor-pdf / vendor-notion, so `utils.ts` and the
           // entry statically imported ~150 KB of PDF/Notion code on the home
           // page (Lighthouse #56). Groups now own only the modules they match.
-          includeDependenciesRecursively: false,
+          // NOTE: do NOT set includeDependenciesRecursively:false — it broke module init
+          // order in vendor-pdf/vendor-notion ("c is not a function") and crashed the
+          // PDF/Downloads/Lesson screens (Playwright run 35885847899).
           groups: [
             // Highest priority — pinned vendor chunks. Higher priority wins on overlap.
             { name: 'vendor-react',     test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/,                          priority: 100 },
