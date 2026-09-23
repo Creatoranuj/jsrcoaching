@@ -1,10 +1,11 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors'
 import { guardSwitch } from "../_shared/systemSwitch.ts";
+import { buildPaymentCorsHeaders, paymentPreflight } from "../_shared/cors.ts";
 
 Deno.serve(async (req) => {
+  const corsHeaders = buildPaymentCorsHeaders(req)
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return paymentPreflight(req)
   }
 
   // Survival Mode: admin ne is function ko band kiya ho to yahin ruk jao.

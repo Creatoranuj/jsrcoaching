@@ -9,6 +9,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "npm:jose@5";
 import { guardSwitch } from "../_shared/systemSwitch.ts";
+import { buildPaymentCorsHeaders, paymentPreflight } from "../_shared/cors.ts";
 
 const GITHUB_OIDC_ISSUER = "https://token.actions.githubusercontent.com";
 const GITHUB_JWKS = createRemoteJWKSet(new URL(`${GITHUB_OIDC_ISSUER}/.well-known/jwks`));
@@ -16,11 +17,6 @@ const CRON_REPOSITORY = "Creatoranuj/jsrcoaching";
 const CRON_WORKFLOW = "reconcile-payments.yml";
 const CRON_AUDIENCE = "jsr-coaching-reconcile";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Content-Type": "application/json",
-};
 
 type OrderPayment = { id: string; status: string; amount: number };
 
@@ -36,7 +32,10 @@ function timingSafeEqual(a: string, b: string): boolean {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  // Strict allow-list (prod + staging + app). Server-to-server cron calls
+  // send no Origin and are authenticated below via OIDC / admin JWT.
+  const corsHeaders = { ...buildPaymentCorsHeaders(req), "Content-Type": "application/json" };
+  if (req.method === "OPTIONS") return paymentPreflight(req);
 
   // Survival Mode: admin ne is function ko band kiya ho to yahin ruk jao.
   const __switchOff = await guardSwitch("reconcile-pending-payments", corsHeaders);
