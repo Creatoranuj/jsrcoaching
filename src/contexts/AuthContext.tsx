@@ -41,7 +41,7 @@ interface AuthContextType {
   refetchUserData: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Module-level singleton — tracks the user id we've already initialised push
 // notifications for, so onAuthStateChange (which fires on every token refresh)
