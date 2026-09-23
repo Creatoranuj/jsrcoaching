@@ -35,6 +35,11 @@
     <link rel="manifest" href="/manifest.json" crossorigin="use-credentials" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="preload" as="image" href="/brand/jsr-mark.webp" type="image/webp" fetchpriority="high" />
+    <!-- Home-page LCP element (hero classroom photo). In an SPA the <img> only
+         exists after React renders, which Lighthouse measured as a ~4 s load
+         delay; preloading lets the download overlap JS parse. Vite rewrites
+         this href to the hashed asset. -->
+    <link rel="preload" as="image" href="/src/assets/jsr-classroom.webp" type="image/webp" fetchpriority="high" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -43,12 +48,10 @@
     <!-- Self-hosted fonts bundled in public/fonts so the APK / production
          build ships them locally (no runtime dependency on Lovable's dev
          asset proxy `/__l5e/`, which doesn't exist off-preview). -->
-    <link rel="preload" as="font" type="font/woff2" crossorigin
-      href="/fonts/inter-latin.woff2" />
-    <link rel="preload" as="font" type="font/woff2" crossorigin
-      href="/fonts/fraunces-latin.woff2" />
-    <link rel="preload" as="font" type="font/woff2" crossorigin
-      href="/fonts/archivo-black-latin.woff2" />
+    <!-- No font preloads: the UI renders in IBM Plex Sans / Libre Baskerville
+         (bundled via @fontsource). Preloading Inter/Fraunces/Archivo Black
+         pulled ~134 KB of non-critical fonts ahead of the first paint
+         (Lighthouse #56). The @font-face rules below stay as fallbacks. -->
     <style>
       /* Archivo Black — JSR display face, latin subset */
       @font-face {
