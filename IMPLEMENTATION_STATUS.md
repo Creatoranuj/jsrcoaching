@@ -1,5 +1,5 @@
 # Implementation Status — Sadguru Coaching Classes Platform
-**Last verified:** 2026-03-08  
+**Last verified:** 2026-09-23 (E2E: Maestro #97 + Playwright #289 green; feature table below is the 2026-03-08 audit)  
 **Verified by:** Full code audit (AI) + live preview inspection  
 **Test Account:** safarenglishkaprism@gmail.com / Sadguru@123 (role: admin)
 
@@ -166,3 +166,4 @@
 | Session 3 | 2026-03-08 | Reports analytics + Recharts chart, ChapterCard progress, AdminQuizManager lesson link |
 | Session 4 | 2026-03-08 | Full code audit, IMPLEMENTATION_STATUS.md created |
 | Session 5 | 2026-03-08 | **DnD reordering** (chapters + lessons + questions), **camera capture** uploads, **collapsible question cards** in QuizManager, all admin tap targets ≥44px, @dnd-kit installed |
+| Session 6 | 2026-09-23 | **Maestro Android E2E green** (debug Firebase client, verified-credentials preflight, Pixel 5 emulator, fixture discovery), **Playwright E2E green** (session reuse, watchdog, mark-complete confirmation), comment images open in-app with a Back sentinel, **custom-scheme deep links fixed on WebView < 130** (lesson links + Razorpay return), optional update nudge skipped on `.debug`; see CHANGELOG v1.17.0 |

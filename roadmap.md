@@ -71,7 +71,7 @@
 - [ ] Thumbnails → WebP on upload (canvas re-encode, max 1280 px, keep original when smaller)
 - [ ] Page-load monitoring persisted + admin monitor screen
 - [ ] Workflow SHA pinning (all `.github/workflows/*.yml`, `workflow` scope now granted)
-- [ ] Release bookkeeping: CHANGELOG v1.17.0, IMPLEMENTATION_STATUS
+- [x] Release bookkeeping: CHANGELOG v1.17.0, IMPLEMENTATION_STATUS (done 2026-09-23 13:xx UTC)
 - [ ] Always: `save.sh` after every edit; ZIP of sandbox source into Files when credits run low / at the end of the run
 - [ ] OWNER: connect Supabase project "Creatoranuj's Project" to this Lovable workspace — only possible from the Lovable UI (Project Settings → Connectors → Supabase → choose the project); chat cannot link an existing Supabase project. Once linked, the load-test observer and DB tooling can read metrics directly from chat.
 - [ ] OWNER (asked again 03:25 UTC, new workspace): link Supabase project "Creatoranuj's Project" via Project Settings → Connectors → Supabase — chat can only create a NEW Lovable Cloud project (supabase--enable), which would be the wrong backend; do not call it
@@ -91,7 +91,8 @@
 - [ ] Promote `overlay-back` + `back-button-cold-start` from non-blocking to gating once each has passed twice in a row on `ci/maestro-green`
 - [x] Maestro #96 (7e34d5b): smoke + back-button-cold-start passed; overlay-back reached the deep link and the app stayed on the dashboard — logcat proved the VIEW intent + `appUrlOpen` arrived. Root cause: WebView 109 parses `com.jsrcoaching.app://…` host-less → `toInternalPath` returned null for EVERY custom-scheme link (lesson deep links, Razorpay payment-callback return). Fixed engine-independently in `src/config/deepLinks.ts` + legacy-Chromium URL stub tests
 - [x] `ForceUpdateGate` optional nudge ("Naya version … Baad me") suppressed on the `.debug` package (release APK can't install over it anyway); `overlay-back.yaml` also dismisses a stray "Baad me"
-- [ ] Re-run Maestro (+ Playwright) on the new commit; merge `ci/maestro-green` → `main` only when both are genuinely green on the same commit
+- [x] 98a33ef: Maestro #97 SUCCESS (smoke 1/1, overlay-back PASSED — deep link now lands on the lesson, back-button-cold-start PASSED) + Playwright #289 SUCCESS (89 pass / 0 fail / 14 skip) → merged to `main` as 57dd460 (12:58 UTC); main: Playwright #291 SUCCESS, Maestro #98 dispatched
+- [x] Release bookkeeping: CHANGELOG cut as v1.17.0, IMPLEMENTATION_STATUS session 6 row (docs-only commit, no APK build)
 - [x] (12:33 UTC, asked again) Supabase "Creatoranuj's Project" — already linked (ref `wegamscqtvqhxowlskfm`); nothing to do
 - [x] Workspace reset again at ~12:35 UTC: GitHub connection re-linked (`std_01m3745vd9e5f8s1tj105qr8gz`, repo scope only — workflow-file edit stays local until a `workflow`-scoped connection exists)
 - [x] (12:00 UTC, asked again) Supabase "Creatoranuj's Project" — already linked (ref `wegamscqtvqhxowlskfm`); no action needed

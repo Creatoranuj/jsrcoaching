@@ -7,7 +7,12 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
-## [Unreleased] — 2026-09-23
+## [v1.17.0] — 2026-09-23
+
+Both end-to-end suites green on the same commit for the first time —
+Maestro Android E2E #97 (smoke + overlay-back + back-button-cold-start) and
+Playwright E2E #289 (89 passed, 0 failed, 14 skipped) on `98a33ef`, merged to
+`main` as `57dd460`.
 
 ### CI — Maestro Android E2E (never green before)
 - Every run since the `.debug` applicationIdSuffix landed died in
