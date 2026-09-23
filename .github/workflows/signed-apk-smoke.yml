@@ -6,7 +6,9 @@ name: Signed APK Smoke
 #
 # Required GitHub secrets:
 #   KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD,
-#   MAESTRO_EMAIL, MAESTRO_PASSWORD,
+#   MAESTRO_EMAIL, MAESTRO_PASSWORD (or E2E_EMAIL/E2E_PASSWORD, or
+#   TEST_USER_EMAIL/TEST_USER_PASSWORD — the credential preflight picks the
+#   first pair that really signs in),
 #   VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY, VITE_SUPABASE_ANON_KEY
 # Optional (P2 auto-promote to Play internal track):
 #   PLAY_SERVICE_ACCOUNT_JSON — Google Play Console service account JSON.
@@ -114,7 +116,7 @@ jobs:
         with:
           node-version: '24'
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: '1.2.18'
 
@@ -135,6 +137,25 @@ jobs:
           fi
           echo "ANDROID_PACKAGE=$PKG" >> "$GITHUB_ENV"
           echo "Derived ANDROID_PACKAGE=$PKG"
+
+      - name: 🔐 Verify Maestro test credentials
+        # Run #53 (2026-09-23) built, installed and launched the signed APK fine
+        # and then died on "Invalid email or password." — MAESTRO_EMAIL /
+        # MAESTRO_PASSWORD had gone stale. maestro-android.yml survives the same
+        # rotation because it probes every candidate pair against Supabase first
+        # and exports the one that actually signs in; do the same here instead of
+        # burning a 12-minute emulator run on a red login banner.
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          MAESTRO_EMAIL: ${{ secrets.MAESTRO_EMAIL }}
+          MAESTRO_PASSWORD: ${{ secrets.MAESTRO_PASSWORD }}
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+          TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+          TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+        run: node .github/scripts/maestro-preflight.mjs
 
       - name: 📦 Install deps
         run: bun install --frozen-lockfile --ignore-scripts
@@ -242,11 +263,11 @@ jobs:
         # vars don't persist. Workaround: stage the full script here so the
         # emulator step can invoke it with a single command.
         env:
-          MAESTRO_EMAIL: ${{ secrets.MAESTRO_EMAIL }}
-          MAESTRO_PASSWORD: ${{ secrets.MAESTRO_PASSWORD }}
+          MAESTRO_EMAIL: ${{ env.MAESTRO_EMAIL }}
+          MAESTRO_PASSWORD: ${{ env.MAESTRO_PASSWORD }}
         run: |
           if [ -z "${MAESTRO_EMAIL:-}" ] || [ -z "${MAESTRO_PASSWORD:-}" ]; then
-            echo "::error::MAESTRO_EMAIL or MAESTRO_PASSWORD secret missing — cannot run signed APK smoke login"; exit 1
+            echo "::error::No verified test login — the credential preflight step should have failed first"; exit 1
           fi
           cat > /tmp/smoke.sh <<'SMOKE_EOF'
           #!/usr/bin/env bash
@@ -703,10 +724,10 @@ jobs:
           echo "✅ smoke script staged ($(wc -l < /tmp/smoke.sh) lines)"
 
       - name: 🤖 Boot emulator + install SIGNED APK + smoke test
-        uses: reactivecircus/android-emulator-runner@v2
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         env:
-          MAESTRO_EMAIL: ${{ secrets.MAESTRO_EMAIL }}
-          MAESTRO_PASSWORD: ${{ secrets.MAESTRO_PASSWORD }}
+          MAESTRO_EMAIL: ${{ env.MAESTRO_EMAIL }}
+          MAESTRO_PASSWORD: ${{ env.MAESTRO_PASSWORD }}
           ANDROID_PACKAGE: ${{ env.ANDROID_PACKAGE }}
           MATRIX_API_LEVEL: ${{ matrix.api-level }}
         with:
@@ -907,7 +928,7 @@ jobs:
         with:
           node-version: '24'
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: '1.2.18'
 
@@ -924,6 +945,25 @@ jobs:
           fi
           echo "ANDROID_PACKAGE=$PKG" >> "$GITHUB_ENV"
 
+
+      - name: 🔐 Verify Maestro test credentials
+        # Run #53 (2026-09-23) built, installed and launched the signed APK fine
+        # and then died on "Invalid email or password." — MAESTRO_EMAIL /
+        # MAESTRO_PASSWORD had gone stale. maestro-android.yml survives the same
+        # rotation because it probes every candidate pair against Supabase first
+        # and exports the one that actually signs in; do the same here instead of
+        # burning a 12-minute emulator run on a red login banner.
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          MAESTRO_EMAIL: ${{ secrets.MAESTRO_EMAIL }}
+          MAESTRO_PASSWORD: ${{ secrets.MAESTRO_PASSWORD }}
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+          TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+          TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+        run: node .github/scripts/maestro-preflight.mjs
 
       - name: 📦 Install deps
         run: bun install --frozen-lockfile --ignore-scripts
@@ -979,8 +1019,8 @@ jobs:
 
       - name: 📝 Stage secondary flows script
         env:
-          MAESTRO_EMAIL: ${{ secrets.MAESTRO_EMAIL }}
-          MAESTRO_PASSWORD: ${{ secrets.MAESTRO_PASSWORD }}
+          MAESTRO_EMAIL: ${{ env.MAESTRO_EMAIL }}
+          MAESTRO_PASSWORD: ${{ env.MAESTRO_PASSWORD }}
         run: |
           cat > /tmp/secondary.sh <<'SEC_EOF'
           #!/usr/bin/env bash
@@ -1009,10 +1049,10 @@ jobs:
           chmod +x /tmp/secondary.sh
 
       - name: 🤖 Boot emulator + run secondary flows
-        uses: reactivecircus/android-emulator-runner@v2
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         env:
-          MAESTRO_EMAIL: ${{ secrets.MAESTRO_EMAIL }}
-          MAESTRO_PASSWORD: ${{ secrets.MAESTRO_PASSWORD }}
+          MAESTRO_EMAIL: ${{ env.MAESTRO_EMAIL }}
+          MAESTRO_PASSWORD: ${{ env.MAESTRO_PASSWORD }}
         with:
           api-level: 33
           target: google_apis
@@ -1079,7 +1119,7 @@ jobs:
         with:
           node-version: '24'
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         if: steps.gate.outputs.skip != 'true'
         with:
           bun-version: '1.2.18'

@@ -13,9 +13,20 @@ concurrency:
   group: deploy-functions
   cancel-in-progress: false
 
+# Least-privilege GITHUB_TOKEN (audit 2026-09-23): the default repo token is
+# write-all; every job here only reads the checkout.
+permissions:
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-24.04
+    # Production deploys are recorded against the Production environment.
+    # Add required reviewers under Settings > Environments > Production to turn
+    # this into a manual approval gate (audit 2026-09-23, DevOps finding #3).
+    environment:
+      name: Production
+      url: https://jsrcoaching.vercel.app
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF || 'wegamscqtvqhxowlskfm' }}
@@ -36,7 +47,7 @@ jobs:
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1.7.1
         if: steps.gate.outputs.ready == 'true'
         with:
           version: latest
