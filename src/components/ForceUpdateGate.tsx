@@ -83,6 +83,13 @@ const snooze = (version: string) => {
   }
 };
 
+/**
+ * `com.jsrcoaching.app.debug` (android `applicationIdSuffix ".debug"`) is the
+ * CI / QA variant. Exported for tests.
+ */
+export const isDebugPackageId = (id: string | null | undefined): boolean =>
+  typeof id === "string" && /\.debug$/i.test(id.trim());
+
 export const ForceUpdateGate = ({ children }: { children: ReactNode }) => {
   const [mode, setMode] = useState<UpdateMode>("none");
   const [config, setConfig] = useState<AppConfigRow | null>(null);
@@ -116,6 +123,15 @@ export const ForceUpdateGate = ({ children }: { children: ReactNode }) => {
     };
   }, []);
 
+  // `.debug` package (CI emulator, internal QA installs). The optional nudge
+  // is wrong there: "Update karein" downloads the release APK, which has a
+  // different applicationId and cannot install over the debug build — the
+  // tester just gets a second app. It also sat on top of every screen during
+  // the Maestro flows (Radix dialogs block pointer events underneath), so the
+  // overlay-back flow could never reach the lesson. Forced/minimum-version
+  // blocks stay in force so that path remains testable on debug builds.
+  const [isDebugBuild, setIsDebugBuild] = useState(false);
+
   // Read app version once on mount (native only).
   useEffect(() => {
     if (!isNative) return;
@@ -123,7 +139,10 @@ export const ForceUpdateGate = ({ children }: { children: ReactNode }) => {
     // hooks; dynamic import here produced Rolldown INEFFECTIVE_DYNAMIC_IMPORT.
     loadCapacitorApp()
       .then(({ plugin: App }) => App.getInfo())
-      .then((info) => setCurrentVersion(info.version || "0.0.0"))
+      .then((info) => {
+        setIsDebugBuild(isDebugPackageId(info.id));
+        setCurrentVersion(info.version || "0.0.0");
+      })
       .catch(() => setCurrentVersion("0.0.0"));
   }, [isNative]);
 
@@ -214,7 +233,12 @@ export const ForceUpdateGate = ({ children }: { children: ReactNode }) => {
         return;
       }
       // Soft nudge: a newer build exists and the user has not snoozed it.
-      if (isUpdateAvailable(currentVersion, effectiveLatest) && !isSnoozed(effectiveLatest)) {
+      // Never for a `.debug` package — see `isDebugBuild` above.
+      if (
+        !isDebugBuild &&
+        isUpdateAvailable(currentVersion, effectiveLatest) &&
+        !isSnoozed(effectiveLatest)
+      ) {
         setMode("optional");
         return;
       }
@@ -224,7 +248,7 @@ export const ForceUpdateGate = ({ children }: { children: ReactNode }) => {
       logger.warn("[ForceUpdateGate] version check failed, failing open", err);
       setMode("none");
     }
-  }, [fetchedCfg, currentVersion, isNative, releaseVersion, releases]);
+  }, [fetchedCfg, currentVersion, isNative, isDebugBuild, releaseVersion, releases]);
 
   const openStore = useCallback(async () => {
     const { Capacitor } = await import("@capacitor/core").catch(() => ({

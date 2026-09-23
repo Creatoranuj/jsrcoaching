@@ -87,17 +87,33 @@ androidWebViewHierarchy: devtools
           visible: "Quick Actions|All Classes|No active courses|Continue where you left|Dashboard|My Courses"
           timeout: 120000
 
-# 3) Deep-link straight into the lesson's Comments tab. Safe now: the app has
-#    hydrated (step 1), so Capacitor's appUrlOpen listener is registered —
-#    the old smoke.yaml bug was firing openLink right after launchApp.
+# 3) Deep-link straight into the lesson's Comments tab. The app has hydrated
+#    (step 1), so Capacitor's appUrlOpen listener is registered, and
 #    MainActivity is singleTask, so the running instance receives the intent.
+#    Run #96 proved the intent + appUrlOpen both arrived and the app still
+#    stayed on the dashboard: Android System WebView 109 (API 33 image) parses
+#    non-special schemes host-less (`new URL(...).pathname` = "//classes/…"),
+#    so `toInternalPath` rejected every custom-scheme link. Fixed in
+#    src/config/deepLinks.ts (engine-independent parsing) — this step is the
+#    on-device regression test for that fix.
 - openLink: com.jsrcoaching.app://classes/${MAESTRO_COURSE_ID}/lessons?lessonId=${MAESTRO_LESSON_ID}&tab=comments&from=maestro
 
 # Lesson screen mounted: the chip strip is the first stable token (video
-# players and the YouTube iframe are ignored on purpose).
+# players and the YouTube iframe are ignored on purpose). "Baad me" is the
+# optional-update nudge's dismiss button: ForceUpdateGate no longer shows it
+# on the `.debug` package, but an older APK under test still might, and a
+# Radix dialog blocks every tap underneath it — dismiss before going on.
+- extendedWaitUntil:
+    visible: "Comments|Ask Doubt|Timeline|Bookmarks|Baad me"
+    timeout: 90000
+- runFlow:
+    when:
+      visible: "Baad me"
+    commands:
+      - tapOn: "Baad me"
 - extendedWaitUntil:
     visible: "Comments|Ask Doubt|Timeline|Bookmarks"
-    timeout: 90000
+    timeout: 30000
 - tapOn:
     text: "Comments"
     optional: true

@@ -169,6 +169,41 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   60-120 s.
 - Both secondary flows stay non-blocking until they pass twice in a row.
 
+### Fixed — custom-scheme deep links never worked on WebView < 130 (found by Maestro #96)
+- Run #96's first `overlay-back` attempt showed the VIEW intent reaching
+  `MainActivity`, Capacitor firing `appUrlOpen` to a live listener — and the
+  app staying on the dashboard. Android System WebView 109 (the API 33 image,
+  and every phone whose WebView never got a Play update) parses non-special
+  schemes as an opaque path: `new URL("com.jsrcoaching.app://classes/30/…")`
+  returns `host: ""` and `pathname: "//classes/30/…"`. `toInternalPath` joined
+  `host + pathname`, got `//classes/…`, failed the allow-list and returned
+  `null` — silently, for every custom-scheme link: lesson deep links, the
+  Razorpay `com.jsrcoaching.app://payment-callback?…` return (the resume
+  reconciler was quietly covering for it), `openLink` in every Maestro flow
+  since 2026-07. Modern engines (Chromium ≥ 130, Firefox, Safari, Node) return
+  `host: "classes"`, which is why the unit tests passed.
+- `src/config/deepLinks.ts` now cuts the scheme off itself and re-parses the
+  remainder against an https base, so the result is identical on every
+  engine (dot segments normalised before the allow-list check, `?`/`#`
+  preserved, backslashes folded). `src/test/deepLinks.test.ts` gained a
+  legacy-Chromium `URL` stub that reproduces the quirk and proves the old
+  implementation returned `null` for the lesson link and the payment return.
+- The smoke.yaml note that blamed only listener timing for dropped
+  `openLink`s carries the real root cause now; `overlay-back.yaml` is the
+  on-device regression test.
+
+### Fixed — optional-update nudge on the `.debug` package
+- `ForceUpdateGate` showed "Naya version (1.8.9) aa gaya hai" on the CI/QA
+  debug build. "Update karein" fetches the release APK, whose applicationId
+  differs, so it cannot install over the debug build — the tester just ends
+  up with two apps. The nudge also sat over every screen in the Maestro
+  flows (a Radix dialog blocks the taps underneath). The optional nudge is
+  now skipped when `App.getInfo().id` ends in `.debug`
+  (`isDebugPackageId`, unit-tested); forced/minimum-version blocks still
+  apply so that path stays testable. `overlay-back.yaml` additionally
+  dismisses a stray "Baad me" before touching the lesson, for older APKs.
+
+
 ---
 
 ## [v1.16.3] — 2026-09-21
