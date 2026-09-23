@@ -80,3 +80,50 @@ export function buildCorsHeaders(req: Request): Record<string, string> {
 
   return headers;
 }
+
+// ---------------------------------------------------------------------------
+// STRICT allow-list for money / account-sensitive functions (payments,
+// reconciliation, account deletion). Only production, staging and the
+// Android app may call these. No Lovable preview hosts, no wildcard.
+// Staging origins come from the `STAGING_ORIGINS` secret (comma-separated,
+// exact match). Localhost is allowed only for dev/CI (Playwright baseURL).
+// ---------------------------------------------------------------------------
+export const PAYMENT_ORIGINS: RegExp[] = [
+  /^https:\/\/jsrcoaching\.vercel\.app$/i,
+  /^https:\/\/(www\.)?jsrcoaching\.com$/i,
+  /^https:\/\/localhost(:\d+)?$/i, // Capacitor Android WebView
+  /^capacitor:\/\/localhost$/i,
+  /^http:\/\/localhost(:\d+)?$/i, // local dev + CI
+  /^http:\/\/127\.0\.0\.1(:\d+)?$/i,
+];
+
+const STAGING_ALLOWED = (Deno.env.get("STAGING_ORIGINS") ?? "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+export function isPaymentOriginAllowed(origin: string): boolean {
+  if (!origin) return false;
+  return PAYMENT_ORIGINS.some((re) => re.test(origin)) ||
+    STAGING_ALLOWED.includes(origin);
+}
+
+export function buildPaymentCorsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get("Origin") ?? "";
+  const known = isPaymentOriginAllowed(origin);
+  const headers: Record<string, string> = {
+    "Access-Control-Allow-Headers": ALLOW_HEADERS,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Vary": "Origin",
+    "X-Origin-Known": known ? "1" : "0",
+  };
+  if (known) headers["Access-Control-Allow-Origin"] = origin;
+  return headers;
+}
+
+/** Preflight for strict functions: 204 for known origins, 403 otherwise. */
+export function paymentPreflight(req: Request): Response {
+  const headers = buildPaymentCorsHeaders(req);
+  const origin = req.headers.get("Origin") ?? "";
+  return new Response(null, { status: isPaymentOriginAllowed(origin) ? 204 : 403, headers });
+}

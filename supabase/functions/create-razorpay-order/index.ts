@@ -1,5 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { buildCorsHeaders } from "../_shared/cors.ts";
+import { buildPaymentCorsHeaders as buildCorsHeaders } from "../_shared/cors.ts";
 import { razorpayAuthHeader, razorpayFetchWithRetry } from "../_shared/razorpayFetch.ts";
 import { reportError } from "../_shared/errorReporting.ts";
 import { isIntId } from "../_shared/validate.ts";
