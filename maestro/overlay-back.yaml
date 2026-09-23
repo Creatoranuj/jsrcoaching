@@ -42,12 +42,21 @@ androidWebViewHierarchy: devtools
 - assertNotVisible:
     text: "Device integrity check"
 
-# 2) Session did not survive (fresh emulator / cleared state) → sign in with
-#    the pair preflight verified. Skipped entirely when a signed-in token is
-#    already on screen.
+# 2) Decide signed-in vs signed-out from a DECISIVE token, and only after the
+#    screen has settled. Run #98 evaluated `when: notVisible: <dashboard
+#    tokens>` ~1 s after the first paint, while the dashboard was still
+#    hydrating from the query cache (main thread janked ~6 s after the warm
+#    launch), got "not visible", ran the sign-in subflow against an already
+#    signed-in dashboard and failed on "Welcome Back". So:
+#      a) wait until either the hydrated dashboard or the sign-in entry is on
+#         screen (the bottom nav alone is not decisive — it paints first);
+#      b) sign in only when a signed-OUT token is positively visible.
+- extendedWaitUntil:
+    visible: "Continue where you left|Quick Actions|No active courses|Welcome Back|Email Address|Login|Sign In|Log In|Get Started"
+    timeout: 120000
 - runFlow:
     when:
-      notVisible: "Dashboard|Quick Actions|Continue where you left|No active courses"
+      visible: "Welcome Back|Email Address|Login|Sign In|Log In|Get Started"
     commands:
       - tapOn:
           text: "Login|Sign In|Log In|Get Started"
@@ -86,6 +95,12 @@ androidWebViewHierarchy: devtools
       - extendedWaitUntil:
           visible: "Quick Actions|All Classes|No active courses|Continue where you left|Dashboard|My Courses"
           timeout: 120000
+
+# Either way the hydrated dashboard must be on screen before the deep link
+# fires, so the lesson navigation never races the dashboard's initial queries.
+- extendedWaitUntil:
+    visible: "Continue where you left|Quick Actions|No active courses|All Classes"
+    timeout: 60000
 
 # 3) Deep-link straight into the lesson's Comments tab. The app has hydrated
 #    (step 1), so Capacitor's appUrlOpen listener is registered, and

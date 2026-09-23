@@ -197,6 +197,28 @@ Playwright E2E #289 (89 passed, 0 failed, 14 skipped) on `98a33ef`, merged to
   `openLink`s carries the real root cause now; `overlay-back.yaml` is the
   on-device regression test.
 
+### Fixed — APK showed web-only banners (found by Maestro #98 screenshots)
+- Dashboard "Install the JSR COACHING app for a better experience" banner
+  rendered inside the Android app: the Capacitor WebView reports
+  `display-mode: browser`, so the standalone check never matched. Hidden when
+  the native bridge is present (`isNativeRuntime()`).
+- "Update available — tap to reload" toast inside the APK: `appUpdate.ts`
+  listened for `vite:preloadError` everywhere, but in the native shell the
+  bundle is fixed and served locally, so a failed chunk preload is a transient
+  hiccup, not a deploy — and the APK cannot update itself. The prompt is no
+  longer wired in the native shell (`isCapacitorShell()`); `lazyWithRetry` /
+  `chunkError` keep retrying + one reload as before. Unit tests cover both
+  the guard and the web wiring.
+
+### CI — overlay-back sign-in decision (Maestro #98 flake)
+- The flow evaluated `when: notVisible: <dashboard tokens>` about a second
+  after the first paint while the dashboard was still hydrating (main thread
+  janked ~6 s after the warm launch), concluded "signed out", ran the sign-in
+  subflow on a signed-in dashboard and failed on "Welcome Back". It now waits
+  for a decisive token (hydrated dashboard OR sign-in entry), signs in only
+  when a signed-out token is positively visible, and waits for the hydrated
+  dashboard again before firing the deep link.
+
 ### Fixed — optional-update nudge on the `.debug` package
 - `ForceUpdateGate` showed "Naya version (1.8.9) aa gaya hai" on the CI/QA
   debug build. "Update karein" fetches the release APK, whose applicationId

@@ -66,9 +66,33 @@ async function defaultNotify(opts: Parameters<UpdateNotifier>[0]): Promise<void>
   }
 }
 
+/**
+ * True inside the Capacitor APK/IPA. The bundle there is fixed at build time
+ * and served from the local asset server, so "a newer deploy replaced the
+ * chunks" can never be the reason a preload failed.
+ */
+export function isCapacitorShell(
+  w: { Capacitor?: { isNativePlatform?: () => boolean } } | undefined =
+    typeof window === "undefined" ? undefined : (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }),
+): boolean {
+  try {
+    return w?.Capacitor?.isNativePlatform?.() === true;
+  } catch {
+    return false;
+  }
+}
+
 /** Wires the update prompt to Vite preload failures and service-worker takeovers. */
 export function initAppUpdatePrompt(): void {
   if (typeof window === "undefined") return;
+
+  // Native shell: no service worker is ever registered (registerSW.ts tears
+  // stale ones down) and a failed chunk preload is a transient hiccup of the
+  // local asset server, not an update. Announcing "Update available — tap to
+  // reload" there is false (the APK cannot update itself) and the toast sat on
+  // top of the dashboard in Maestro run #98. Leave the failure to
+  // lazyWithRetry / chunkError, which retry the import and reload once.
+  if (isCapacitorShell()) return;
 
   const notify: UpdateNotifier = (opts) => {
     void defaultNotify(opts);

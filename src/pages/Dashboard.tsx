@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { mark, measure } from "@/lib/perf/marks";
 import { safeGet, safeSet } from "@/lib/storage";
+import { isNativeRuntime } from "@/lib/nativeStorage";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../integrations/supabase/client";
 import { logger } from "@/lib/logger";
@@ -170,7 +171,9 @@ const Dashboard = () => {
     const dismissed = safeGet('install-banner-dismissed') === 'true';
     const nav = window.navigator as Navigator & { standalone?: boolean };
     const standalone = window.matchMedia('(display-mode: standalone)').matches || nav.standalone === true;
-    return !dismissed && !standalone;
+    // The Capacitor WebView reports display-mode "browser", so without this
+    // check the APK asked its own users to "Install the JSR COACHING app".
+    return !dismissed && !standalone && !isNativeRuntime();
   });
 
   const handleDismissBanner = () => {
