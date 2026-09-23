@@ -70,6 +70,7 @@ import { PersonalMentorsPanel } from "../features/lesson/components/PersonalMent
 import { MyDoubtsPanel } from "../features/lesson/components/MyDoubtsPanel";
 import { LessonRatingPanel } from "../features/lesson/components/LessonRatingPanel";
 import { CommentsPanel } from "../features/lesson/components/CommentsPanel";
+import UniversalFileViewer from "../components/library/UniversalFileViewer";
 import { DppCard } from "../features/lesson/components/DppCard";
 import { useDownloads } from "../hooks/useDownloads";
 import { SafeBoundary, useProtectedSurface } from "@/lib/safety";
@@ -408,6 +409,7 @@ const LessonView = () => {
   // ?openPdf=<id>). Distinct from `selectedPdf` (inline reader below the
   // player) so that in-lesson attachment chips remain inline.
   const [immersivePdf, setImmersivePdf] = useState<{ id?: string; url: string; title: string; badge?: string } | null>(null);
+  const [commentImageViewer, setCommentImageViewer] = useState<{ url: string; title: string } | null>(null);
   const [notesOpen, setNotesOpen] = useState<boolean>(true);
   const [isPiPMode, setIsPiPMode] = useState(false);
   const [pdfToolbarOpen, setPdfToolbarOpen] = useState(false);
@@ -2113,7 +2115,10 @@ const LessonView = () => {
                             postDisabled={isPostingComment || (!newComment.trim() && !commentImage)}
                             onCommentChange={setNewComment}
                             onPost={handlePostComment}
-                            onOpenImage={(url) => void openResource({ url, kind: 'image' })}
+                            onOpenImage={(url) => setCommentImageViewer({
+                              url,
+                              title: currentLesson?.title ? `${currentLesson.title} · Comment attachment` : "Comment attachment",
+                            })}
                           />
                         )}
                       </div>
@@ -2181,6 +2186,16 @@ const LessonView = () => {
             }}
           />
         </Suspense>
+      )}
+
+      {commentImageViewer && (
+        <UniversalFileViewer
+          url={commentImageViewer.url}
+          title={commentImageViewer.title}
+          fileType="IMAGE"
+          source="attachment"
+          onBack={() => setCommentImageViewer(null)}
+        />
       )}
 
       <Suspense fallback={null}>

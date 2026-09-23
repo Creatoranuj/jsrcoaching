@@ -119,7 +119,7 @@ export default function UniversalFileViewer(props: Props) {
   if (kind === "LINK") return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background">
+    <div className="fixed inset-0 z-50 flex flex-col bg-background" data-testid="doc-reader-shell">
       <header className="safe-area-top z-30 flex min-h-[48px] items-center gap-2 border-b bg-card/95 px-3 shadow-sm">
         <Button variant="ghost" size="icon" onClick={onBack} aria-label="Back">
           <ArrowLeft className="h-5 w-5" />

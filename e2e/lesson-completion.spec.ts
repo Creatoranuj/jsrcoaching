@@ -111,13 +111,14 @@ test.describe("lesson completion", () => {
     await expect(toggles.first()).toHaveAttribute("aria-pressed", flipped, { timeout: 20_000 });
 
     // Restore.
-    const restoreWrite = page.waitForResponse(
-      (res) => /user_progress/.test(res.url()) && res.request().method() !== "GET" && res.ok(),
-      { timeout: 15_000 },
-    );
     await toggles.first().click();
-    await restoreWrite;
     await expect(toggles.first()).toHaveAttribute("aria-pressed", String(before));
+    // The app updates optimistically and may satisfy the restore from its
+    // offline mutation queue, so a network response is not guaranteed here.
+    // Reloading proves the restored value reached persistent storage.
+    await page.reload();
+    await expect(toggles.first()).toBeVisible({ timeout: 30_000 });
+    await expect(toggles.first()).toHaveAttribute("aria-pressed", String(before), { timeout: 20_000 });
   });
 
   test("course progress reflects completed lessons", async ({ page }) => {
