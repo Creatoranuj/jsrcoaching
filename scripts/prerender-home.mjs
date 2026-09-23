@@ -24,9 +24,9 @@ html = html.replace(/\/src\/assets\/([\w.-]+?)\.(\w+)(\?[^"]*)?/g, (m, name, ext
   return hit ? `/assets/${hit}` : m;
 });
 
-const guard = `<script>(function(){var r=document.getElementById('root');var n=window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform();if(r&&(location.pathname!=='/'||n)){r.innerHTML='';r.removeAttribute('data-prerendered');}})();</script>`;
+const guard = `<script>(function(){var r=document.getElementById('root');var n=window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform();if(r&&(location.pathname!=='/'||n)){r.innerHTML='';}})();</script>`;
 const file = `${DIST}/index.html`;
 const src = readFileSync(file, "utf8");
 if (!src.includes('<div id="root"></div>')) { console.warn("[prerender-home] #root not empty, skipped"); process.exit(0); }
-writeFileSync(file, src.replace('<div id="root"></div>', `<div id="root" data-prerendered="home">${html}</div>${guard}`));
+writeFileSync(file, src.replace('<div id="root"></div>', `<div id="root"><div data-nb-snapshot="home">${html}</div></div>${guard}`));
 console.log(`[prerender-home] injected ${(html.length / 1024).toFixed(1)} KB into ${file}`);

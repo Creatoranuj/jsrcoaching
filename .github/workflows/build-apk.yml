@@ -1283,20 +1283,6 @@ jobs:
 
 
 
-      - name: Upload APK + AAB to Google Drive
-        # Every successful build lands in Drive automatically, using the
-        # Lovable connector gateway (no service-account JSON needed).
-        env:
-          LOVABLE_API_KEY: ${{ secrets.LOVABLE_API_KEY }}
-          GOOGLE_DRIVE_API_KEY: ${{ secrets.GOOGLE_DRIVE_API_KEY }}
-          GDRIVE_FOLDER_ID: ${{ vars.GDRIVE_FOLDER_ID || '1iFNwR0PwmoSxbARsoAZJtoy7x0ySm_P5' }}
-          APK_FILE: ${{ env.APK_FILE }}
-          AAB_FILE: ${{ env.AAB_FILE }}
-        run: |
-          set -e
-          python3 .github/scripts/gdrive_upload.py "$GDRIVE_FOLDER_ID" "$APK_FILE" "$AAB_FILE"
-          echo "- Drive upload attempted for APK/AAB (JSR Coaching Builds folder)." >> "$GITHUB_STEP_SUMMARY"
-
       - name: 📣 Publish latest version to app_config
         # Tells the in-app update prompt which version is newest. Never touches
         # force_update or the minimum supported version - a mandatory update

@@ -202,7 +202,7 @@ try {
     const root = document.getElementById("root");
     const observer = new MutationObserver(() => {
       const r = document.getElementById("root");
-      if (r && r.childElementCount > 0) {
+      if (r && r.childElementCount > 0 && !r.querySelector(':scope > [data-nb-snapshot]')) {
         cancel();
         observer.disconnect();
       }
@@ -212,11 +212,11 @@ try {
     // and suspenders for the case where React mounted before this ran.
     requestAnimationFrame(() => {
       const r = document.getElementById("root");
-      if (r && r.childElementCount > 0) { cancel(); observer.disconnect(); }
+      if (r && r.childElementCount > 0 && !r.querySelector(':scope > [data-nb-snapshot]')) { cancel(); observer.disconnect(); }
     });
     bootTimer = window.setTimeout(() => {
       const r = document.getElementById("root");
-      const painted = !!r && r.childElementCount > 0;
+      const painted = !!r && r.childElementCount > 0 && !r.querySelector(':scope > [data-nb-snapshot]');
       if (!painted) {
         try { sessionStorage.setItem(BOOT_KEY, String(Date.now())); } catch { /* noop */ }
         try { window.location.reload(); } catch { /* noop */ }
