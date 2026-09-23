@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo, useRef, Suspense } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback, Suspense } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazyWithRetry } from "@/lib/lazyWithRetry";
 import { reportError } from "@/lib/sentry";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -12,9 +13,13 @@ import {
   activeTeachers as listActiveTeachers, promotableStudents as listPromotableStudents,
   buildCsv, csvFileName,
 } from "@/features/admin/lib/adminFilters";
-import type { AdminUser, ManualPaymentRow, RazorpayPaymentRow, UnifiedPayment } from "@/features/admin/lib/adminFilters";
+import type { AdminUser, UnifiedPayment } from "@/features/admin/lib/adminFilters";
 import { paymentTotals } from "@/features/admin/lib/adminStats";
-import { loadAdminSnapshot } from "@/features/admin/lib/adminSnapshot";
+import {
+  adminSnapshotQueryOptions, patchAdminSnapshot, EMPTY_ADMIN_SNAPSHOT, ADMIN_SNAPSHOT_STALE_MS,
+} from "@/features/admin/lib/adminSnapshot";
+import type { AdminSnapshot, AdminStats } from "@/features/admin/lib/adminSnapshot";
+import { useRelativeAge } from "@/features/admin/hooks/useRelativeAge";
 import { AdminUsersTab } from "@/features/admin/components/AdminUsersTab";
 import { AdminSessionsTab } from "@/features/admin/components/AdminSessionsTab";
 import type { AdminSession } from "@/features/admin/components/AdminSessionsTab";
@@ -116,21 +121,46 @@ const Admin = () => {
   }, [activeTab]);
 
 
-  // -- DATA STATES --
-  const [payments, setPayments] = useState<ManualPaymentRow[]>([]);
-  const [razorpayPayments, setRazorpayPayments] = useState<RazorpayPaymentRow[]>([]);
-  const [coursesList, setCoursesList] = useState<Tables<"courses">[]>([]);
-  const [usersList, setUsersList] = useState<UserWithRole[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [roleChanging, setRoleChanging] = useState<Record<string, boolean>>({});
-  const [statsData, setStatsData] = useState({
-    totalStudents: 0,
-    totalCourses: 0,
-    pendingPayments: 0,
-    activeEnrollments: 0,
-    totalRevenue: 0,
-    activeSessions: 0,
+  // -- DASHBOARD DATA (React Query, 60 s fresh window) --
+  // Phase 2 (2026-09-23): the snapshot lives in the shared query cache instead
+  // of page-local state, so hopping /admin ↔ sub-pages inside the fresh window
+  // renders from memory. Refresh + every post-mutation call force a refetch.
+  const queryClient = useQueryClient();
+  const snapshotQuery = useQuery({
+    ...adminSnapshotQueryOptions(supabase),
+    enabled: Boolean(user) && isAdmin,
   });
+  const snapshot: AdminSnapshot = snapshotQuery.data ?? EMPTY_ADMIN_SNAPSHOT;
+  const {
+    courses: coursesList,
+    users: usersList,
+    payments,
+    razorpayPayments,
+    enrollmentCounts,
+    stats: statsData,
+  } = snapshot;
+  const loading = snapshotQuery.isFetching;
+  const updatedAgo = useRelativeAge(snapshotQuery.dataUpdatedAt);
+  const snapshotIsStale = snapshotQuery.isStale && !snapshotQuery.isFetching && snapshotQuery.dataUpdatedAt > 0;
+
+  // Functional setters over the cached snapshot — used for optimistic updates.
+  const setCoursesList = useCallback(
+    (fn: (prev: Tables<"courses">[]) => Tables<"courses">[]) =>
+      patchAdminSnapshot(queryClient, (s) => ({ ...s, courses: fn(s.courses) })),
+    [queryClient],
+  );
+  const setUsersList = useCallback(
+    (fn: (prev: UserWithRole[]) => UserWithRole[]) =>
+      patchAdminSnapshot(queryClient, (s) => ({ ...s, users: fn(s.users) })),
+    [queryClient],
+  );
+  const setStatsData = useCallback(
+    (fn: (prev: AdminStats) => AdminStats) =>
+      patchAdminSnapshot(queryClient, (s) => ({ ...s, stats: fn(s.stats) })),
+    [queryClient],
+  );
+
+  const [roleChanging, setRoleChanging] = useState<Record<string, boolean>>({});
 
   // -- SESSIONS STATE --
   const [sessionsList, setSessionsList] = useState<AdminSession[]>([]);
@@ -142,8 +172,7 @@ const Admin = () => {
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<"pending" | "approved" | "rejected" | "completed" | "refunded" | "all">("all");
   const [refundingPayment, setRefundingPayment] = useState<string | null>(null);
   const [courseSearch, setCourseSearch] = useState("");
-  // Batch Full controls: active enrollments per course + the row being saved.
-  const [enrollmentCounts, setEnrollmentCounts] = useState<Record<number, number>>({});
+  // Batch Full controls: the course row being saved (counts come from the snapshot).
   const [savingCourseId, setSavingCourseId] = useState<number | null>(null);
   const [userSearch, setUserSearch] = useState("");
   const [userRoleFilter, setUserRoleFilter] = useState<"all" | "student" | "teacher" | "admin">("all");
@@ -178,38 +207,35 @@ const Admin = () => {
     }
   }, [user, isAdmin, authLoading, navigate]);
 
-  useEffect(() => {
-    if (user && isAdmin) fetchDashboardData();
-  }, [user, isAdmin]);
-
   // --- FETCH DATA ---
   // Audit 2026-09-22: was ~12 sequential awaits (one round-trip each). The
   // snapshot loader fires them concurrently and tolerates partial failures;
-  // see src/features/admin/lib/adminSnapshot.ts.
-  const fetchDashboardData = async () => {
-    setLoading(true);
-    try {
-      const snap = await loadAdminSnapshot(supabase);
-      setCoursesList(snap.courses);
-      setEnrollmentCounts(snap.enrollmentCounts);
-      setPayments(snap.payments);
-      setRazorpayPayments(snap.razorpayPayments);
-      setUsersList(snap.users);
-      setStatsData(snap.stats);
-      if (snap.failures.length) {
-        reportError(new Error(`Admin snapshot partial failure: ${snap.failures.join(", ")}`), {
-          surface: "Admin.fetch",
-          failures: snap.failures,
-        });
-        toast.error(`Some dashboard data failed to load (${snap.failures.join(", ")})`);
-      }
-    } catch (error) {
-      reportError(error, { surface: "Admin.fetch" });
-      toast.error("Failed to load dashboard data");
-    } finally {
-      setLoading(false);
-    }
-  };
+  // see src/features/admin/lib/adminSnapshot.ts. React Query owns the
+  // lifecycle now: no mount effect, the query starts as soon as auth resolves.
+  const refetchSnapshot = snapshotQuery.refetch;
+  const fetchDashboardData = useCallback(() => {
+    // `refetch` ignores staleTime — the operator asked for fresh numbers.
+    void refetchSnapshot();
+  }, [refetchSnapshot]);
+
+  // Report partial failures once per delivered snapshot (a new object per
+  // fetch), never on cache-hit renders.
+  const failures = snapshotQuery.data?.failures;
+  useEffect(() => {
+    if (!failures?.length) return;
+    reportError(new Error(`Admin snapshot partial failure: ${failures.join(", ")}`), {
+      surface: "Admin.fetch",
+      failures,
+    });
+    toast.error(`Some dashboard data failed to load (${failures.join(", ")})`);
+  }, [failures]);
+
+  const snapshotError = snapshotQuery.error;
+  useEffect(() => {
+    if (!snapshotError) return;
+    reportError(snapshotError, { surface: "Admin.fetch" });
+    toast.error("Failed to load dashboard data");
+  }, [snapshotError]);
 
   // --- ROLE MANAGEMENT ---
   const handleChangeRole = async (userId: string, newRole: string) => {
@@ -631,14 +657,23 @@ const Admin = () => {
       <Header onMenuClick={() => setSidebarOpen(true)} />
 
       <main className="flex-1 overflow-y-auto p-3 md:p-6 space-y-4 md:space-y-6 pb-20 md:pb-6">
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
             <h1 className="text-xl md:text-3xl font-bold text-foreground">Admin Dashboard</h1>
             <p className="text-xs md:text-sm text-muted-foreground">Manage your academy operations.</p>
           </div>
-          <Button variant="outline" onClick={fetchDashboardData} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} /> Refresh
-          </Button>
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            <Button variant="outline" onClick={fetchDashboardData} disabled={loading} aria-label="Refresh dashboard data">
+              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} /> Refresh
+            </Button>
+            <span
+              className="text-[11px] text-muted-foreground tabular-nums"
+              data-testid="admin-snapshot-age"
+              title={`Dashboard numbers are cached for ${Math.round(ADMIN_SNAPSHOT_STALE_MS / 1000)} s between visits`}
+            >
+              {loading ? "Updating…" : updatedAgo ? `Updated ${updatedAgo}${snapshotIsStale ? " · tap Refresh" : ""}` : ""}
+            </span>
+          </div>
         </div>
 
         {/* STATS — pinned above the tab strip so key numbers stay visible. */}

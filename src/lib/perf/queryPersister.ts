@@ -24,7 +24,10 @@ const STORAGE_KEY = `nb_query_cache_v${CACHE_VERSION}`;
 const LEGACY_KEY = "nb_query_cache_v1";
 const MAX_BYTES = 4 * 1024 * 1024; // 4MB — IndexedDB gives us room
 const SAVE_INTERVAL_MS = 8000;
-const SKIP_KEY_PARTS = ["live", "realtime", "presence", "session", "chatbot"];
+// "admin" (2026-09-23): the admin dashboard snapshot carries every profile's
+// email/mobile plus payment rows — it must never be written to IndexedDB /
+// Preferences on a shared or lost device.
+const SKIP_KEY_PARTS = ["live", "realtime", "presence", "session", "chatbot", "admin"];
 const idbStore = typeof indexedDB !== "undefined" ? createStore("nb-query-cache", "kv") : null;
 
 type PersistedQuery = {
@@ -81,7 +84,7 @@ function purgeLegacy() {
   if (idbStore) idbDel(LEGACY_KEY, idbStore).catch(() => { /* noop */ });
 }
 
-function shouldSkipKey(key: unknown[]): boolean {
+export function shouldSkipKey(key: unknown[]): boolean {
   // Element-equality match, not substring. Previously `["user-session-notes"]`
   // was silently skipped because "session" matched as a substring. Only skip
   // when a top-level key element (string) exactly equals a reserved token.
@@ -91,6 +94,11 @@ function shouldSkipKey(key: unknown[]): boolean {
     if (SKIP_KEY_PARTS.includes(low)) return true;
   }
   return false;
+}
+
+/** Queries can also opt out explicitly via `meta: { persist: false }`. */
+function optedOut(meta: unknown): boolean {
+  return Boolean(meta && typeof meta === "object" && (meta as { persist?: unknown }).persist === false);
 }
 
 /**
@@ -145,6 +153,7 @@ export function startQueryPersister(client: QueryClient) {
         .getAll()
         .filter((q) => q.state.status === "success" && q.state.data != null)
         .filter((q) => !shouldSkipKey(q.queryKey as unknown[]))
+        .filter((q) => !optedOut(q.meta))
         .filter((q) => !containsNonSerializable(q.state.data))
         .map<PersistedQuery>((q) => ({
           key: q.queryKey as unknown[],
