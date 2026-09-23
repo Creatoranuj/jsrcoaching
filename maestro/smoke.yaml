@@ -26,6 +26,11 @@ androidWebViewHierarchy: devtools
 # and the deeplink is dropped (root cause of v1.0.20-smoke API 28/35 failures —
 # logcat proved the app stayed on the marketing landing page). Landing→tap is
 # what humans do and works on every API level.
+# 2026-09-23 addendum: timing was only half of it. Even with the listener
+# registered, custom-scheme links were rejected on Android System WebView
+# < 130 because `new URL()` parses non-special schemes host-less — fixed in
+# src/config/deepLinks.ts; maestro/overlay-back.yaml now exercises a warm
+# `openLink` on purpose.
 # NOTE: Do NOT use Maestro `takeScreenshot` or `waitForAnimationToEnd` here.
 # On Android emulator/WebView (seen on API 33), Maestro can fail the flow with
 # `Screenshot returned null — window may not be ready` even after visible text
@@ -43,8 +48,12 @@ androidWebViewHierarchy: devtools
 # on API 28 (Chromium 66). Real visible tokens = deterministic on every API.
 # Timeout bumped 180s → 300s: API 28 x86_64 shared-runner cold paint can
 # exceed 180s during cold WebView parse on contended GitHub runners.
+# 2026-09-23: landing copy is JSR COACHING now (src/pages/Index.tsx) — the old
+# "Angreji bolne|safar shuru|Free lesson dekhein" tokens no longer exist in the
+# app. Phone landing always shows the bottom action bar ("Signup" / "Login")
+# and the top strip "Admission help"; signed-in landing shows "Dashboard".
 - extendedWaitUntil:
-    visible: "Angreji bolne|safar shuru|Free lesson dekhein|Courses|Resources|Welcome Back|Login|Sign In|Log In|Get Started"
+    visible: "Admission help|Signup|Login|Dashboard|My Courses|Welcome Back|Sign In|Log In|Courses|Resources"
     timeout: 300000
 # Regression guard for `device_integrity_suspicious` Sentry noise: the toast
 # must NOT appear on cold launch on the CI emulator. `isVirtual` alone should
@@ -147,14 +156,30 @@ androidWebViewHierarchy: devtools
     timeout: 15000
 
 # 7) Settings → Delete Account visible (Play Store policy guardrail)
+# Run #91 (2026-09-23): login + Dashboard/My Courses/Downloads/Profile all
+# passed; the Settings button sits below the fold on Profile, so both optional
+# taps were skipped and the Settings assertion failed on the Profile screen.
+# Scroll it into view first (same pattern as login-submit).
+- scrollUntilVisible:
+    element:
+      id: "profile-settings"
+    direction: DOWN
+    timeout: 15000
+    optional: true
 - tapOn:
     id: "profile-settings"
+    optional: true
+- scrollUntilVisible:
+    element:
+      text: "Settings"
+    direction: DOWN
+    timeout: 5000
     optional: true
 - tapOn:
     text: "Settings"
     optional: true
 - extendedWaitUntil:
-    visible: "Settings|Delete Account|Delete my account|Account"
+    visible: "Settings|Delete Account|Delete my account|Account|Notifications|Preferences"
     timeout: 15000
 
 # 8) Hardware back → exit hint (regression fix from useAndroidBackButton)

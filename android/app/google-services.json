@@ -16,6 +16,31 @@
       "api_key": [
         {
           "current_key": "AIzaSyBv2oGnoqtg8cFr6ZbLGBLsWpW1G7gf3gU"
+        },
+        {
+          "current_key": "AIzaSyCTOhqZ1MIaCBKA9sW7PyDLRPpMycYUcOQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:586153778410:android:1c0bd81f8573da97034b93",
+        "android_client_info": {
+          "package_name": "com.jsrcoaching.app.debug"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBv2oGnoqtg8cFr6ZbLGBLsWpW1G7gf3gU"
+        },
+        {
+          "current_key": "AIzaSyCTOhqZ1MIaCBKA9sW7PyDLRPpMycYUcOQ"
         }
       ],
       "services": {

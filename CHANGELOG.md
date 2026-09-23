@@ -9,6 +9,61 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased] — 2026-09-23
 
+### CI — Maestro Android E2E (never green before)
+- Every run since the `.debug` applicationIdSuffix landed died in
+  `:app:processDebugGoogleServices` — "No matching client found for package
+  name 'com.jsrcoaching.app.debug'" — before the emulator ever booted.
+  Registered `com.jsrcoaching.app.debug` as a second Android app in the
+  `jsr-app-403f6` Firebase project (app id
+  `1:586153778410:android:1c0bd81f8573da97034b93`) and refreshed
+  `android/app/google-services.json` with the console-generated file, which
+  now carries both clients. Production client + keys are unchanged; debug/CI
+  builds get their own Firebase app instead of a hand-duplicated entry.
+- Run #88 (first to reach the emulator) showed three more layers:
+  1. `bunx cap sync android` ran without `CAP_DEBUG=1`, so
+     `capacitor.config.ts` shipped `webContentsDebuggingEnabled: false` and
+     the flows' `androidWebViewHierarchy: devtools` had no DevTools socket to
+     read — the landing rendered (logcat: crashShield installed, hero images
+     served) while every text assertion timed out. Cap sync now sets
+     `CAP_DEBUG=1`, same as signed-apk-smoke.
+  2. The Nexus 6 (1440x2560) AVD under swiftshader ran out of memory: lmkd
+     "device is not responding", `com.google.android.gms.persistent` died and
+     Android killed the app with it ("depends on provider
+     …FontsProvider in dying proc"). Emulator is now `pixel_5`, 4 GB RAM,
+     512 MB heap, 3 cores, `-no-snapshot`; Maps/YouTube/Messages/QSB are
+     disabled on the device before install.
+  3. The runner's inline `script:` executes each line via a fresh `sh -c`, so
+     `trap`/`set -e`/`LOGCAT_PID` never carried over and no final screenshot
+     or Maestro debug output was collected. Moved to
+     `scripts/ci/maestro-emulator.sh` (single bash process, EXIT trap,
+     `--debug-output`, meminfo + devtools socket dumps, logcat crash tail on
+     failure).
+- `maestro/smoke.yaml`: first-paint tokens refreshed to the current JSR
+  COACHING landing ("Admission help|Signup|Login|Dashboard|…"); the old
+  "Angreji bolne|safar shuru|Free lesson dekhein" copy no longer exists.
+- Run #89 (all of the above applied) booted in 55 s, rendered the landing,
+  opened Login, typed the stored account and was told "Invalid email or
+  password." — the emulator/devtools/tokens are right; the password secret
+  the workflow used is stale. New `.github/scripts/maestro-preflight.mjs`
+  runs before the APK build: it tries `MAESTRO_*`, then `E2E_*` (the pair
+  playwright-e2e verifies every run), then `TEST_USER_*` against the Supabase
+  password grant and exports the first working pair as
+  `MAESTRO_EMAIL/PASSWORD` (masked) for the emulator step. No working pair
+  fails in ~2 s naming the secrets to refresh instead of 10 min later with a
+  red-banner screenshot.
+- Known, non-blocking: Firebase Installations returns 403
+  `API_KEY_ANDROID_APP_BLOCKED` for the debug package (the Android API key is
+  restricted to `com.jsrcoaching.app`). Push tokens fail on CI only; add the
+  debug package + debug-keystore SHA-1 to the key restriction in Google Cloud
+  → Credentials if CI ever needs FCM.
+- Run #91 (preflight applied) signed in with the verified pair and walked
+  Dashboard → My Courses → Downloads → Profile. It failed on the last
+  assertion only: the Settings button sits below the fold on Profile, so both
+  optional taps (`profile-settings` id, "Settings" text) were skipped and the
+  Settings-screen check ran against Profile. `maestro/smoke.yaml` now scrolls
+  the button into view first (same pattern as `login-submit`) and the
+  Settings check also accepts the Notifications/Preferences card titles.
+
 ### Fixed — lesson completion survives a reload
 - "Mark as done" (My Courses) and the 80 %-watched auto-complete (lesson
   player) only wrote `user_progress` and component state. The course-detail
@@ -21,11 +76,133 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   and Pixel 7. Unit-tested (`courseProgressCache.test.ts`).
 
 ### CI — Playwright E2E
+- Run #283: four tests (learning-journey, lesson-completion x2, payment-flow)
+  landed on `/login` after a correct submit and Pixel 7 legs flaked the same
+  way. ~100 password sign-ins per run from one runner IP exceed Supabase's
+  default sign-in limit (30 / 5 min / IP). `e2e/helpers/auth.ts#signIn` now
+  drives the login form once per account per worker, captures the
+  `sb-<ref>-auth-token` localStorage entry, and restores it for every later
+  call (landing on `/dashboard` directly; falls back to the form if the app
+  bounces). Wrong-credential tests never cache; `smoke › login flow` and
+  `auth › redirect to dashboard` pass `{ fresh: true }` so the real form is
+  still exercised on every project.
 - `auth › dashboard within 20 s`: the retry loop re-clicked without
   re-filling, so after one wiped render every attempt submitted an empty
   form and the Pixel 7 leg burned its whole budget (flaky). Each attempt now
   re-fills and only counts once the sign-in request left the page; the
   stopwatch starts at that click.
+- Run #284/#285 (session reuse applied): the remaining reds were app bugs
+  and brittle navigation, not data.
+  1. **Desktop lesson page froze** — `LessonView` applied its landscape
+     scroll-lock (`body { position: fixed; overflow: hidden }`, the
+     screenshot-shield class) on every landscape viewport, including a
+     1280 px desktop window, so Comments / Notes / Rating below the player
+     could never be scrolled or clicked. The lock now applies only to
+     coarse-pointer (touch) devices. Real user-facing bug.
+  2. **Comment images opened in the external browser** (`openResource`
+     → `openExternal`), so the "no new tab / in-app reader" regression spec
+     could never see a reader. Comment image taps now mount
+     `UniversalFileViewer` (IMAGE) inside the lesson; its wrapper carries
+     `data-testid="doc-reader-shell"` like `DocReaderShell`.
+  3. **Lesson discovery** walked `/classes/:id/chapters` → chapter → folder
+     and could stop on a folder-only screen ("reached a screen with no
+     lesson cards"). `e2e/helpers/course.ts` now opens
+     `/my-courses/:id?chapter=__all__`, pins the card layout
+     (`nb_lesson_view`) and returns the `Lecture:` cards — the same list
+     students use for Mark-as-done.
+  4. **Mark-complete "sticks across a reload"** reloaded ~300 ms after the
+     restore click. The toggle flips optimistically but the course-detail
+     cache (React-Query entry + 2-minute-fresh localStorage bundle) is only
+     patched once the `user_progress` request resolves; the reload aborted
+     that request in the page, hydrated from the un-patched bundle and showed
+     the old state for the whole stale window although the row had changed
+     server-side (trace: `PATCH …user_progress → -1`). The spec now waits for
+     the app's own confirmation (`user_progress` response or the "Marked as
+     …" toast) before every reload — the signal a student sees.
+  5. New `e2e/helpers/stall.ts` (`settleApp`, `pollWithStallRecovery`)
+     presses the app's own "Taking longer than expected… Retry" the way a
+     student would; buy-gate, lecture-list and lesson-progress specs use it.
+  6. `auth › duplicate email`: a throttled signup request is accepted as the
+     correct outcome instead of a red.
+
+### CI — Maestro artifact
+- `maestro test --debug-output DIR` writes its per-command hierarchy dumps
+  and failure screenshots under `DIR/.maestro/tests/<timestamp>/`; the
+  upload step skipped dot-directories, which is why runs #88-#93 only ever
+  shipped `final-screen.png`. `include-hidden-files: true` added.
+
+### Fixed — hardware Back inside the comment-image viewer
+- The in-app image viewer LessonView mounts for comment attachments had no
+  history sentinel: on Android, hardware Back fell through
+  `useAndroidBackButton` to route-level back and dropped the student out of
+  the lesson (browser Back did the same on web). LessonView now registers the
+  overlay with `useOverlayBackClose("lesson-comment-image")` — Back closes the
+  viewer, the lesson and its Comments panel stay put; programmatic close pops
+  the sentinel itself.
+- The comment image is a real `<button aria-label="Open comment image">`
+  wrapping the `<img>` (keyboard focusable; Maestro's DevTools DOM walker
+  drops `<img>` nodes and maps aria-label → resource-id, so this is the only
+  handle the Android flow can tap). Playwright still targets the `<img>` and
+  now also asserts the Back contract (`e2e/comment-image-in-app.spec.ts`);
+  unit test `src/test/commentsPanelImageButton.test.tsx`.
+
+### CI — Maestro secondary flows (rewritten)
+- `maestro/pdf-back.yaml` never exercised anything: it tapped `index: 0` on
+  My Courses, waited for ".pdf" text (the E2E course has no PDF lesson) and
+  asserted `id: pdf-viewer`, which does not exist in the app — and it ran
+  without `androidWebViewHierarchy: devtools`, so every assertion was blind
+  anyway. Replaced by `maestro/overlay-back.yaml`: warm launch (reuses the
+  smoke session, signs in only when needed), `openLink` deep link to the
+  lesson's Comments tab (safe now — the app has hydrated and MainActivity is
+  `singleTask`), tap the image comment, assert `doc-reader-shell`, hardware
+  Back → viewer gone + still on the lesson, second Back → home, app alive.
+- Fixture discovery: `maestro-preflight.mjs` resolves a lesson with an image
+  comment inside an enrolled course with the verified session (honours
+  `E2E_LESSON_ID` / `E2E_COURSE_ID` when still valid) and exports
+  `MAESTRO_COURSE_ID` / `MAESTRO_LESSON_ID`; `maestro-emulator.sh` passes
+  them via `--env` and skips the flow with a notice when none is found. Each
+  secondary flow gets its own `--debug-output` dir.
+- `back-button-cold-start.yaml` gained `androidWebViewHierarchy: devtools`
+  (same blind-assertion root cause as the smoke flow on 2026-07-16), real
+  landing tokens (`Admission help|Signup|Login`) and a 180 s first-paint
+  budget instead of 8 s — a cold WebView on the swiftshader emulator needs
+  60-120 s.
+- Both secondary flows stay non-blocking until they pass twice in a row.
+
+### Fixed — custom-scheme deep links never worked on WebView < 130 (found by Maestro #96)
+- Run #96's first `overlay-back` attempt showed the VIEW intent reaching
+  `MainActivity`, Capacitor firing `appUrlOpen` to a live listener — and the
+  app staying on the dashboard. Android System WebView 109 (the API 33 image,
+  and every phone whose WebView never got a Play update) parses non-special
+  schemes as an opaque path: `new URL("com.jsrcoaching.app://classes/30/…")`
+  returns `host: ""` and `pathname: "//classes/30/…"`. `toInternalPath` joined
+  `host + pathname`, got `//classes/…`, failed the allow-list and returned
+  `null` — silently, for every custom-scheme link: lesson deep links, the
+  Razorpay `com.jsrcoaching.app://payment-callback?…` return (the resume
+  reconciler was quietly covering for it), `openLink` in every Maestro flow
+  since 2026-07. Modern engines (Chromium ≥ 130, Firefox, Safari, Node) return
+  `host: "classes"`, which is why the unit tests passed.
+- `src/config/deepLinks.ts` now cuts the scheme off itself and re-parses the
+  remainder against an https base, so the result is identical on every
+  engine (dot segments normalised before the allow-list check, `?`/`#`
+  preserved, backslashes folded). `src/test/deepLinks.test.ts` gained a
+  legacy-Chromium `URL` stub that reproduces the quirk and proves the old
+  implementation returned `null` for the lesson link and the payment return.
+- The smoke.yaml note that blamed only listener timing for dropped
+  `openLink`s carries the real root cause now; `overlay-back.yaml` is the
+  on-device regression test.
+
+### Fixed — optional-update nudge on the `.debug` package
+- `ForceUpdateGate` showed "Naya version (1.8.9) aa gaya hai" on the CI/QA
+  debug build. "Update karein" fetches the release APK, whose applicationId
+  differs, so it cannot install over the debug build — the tester just ends
+  up with two apps. The nudge also sat over every screen in the Maestro
+  flows (a Radix dialog blocks the taps underneath). The optional nudge is
+  now skipped when `App.getInfo().id` ends in `.debug`
+  (`isDebugPackageId`, unit-tested); forced/minimum-version blocks still
+  apply so that path stays testable. `overlay-back.yaml` additionally
+  dismisses a stray "Baad me" before touching the lesson, for older APKs.
+
 
 ---
 

@@ -22,7 +22,7 @@ test.describe("smoke", () => {
   });
 
   test("login flow succeeds", async ({ page }) => {
-    await signIn(page, EMAIL!, PASSWORD!);
+    await signIn(page, EMAIL!, PASSWORD!, { fresh: true });
     await expect(page).toHaveURL(/\/(dashboard|my-courses)/, { timeout: 15_000 });
   });
 

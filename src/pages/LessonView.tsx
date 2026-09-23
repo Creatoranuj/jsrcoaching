@@ -70,8 +70,10 @@ import { PersonalMentorsPanel } from "../features/lesson/components/PersonalMent
 import { MyDoubtsPanel } from "../features/lesson/components/MyDoubtsPanel";
 import { LessonRatingPanel } from "../features/lesson/components/LessonRatingPanel";
 import { CommentsPanel } from "../features/lesson/components/CommentsPanel";
+import UniversalFileViewer from "../components/library/UniversalFileViewer";
 import { DppCard } from "../features/lesson/components/DppCard";
 import { useDownloads } from "../hooks/useDownloads";
+import useOverlayBackClose from "../hooks/useOverlayBackClose";
 import { SafeBoundary, useProtectedSurface } from "@/lib/safety";
 import { pushPlayerBusy } from "../lib/playerBusy";
 import { resolveDeepLinkPdf } from "../lib/resolveDeepLinkPdf";
@@ -278,14 +280,22 @@ const LessonView = () => {
 
   // Chat reset + auto-scroll effects now live inside `useLessonChat`.
 
-  // Strictly disable page scrolling whenever the device is in landscape.
+  // Strictly disable page scrolling whenever a TOUCH device is in landscape.
   // This complements the existing fullscreen lock and covers landscape outside
   // the player's pseudo-fullscreen too.
+  //
+  // Touch only, on purpose: the lock exists to stop a phone/tablet rubber-
+  // banding the page behind a landscape player. A desktop browser window is
+  // permanently "landscape", so applying it there froze the whole lesson page
+  // — comments, notes and ratings below the player became unreachable (the
+  // comment-image E2E spec could never click an attachment: the element stayed
+  // "outside of the viewport" no matter how the page was scrolled).
   useEffect(() => {
-    const mql = window.matchMedia("(orientation: landscape)");
+    const landscape = window.matchMedia("(orientation: landscape)");
+    const touch = window.matchMedia("(pointer: coarse)");
     const apply = () => {
       const allow = document.body.classList.contains("nb-allow-landscape-scroll");
-      const lock = mql.matches && !allow;
+      const lock = landscape.matches && touch.matches && !allow;
       document.body.style.overflow = lock ? "hidden" : "";
       document.documentElement.style.overflow = lock ? "hidden" : "";
       // Belt-and-suspenders for WebView (Capacitor APK) where body overflow alone
@@ -295,9 +305,11 @@ const LessonView = () => {
       document.body.style.touchAction = lock ? "none" : "";
     };
     apply();
-    mql.addEventListener("change", apply);
+    touch.addEventListener("change", apply);
+    landscape.addEventListener("change", apply);
     return () => {
-      mql.removeEventListener("change", apply);
+      landscape.removeEventListener("change", apply);
+      touch.removeEventListener("change", apply);
       document.body.style.overflow = "";
       document.documentElement.style.overflow = "";
       document.body.style.position = "";
@@ -398,6 +410,12 @@ const LessonView = () => {
   // ?openPdf=<id>). Distinct from `selectedPdf` (inline reader below the
   // player) so that in-lesson attachment chips remain inline.
   const [immersivePdf, setImmersivePdf] = useState<{ id?: string; url: string; title: string; badge?: string } | null>(null);
+  const [commentImageViewer, setCommentImageViewer] = useState<{ url: string; title: string } | null>(null);
+  // Hardware / browser back must close the comment-image overlay and stay on
+  // the lesson — without a sentinel `useAndroidBackButton` falls through to
+  // route-level back and dumps the student out of the lesson entirely.
+  const closeCommentImageViewer = useCallback(() => setCommentImageViewer(null), []);
+  useOverlayBackClose(!!commentImageViewer, closeCommentImageViewer, "lesson-comment-image");
   const [notesOpen, setNotesOpen] = useState<boolean>(true);
   const [isPiPMode, setIsPiPMode] = useState(false);
   const [pdfToolbarOpen, setPdfToolbarOpen] = useState(false);
@@ -2103,7 +2121,10 @@ const LessonView = () => {
                             postDisabled={isPostingComment || (!newComment.trim() && !commentImage)}
                             onCommentChange={setNewComment}
                             onPost={handlePostComment}
-                            onOpenImage={(url) => void openResource({ url, kind: 'image' })}
+                            onOpenImage={(url) => setCommentImageViewer({
+                              url,
+                              title: currentLesson?.title ? `${currentLesson.title} · Comment attachment` : "Comment attachment",
+                            })}
                           />
                         )}
                       </div>
@@ -2171,6 +2192,16 @@ const LessonView = () => {
             }}
           />
         </Suspense>
+      )}
+
+      {commentImageViewer && (
+        <UniversalFileViewer
+          url={commentImageViewer.url}
+          title={commentImageViewer.title}
+          fileType="IMAGE"
+          source="attachment"
+          onBack={closeCommentImageViewer}
+        />
       )}
 
       <Suspense fallback={null}>

@@ -19,6 +19,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { signIn } from "./helpers/auth";
 import { openFirstLessonList } from "./helpers/course";
+import { pollWithStallRecovery, settleApp } from "./helpers/stall";
 
 const EMAIL = process.env.E2E_EMAIL;
 const PASSWORD = process.env.E2E_PASSWORD;
@@ -50,24 +51,27 @@ test.describe("student journey", () => {
   });
 
   test("unenrolled paid course shows the buy gate, not the lessons", async ({ page }) => {
+    test.setTimeout(90_000);
     test.skip(!PAID_COURSE_ID, "E2E_PAID_COURSE_ID not set");
     await login(page);
     await page.goto(`/classes/${PAID_COURSE_ID}/lessons`);
 
+    await settleApp(page);
     const gate = page.getByText(/enrol|enroll|buy|purchase|subscribe|access denied|not enrolled/i);
-    // The gate (or the redirect) appears after the course loads — poll for it.
-    await expect
-      .poll(
-        async () =>
-          /\/(buy-course|course|courses|dashboard|subscription)/.test(
-            new URL(page.url()).pathname,
-          ) || (await gate.count()) > 0,
-        { timeout: 20_000 },
-      )
-      .toBe(true);
+    // The gate (or the redirect) appears after the course loads — poll for it,
+    // retrying the stuck-spinner watchdog the way a student would.
+    const gated = await pollWithStallRecovery(
+      page,
+      async () =>
+        /\/(buy-course|course|courses|dashboard|subscription)/.test(new URL(page.url()).pathname) ||
+        (await gate.count()) > 0,
+      30_000,
+    );
+    expect(gated, `course ${PAID_COURSE_ID}: neither a buy gate nor a redirect appeared`).toBe(true);
   });
 
   test("enrolled course opens a lesson and loads its content", async ({ page }) => {
+    test.setTimeout(120_000);
     test.skip(!COURSE_ID, "E2E_COURSE_ID not set");
     await login(page);
     const items = await openFirstLessonList(page, COURSE_ID!);
@@ -76,6 +80,7 @@ test.describe("student journey", () => {
     // Opening the first lesson must surface player or reader chrome.
     await items.first().click();
     await expect(page).toHaveURL(/lessonId=|\/chapter\//, { timeout: 20_000 });
+    await settleApp(page);
     const media = page.locator(
       'video, iframe, canvas, [data-testid="pdf-viewer"], [data-testid="video-player"]',
     );

@@ -62,14 +62,25 @@ export function CommentsPanel({
                     {comment.message}
                   </p>
                   {comment.imageUrl && (
-                    <SmartImage
-                      src={comment.imageUrl}
-                      width={320}
-                      height={240}
-                      alt="Comment attachment"
-                      className="mt-2 max-w-xs rounded-lg border cursor-pointer hover:opacity-90 transition-opacity object-contain"
+                    // A real button, not a clickable <img>: keyboard/screen-reader
+                    // users get a focusable target, and Maestro's WebView
+                    // hierarchy drops <img> nodes entirely, so the Android
+                    // overlay-back flow needs this wrapper to tap the image.
+                    <button
+                      type="button"
+                      aria-label="Open comment image"
+                      data-testid="comment-image-open"
+                      className="mt-2 block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       onClick={() => onOpenImage(comment.imageUrl!)}
-                    />
+                    >
+                      <SmartImage
+                        src={comment.imageUrl}
+                        width={320}
+                        height={240}
+                        alt="Comment attachment"
+                        className="max-w-xs rounded-lg border cursor-pointer hover:opacity-90 transition-opacity object-contain"
+                      />
+                    </button>
                   )}
                 </div>
               </div>

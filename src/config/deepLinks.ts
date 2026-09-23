@@ -53,6 +53,39 @@ export const isAllowedDeepLinkPath = (pathname: string): boolean =>
     (p) => pathname === p || pathname.startsWith(`${p}/`),
   );
 
+/** Base used to re-parse the custom-scheme remainder with a *special* scheme. */
+const APP_SCHEME_PARSE_BASE = "https://deeplink.invalid";
+
+/**
+ * Splits `com.jsrcoaching.app://classes/30/lessons?x#y` into router parts
+ * WITHOUT trusting `new URL(rawUrl)` for the custom scheme.
+ *
+ * Why: Chromium < 130 (Android System WebView 109 on the API 33 emulator, and
+ * every phone whose WebView never got a Play update) parses non-special
+ * schemes as an opaque path — `host` is "" and `pathname` is
+ * "//classes/30/lessons". The old `host + pathname` join therefore produced
+ * "//classes/…", failed the allow-list, and the app silently stayed on the
+ * screen it was on for EVERY custom-scheme link (lesson deep links, the
+ * Razorpay `payment-callback` return, `openLink` in Maestro). Modern engines
+ * (Chromium ≥ 130, Firefox, Safari, Node) return host="classes" and the join
+ * happened to work, which is why the unit tests never caught it.
+ *
+ * Cutting the string ourselves and re-parsing the remainder against an https
+ * base gives identical results on every engine, including dot-segment
+ * normalisation (`classes/../admin` → `/admin` → rejected) and `?`/`#`
+ * splitting. Returns null when `rawUrl` is not the app scheme at all.
+ */
+const parseAppSchemeUrl = (
+  rawUrl: string,
+): { pathname: string; search: string; hash: string } | null => {
+  const prefix = `${APP_SCHEME}:`;
+  if (rawUrl.slice(0, prefix.length).toLowerCase() !== prefix) return null;
+  // Drop the authority slashes ("//"), plus any extras a sloppy sender adds.
+  const rest = rawUrl.slice(prefix.length).replace(/^[\\/]+/, "");
+  const u = new URL(`/${rest}`, APP_SCHEME_PARSE_BASE);
+  return { pathname: u.pathname, search: u.search, hash: u.hash };
+};
+
 /**
  * Converts an external deep-link URL into an internal router path.
  * Returns `null` for anything untrusted (foreign host, unknown scheme,
@@ -63,16 +96,15 @@ export const toInternalPath = (
   opts: { dev?: boolean } = {},
 ): string | null => {
   try {
-    const u = new URL(rawUrl);
-
-    if (u.protocol === `${APP_SCHEME}:`) {
-      // `scheme://payment-callback?x=1` parses host="payment-callback".
-      const path = (u.host ? `/${u.host}` : "") + u.pathname;
-      const normalized = path || "/";
-      if (normalized !== "/" && !isAllowedDeepLinkPath(normalized)) return null;
+    const app = parseAppSchemeUrl(rawUrl);
+    if (app) {
+      // `scheme://payment-callback?x=1` → "/payment-callback?x=1".
+      if (app.pathname !== "/" && !isAllowedDeepLinkPath(app.pathname)) return null;
       // Preserve #hash so video-timestamp / section anchors survive.
-      return normalized + u.search + u.hash;
+      return app.pathname + app.search + app.hash;
     }
+
+    const u = new URL(rawUrl);
 
     if (
       (u.protocol === "https:" || u.protocol === "http:") &&

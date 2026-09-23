@@ -1,7 +1,15 @@
 # Maestro flow — cold-start hardware back regression test.
 # Locks in the CRITICAL fix from useAndroidBackButton (static dynamic import).
 # Run locally: maestro test maestro/back-button-cold-start.yaml
+#
+# `appId` stays the production id: the CI workflow sed-rewrites it to the
+# `.debug` variant it actually installs (see maestro-android.yml).
 appId: com.jsrcoaching.app
+# The app lives in a Capacitor WebView — without DevTools traversal the Android
+# a11y tree exposes a single empty node and every text assertion below is
+# blind (this flow was red on that alone until 2026-09-23, same root cause the
+# smoke flow fixed on 2026-07-16).
+androidWebViewHierarchy: devtools
 ---
 # Fresh cold start — clearState forces a brand new process so the
 # back-button setup race (Capacitor App plugin import on first paint)
@@ -10,17 +18,21 @@ appId: com.jsrcoaching.app
     clearState: true
     stopApp: true
 
-# Splash should hide → app shell visible within 8s on any device.
+# Splash hides → landing content painted. Tokens = real visible copy from
+# src/pages/Index.tsx (signed-out after clearState): top strip "Admission
+# help", bottom action bar "Signup" / "Login". A cold WebView on the x86_64
+# swiftshader emulator regularly needs 60-120 s for first paint, so the old
+# 8 s budget failed before the app had drawn anything.
 - extendedWaitUntil:
-    visible: "JSR COACHING"
-    timeout: 8000
+    visible: "Admission help|Signup|Login|Sign In|Log In|Courses|Resources"
+    timeout: 180000
 
 # First back press from the root route must NOT exit the app.
 # Instead, show the "press back again" hint toast.
 - pressKey: Back
 - extendedWaitUntil:
     visible: "Press back again to exit"
-    timeout: 3000
+    timeout: 5000
 
 # Second back press within the debounce window → app exits cleanly.
 # (If the back handler crashed silently, the first press would have
