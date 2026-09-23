@@ -1,4 +1,5 @@
 import { expect, type Page, type Locator } from "@playwright/test";
+import { settleApp } from "./stall";
 
 /**
  * Lesson cards (`data-testid="lesson-card"`) live on the *lecture listing*
@@ -36,6 +37,9 @@ async function firstCardWithLectures(cards: Locator): Promise<Locator | null> {
 
 export async function openFirstLessonList(page: Page, courseId: string): Promise<Locator> {
   await page.goto(`/classes/${courseId}/chapters`);
+  // A cold first paint can land on the stuck-spinner watchdog; tap Retry the
+  // way a student would instead of failing on an empty screen.
+  await settleApp(page);
 
   const chapters = page.getByTestId("chapter-card");
   await expect(chapters.first()).toBeVisible({ timeout: 30_000 });
@@ -50,6 +54,7 @@ export async function openFirstLessonList(page: Page, courseId: string): Promise
   const chapter = (await firstCardWithLectures(chapters))!;
   await chapter.click();
   await expect(page).toHaveURL(/\/chapter\//, { timeout: 20_000 });
+  await settleApp(page);
 
   const lessons = page.getByTestId("lesson-card");
   // Sub-chapter folders on the lecture-listing screen are plain buttons under
@@ -63,7 +68,12 @@ export async function openFirstLessonList(page: Page, courseId: string): Promise
     ]).catch(() => "none" as const);
 
     if (outcome === "lessons") return lessons;
-    if (outcome === "none") break;
+    if (outcome === "none") {
+      // Either the listing is genuinely empty or the watchdog swallowed it.
+      if (!(await page.getByText(/Taking longer than expected/i).count())) break;
+      await settleApp(page);
+      continue;
+    }
 
     // Folders rendered — a lesson list may still be filling in below them.
     if (await lessons.first().isVisible().catch(() => false)) return lessons;
@@ -71,6 +81,7 @@ export async function openFirstLessonList(page: Page, courseId: string): Promise
     if (!next) break;
     await next.click();
     await expect(page).toHaveURL(/\/chapter\//, { timeout: 20_000 });
+    await settleApp(page);
   }
 
   await expect(lessons.first(), `course ${courseId}: reached a screen with no lesson cards`).toBeVisible({

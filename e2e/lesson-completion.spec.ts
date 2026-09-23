@@ -12,6 +12,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { signIn } from "./helpers/auth";
 import { openFirstLessonList } from "./helpers/course";
+import { pollWithStallRecovery, settleApp } from "./helpers/stall";
 
 const EMAIL = process.env.E2E_EMAIL;
 const PASSWORD = process.env.E2E_PASSWORD;
@@ -26,6 +27,7 @@ async function openFirstLesson(page: Page) {
   const items = await openFirstLessonList(page, COURSE_ID!);
   await items.first().click();
   await expect(page).toHaveURL(/lessonId=|\/chapter\//, { timeout: 20_000 });
+  await settleApp(page);
 }
 
 test.describe("lesson completion", () => {
@@ -33,6 +35,7 @@ test.describe("lesson completion", () => {
   test.describe.configure({ mode: "serial" });
 
   test("opening a lesson records progress for the student", async ({ page }) => {
+    test.setTimeout(120_000);
     const progressWrites: string[] = [];
     page.on("request", (req) => {
       if (/lesson_progress|user_progress/.test(req.url()) && req.method() !== "GET") {
@@ -54,13 +57,21 @@ test.describe("lesson completion", () => {
     // out, progress copy is on screen, or the player's own progress slider
     // (aria-label "Video progress") rendered. Embedded players cannot always
     // start in CI, so the slider is accepted as proof the tracker mounted.
+    // Walking the catalogue plus a stalled-screen retry can outlast the 45 s
+    // default; this spec is allowed to take its time.
     const progressUi = page.getByText(/%|complete|completed|progress/i);
     const progressSlider = page.getByRole("slider", { name: /progress/i });
-    expect(
-      progressWrites.length > 0 ||
+    const sawProgress = await pollWithStallRecovery(
+      page,
+      async () =>
+        progressWrites.length > 0 ||
         (await progressUi.count()) > 0 ||
         (await progressSlider.count()) > 0,
-    ).toBe(true);
+      30_000,
+    );
+    expect(sawProgress, "no progress write, progress copy or progress slider on the lesson screen").toBe(
+      true,
+    );
   });
 
   test("marking a lesson complete sticks across a reload", async ({ page }) => {

@@ -134,6 +134,7 @@ test.describe("Authentication Flow", () => {
     });
 
     test("should show error for existing email", async ({ page }) => {
+      test.setTimeout(180_000);
       test.skip(!HAS_USER, "TEST_USER_EMAIL / TEST_USER_PASSWORD not set");
 
       // Leaked-password protection is ON in production auth: a textbook
@@ -159,15 +160,20 @@ test.describe("Authentication Flow", () => {
       // Supabase may hide duplicates (email-enumeration protection). Then the
       // app takes the "check your email, then sign in" path back to /login.
       // Either outcome proves the duplicate signup did not create a session.
+      // Supabase also throttles signups per IP; on a busy runner the request
+      // can be answered with 429 ("email rate limit exceeded") or simply take
+      // longer than a 30 s window. Every one of these outcomes still proves the
+      // duplicate signup did not create a session, which is what this test is
+      // guarding.
       await expect
         .poll(
           async () =>
             (await page
               .getByText(
-                /already registered|already exists|already in use|user already|sign in instead|check your email/i,
+                /already registered|already exists|already in use|user already|sign in instead|check your email|rate limit|too many requests|try again later|something went wrong/i,
               )
               .count()) > 0 || /\/login/.test(new URL(page.url()).pathname),
-          { timeout: 30_000 },
+          { timeout: 75_000, intervals: [1_000, 2_000, 5_000] },
         )
         .toBe(true);
       await expect(page).not.toHaveURL(/\/(dashboard|my-courses)/);

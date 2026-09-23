@@ -278,14 +278,22 @@ const LessonView = () => {
 
   // Chat reset + auto-scroll effects now live inside `useLessonChat`.
 
-  // Strictly disable page scrolling whenever the device is in landscape.
+  // Strictly disable page scrolling whenever a TOUCH device is in landscape.
   // This complements the existing fullscreen lock and covers landscape outside
   // the player's pseudo-fullscreen too.
+  //
+  // Touch only, on purpose: the lock exists to stop a phone/tablet rubber-
+  // banding the page behind a landscape player. A desktop browser window is
+  // permanently "landscape", so applying it there froze the whole lesson page
+  // — comments, notes and ratings below the player became unreachable (the
+  // comment-image E2E spec could never click an attachment: the element stayed
+  // "outside of the viewport" no matter how the page was scrolled).
   useEffect(() => {
-    const mql = window.matchMedia("(orientation: landscape)");
+    const landscape = window.matchMedia("(orientation: landscape)");
+    const touch = window.matchMedia("(pointer: coarse)");
     const apply = () => {
       const allow = document.body.classList.contains("nb-allow-landscape-scroll");
-      const lock = mql.matches && !allow;
+      const lock = landscape.matches && touch.matches && !allow;
       document.body.style.overflow = lock ? "hidden" : "";
       document.documentElement.style.overflow = lock ? "hidden" : "";
       // Belt-and-suspenders for WebView (Capacitor APK) where body overflow alone
@@ -295,9 +303,11 @@ const LessonView = () => {
       document.body.style.touchAction = lock ? "none" : "";
     };
     apply();
-    mql.addEventListener("change", apply);
+    touch.addEventListener("change", apply);
+    landscape.addEventListener("change", apply);
     return () => {
-      mql.removeEventListener("change", apply);
+      landscape.removeEventListener("change", apply);
+      touch.removeEventListener("change", apply);
       document.body.style.overflow = "";
       document.documentElement.style.overflow = "";
       document.body.style.position = "";

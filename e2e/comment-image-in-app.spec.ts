@@ -41,6 +41,8 @@ test.describe("Comment image opens in-app", () => {
     test.skip(!EMAIL || !PASSWORD || !COURSE_ID, "E2E_EMAIL / E2E_PASSWORD / E2E_COURSE_ID not set");
     test.skip(!LESSON_ID, "E2E_LESSON_ID not set — no lesson with an image comment visible to the E2E student");
 
+    test.setTimeout(90_000);
+
     let popupOpened = false;
     context.on("page", () => { popupOpened = true; });
 
@@ -52,9 +54,18 @@ test.describe("Comment image opens in-app", () => {
 
     // Comments load after the lesson; the first image attachment is the target.
     const commentImage = page.locator('img[alt="Comment attachment"]').first();
-    await commentImage.scrollIntoViewIfNeeded().catch(() => {});
     await expect(commentImage, `lesson ${LESSON_ID}: no image comment rendered`).toBeVisible({ timeout: 30_000 });
-    await commentImage.click();
+    // The attachment is lazy-loaded; clicking before the bitmap arrives can hit
+    // a zero-height box.
+    await commentImage
+      .evaluate((el: HTMLImageElement) => (el.complete ? true : new Promise((r) => { el.onload = () => r(true); el.onerror = () => r(true); })))
+      .catch(() => {});
+    // Scroll the element's own scroll container (the page body used to be
+    // `position: fixed` in landscape, which left the image permanently
+    // "outside of the viewport" — see the LessonView landscape-lock fix).
+    await commentImage.evaluate((el) => el.scrollIntoView({ block: "center", inline: "center" })).catch(() => {});
+    await commentImage.scrollIntoViewIfNeeded().catch(() => {});
+    await commentImage.click({ timeout: 20_000 });
 
     // In-app viewer must mount within a short window.
     await expect(page.getByTestId("doc-reader-shell")).toBeVisible({ timeout: 10_000 });
