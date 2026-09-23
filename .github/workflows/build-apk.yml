@@ -175,7 +175,7 @@ jobs:
           # need auto-bump. No npm cache — we install via bun.
 
       - name: 🥟 Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: '1.2.18'
 
@@ -1125,7 +1125,7 @@ jobs:
       # it after an upload step.
       # ─────────────────────────────────────────────────────────────────────
       - name: 🧰 Set up Android build-tools for release verification
-        uses: android-actions/setup-android@v4
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
         with:
           packages: 'build-tools;35.0.0 platform-tools'
 
@@ -1244,7 +1244,7 @@ jobs:
         # Internal testing track — promote to Production manually from Play
         # Console after QA has verified the build on real devices.
         if: steps.play-creds.outputs.ready == 'true'
-        uses: r0adkll/upload-google-play@v1
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
         continue-on-error: true
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
@@ -1397,7 +1397,7 @@ jobs:
         # No `if:` — VERSION is always set (tag ref OR generated in the
         # Set version step), so the release step should always run. The old
         # `IS_MANUAL == 'false' || IS_MANUAL == 'true'` gate was a tautology.
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ env.VERSION }}
           name: JSR COACHING ${{ env.VERSION }}

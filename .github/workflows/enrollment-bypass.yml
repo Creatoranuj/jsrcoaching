@@ -17,6 +17,11 @@ on:
     - cron: '15 3 * * *'
   workflow_dispatch:
 
+# Least-privilege GITHUB_TOKEN (audit 2026-09-23): the default repo token is
+# write-all; every job here only reads the checkout.
+permissions:
+  contents: read
+
 jobs:
   bypass-probe:
     runs-on: ubuntu-24.04
@@ -48,12 +53,27 @@ jobs:
           # The probe is only meaningful when the test student can actually sign
           # in. Bad/rotated credentials are a configuration state, so warn and
           # skip rather than paint the pipeline red for a non-code problem.
-          TOKEN=$(curl -s -X POST "$SUPABASE_URL/auth/v1/token?grant_type=password" \
+          # Run #114 died here: the auth endpoint answered with a non-JSON
+          # body (gateway error page) and `jq -r` aborted the step, painting a
+          # configuration/infra problem red. Capture status + body separately,
+          # parse defensively and downgrade every non-2xx to a clean skip.
+          AUTH_BODY=$(mktemp)
+          AUTH_CODE=$(curl -s -o "$AUTH_BODY" -w '%{http_code}' --max-time 30 \
+            -X POST "$SUPABASE_URL/auth/v1/token?grant_type=password" \
             -H "apikey: $KEY" -H 'Content-Type: application/json' \
             --data "$(jq -nc --arg e "$TEST_USER_EMAIL" --arg p "$TEST_USER_PASSWORD" '{email:$e,password:$p}')" \
-            | jq -r '.access_token // empty')
+            || echo 000)
+          TOKEN=""
+          if [ "$AUTH_CODE" = "200" ] && jq -e . "$AUTH_BODY" >/dev/null 2>&1; then
+            TOKEN=$(jq -r '.access_token // empty' "$AUTH_BODY")
+          fi
+          if [ -n "$TOKEN" ]; then
+            # Never let a live JWT reach the log, not even truncated.
+            echo "::add-mask::$TOKEN"
+          fi
+          rm -f "$AUTH_BODY"
           if [ -z "$TOKEN" ]; then
-            echo "::warning::Test-student sign-in failed (invalid credentials or the user no longer exists) — skipping the enrollment-bypass probe. Update TEST_USER_EMAIL / TEST_USER_PASSWORD in Settings > Secrets > Actions to re-enable it."
+            echo "::warning::Test-student sign-in failed (HTTP $AUTH_CODE — invalid credentials, rotated password or auth outage) — skipping the enrollment-bypass probe. Update TEST_USER_EMAIL / TEST_USER_PASSWORD in Settings > Secrets > Actions to re-enable it."
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
             echo "Test-student sign-in OK."
@@ -63,7 +83,7 @@ jobs:
       - uses: actions/checkout@v5
         if: steps.gate.outputs.ready == 'true'
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         if: steps.gate.outputs.ready == 'true'
         with:
           bun-version: latest
