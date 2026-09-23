@@ -88,6 +88,49 @@ const courseIds = [...new Set([
   process.env.TEST_PAID_COURSE_ID,
 ].filter(Boolean))];
 
+if (courseIds.length > 0) {
+  const safeCourseIds = courseIds.map(safeId);
+  const coursesResponse = await fetch(
+    `${baseUrl}/rest/v1/courses?select=id&id=in.(${safeCourseIds.join(",")})`,
+    { headers },
+  );
+
+  if (!coursesResponse.ok) {
+    console.error(`::error::E2E course preflight could not read configured courses (${coursesResponse.status}).`);
+    process.exit(1);
+  }
+
+  const courses = await coursesResponse.json();
+  const found = new Set(courses.map((course) => String(course.id)));
+  const missingCourses = courseIds.filter((id) => !found.has(String(id)));
+  if (missingCourses.length > 0) {
+    console.error(`::error::Configured E2E course IDs do not exist: ${missingCourses.join(", ")}`);
+    process.exit(1);
+  }
+}
+
+console.log(`E2E preflight passed: student sign-in and ${courseIds.length} configured course ID(s) verified.`);
+
+// ---------------------------------------------------------------------------
+// Optional fixture discovery (never fails the job).
+// ---------------------------------------------------------------------------
+const resolved = {};
+
+async function quizHasQuestions(quizId) {
+  try {
+    const res = await fetch(`${baseUrl}/rest/v1/rpc/get_quiz_questions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ _quiz_id: quizId }),
+    });
+    if (!res.ok) return false;
+    const rows = await res.json();
+    return Array.isArray(rows) && rows.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 // Courses the E2E student can actually open: the configured ones, everything
 // it is enrolled in, and free courses. RLS already hides the rest, but a quiz
 // or lesson in a paid course the student never bought would bounce the spec
