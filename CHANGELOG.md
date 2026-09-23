@@ -41,6 +41,16 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - `maestro/smoke.yaml`: first-paint tokens refreshed to the current JSR
   COACHING landing ("Admission help|Signup|Login|Dashboard|…"); the old
   "Angreji bolne|safar shuru|Free lesson dekhein" copy no longer exists.
+- Run #89 (all of the above applied) booted in 55 s, rendered the landing,
+  opened Login, typed the stored account and was told "Invalid email or
+  password." — the emulator/devtools/tokens are right; the password secret
+  the workflow used is stale. New `.github/scripts/maestro-preflight.mjs`
+  runs before the APK build: it tries `MAESTRO_*`, then `E2E_*` (the pair
+  playwright-e2e verifies every run), then `TEST_USER_*` against the Supabase
+  password grant and exports the first working pair as
+  `MAESTRO_EMAIL/PASSWORD` (masked) for the emulator step. No working pair
+  fails in ~2 s naming the secrets to refresh instead of 10 min later with a
+  red-banner screenshot.
 - Known, non-blocking: Firebase Installations returns 403
   `API_KEY_ANDROID_APP_BLOCKED` for the debug package (the Android API key is
   restricted to `com.jsrcoaching.app`). Push tokens fail on CI only; add the
