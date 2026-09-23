@@ -9,7 +9,7 @@
  *
  * Required env: E2E_EMAIL, E2E_PASSWORD, E2E_COURSE_ID
  */
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { signIn } from "./helpers/auth";
 import { openFirstLessonList } from "./helpers/course";
 import { pollWithStallRecovery, settleApp } from "./helpers/stall";
@@ -96,13 +96,7 @@ test.describe("lesson completion", () => {
     const before = (await first.getAttribute("aria-pressed")) === "true";
     const flipped = String(!before);
 
-    const progressWrite = page.waitForResponse(
-      (res) => /user_progress/.test(res.url()) && res.request().method() !== "GET" && res.ok(),
-      { timeout: 15_000 },
-    );
-    await first.click();
-    await progressWrite;
-    await expect(first).toHaveAttribute("aria-pressed", flipped);
+    await toggleAndConfirm(page, first, flipped);
 
     const url = page.url();
     await page.reload();
@@ -111,15 +105,53 @@ test.describe("lesson completion", () => {
     await expect(toggles.first()).toHaveAttribute("aria-pressed", flipped, { timeout: 20_000 });
 
     // Restore.
-    await toggles.first().click();
-    await expect(toggles.first()).toHaveAttribute("aria-pressed", String(before));
-    // The app updates optimistically and may satisfy the restore from its
-    // offline mutation queue, so a network response is not guaranteed here.
-    // Reloading proves the restored value reached persistent storage.
+    await toggleAndConfirm(page, toggles.first(), String(before));
     await page.reload();
     await expect(toggles.first()).toBeVisible({ timeout: 30_000 });
     await expect(toggles.first()).toHaveAttribute("aria-pressed", String(before), { timeout: 20_000 });
   });
+
+  /**
+   * Clicks a Mark-as-done toggle and waits until the app has *confirmed* the
+   * write, not just painted it. The button flips optimistically; the
+   * course-detail cache (React-Query entry + localStorage bundle, 2 min fresh)
+   * is only patched once the `user_progress` request resolves. Reloading
+   * before that — run #286 did, ~300 ms after the click — aborts the request
+   * in the page, the reload hydrates from the un-patched bundle, and the
+   * screen shows the previous state for the whole stale window even though
+   * the row did change on the server. A real student sees the toast before
+   * they could reach the refresh button, so we wait for the same signal.
+   */
+  async function toggleAndConfirm(page: Page, toggle: Locator, expected: string) {
+    let confirmedBy: "response" | "toast" | null = null;
+    void page
+      .waitForResponse(
+        (res) => /user_progress/.test(res.url()) && res.request().method() !== "GET" && res.ok(),
+        { timeout: 20_000 },
+      )
+      .then(() => {
+        confirmedBy ??= "response";
+      })
+      .catch(() => undefined);
+    const toastCopy = expected === "true" ? /marked as complete/i : /marked as not done/i;
+    void page
+      .getByText(toastCopy)
+      .first()
+      .waitFor({ state: "visible", timeout: 20_000 })
+      .then(() => {
+        confirmedBy ??= "toast";
+      })
+      .catch(() => undefined);
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", expected);
+    await expect
+      .poll(() => confirmedBy, {
+        timeout: 20_000,
+        message: `the "aria-pressed=${expected}" write was never confirmed (no user_progress response, no toast)`,
+      })
+      .not.toBeNull();
+  }
 
   test("course progress reflects completed lessons", async ({ page }) => {
     await login(page);

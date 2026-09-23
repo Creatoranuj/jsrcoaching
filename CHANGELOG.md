@@ -91,6 +91,45 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   form and the Pixel 7 leg burned its whole budget (flaky). Each attempt now
   re-fills and only counts once the sign-in request left the page; the
   stopwatch starts at that click.
+- Run #284/#285 (session reuse applied): the remaining reds were app bugs
+  and brittle navigation, not data.
+  1. **Desktop lesson page froze** — `LessonView` applied its landscape
+     scroll-lock (`body { position: fixed; overflow: hidden }`, the
+     screenshot-shield class) on every landscape viewport, including a
+     1280 px desktop window, so Comments / Notes / Rating below the player
+     could never be scrolled or clicked. The lock now applies only to
+     coarse-pointer (touch) devices. Real user-facing bug.
+  2. **Comment images opened in the external browser** (`openResource`
+     → `openExternal`), so the "no new tab / in-app reader" regression spec
+     could never see a reader. Comment image taps now mount
+     `UniversalFileViewer` (IMAGE) inside the lesson; its wrapper carries
+     `data-testid="doc-reader-shell"` like `DocReaderShell`.
+  3. **Lesson discovery** walked `/classes/:id/chapters` → chapter → folder
+     and could stop on a folder-only screen ("reached a screen with no
+     lesson cards"). `e2e/helpers/course.ts` now opens
+     `/my-courses/:id?chapter=__all__`, pins the card layout
+     (`nb_lesson_view`) and returns the `Lecture:` cards — the same list
+     students use for Mark-as-done.
+  4. **Mark-complete "sticks across a reload"** reloaded ~300 ms after the
+     restore click. The toggle flips optimistically but the course-detail
+     cache (React-Query entry + 2-minute-fresh localStorage bundle) is only
+     patched once the `user_progress` request resolves; the reload aborted
+     that request in the page, hydrated from the un-patched bundle and showed
+     the old state for the whole stale window although the row had changed
+     server-side (trace: `PATCH …user_progress → -1`). The spec now waits for
+     the app's own confirmation (`user_progress` response or the "Marked as
+     …" toast) before every reload — the signal a student sees.
+  5. New `e2e/helpers/stall.ts` (`settleApp`, `pollWithStallRecovery`)
+     presses the app's own "Taking longer than expected… Retry" the way a
+     student would; buy-gate, lecture-list and lesson-progress specs use it.
+  6. `auth › duplicate email`: a throttled signup request is accepted as the
+     correct outcome instead of a red.
+
+### CI — Maestro artifact
+- `maestro test --debug-output DIR` writes its per-command hierarchy dumps
+  and failure screenshots under `DIR/.maestro/tests/<timestamp>/`; the
+  upload step skipped dot-directories, which is why runs #88-#93 only ever
+  shipped `final-screen.png`. `include-hidden-files: true` added.
 
 ---
 
