@@ -186,6 +186,11 @@ jobs:
             ~/.maestro/tests/**/*
             maestro-artifacts/**/*
             apk-contents.txt
+          # `maestro test --debug-output DIR` writes the per-command hierarchy
+          # dumps and failure screenshots under DIR/.maestro/tests/<timestamp>/.
+          # upload-artifact skips dot-directories unless told otherwise, which
+          # is why runs #88-#93 only ever shipped final-screen.png.
+          include-hidden-files: true
           retention-days: 14
           if-no-files-found: ignore
 
