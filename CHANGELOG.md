@@ -19,6 +19,33 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   `android/app/google-services.json` with the console-generated file, which
   now carries both clients. Production client + keys are unchanged; debug/CI
   builds get their own Firebase app instead of a hand-duplicated entry.
+- Run #88 (first to reach the emulator) showed three more layers:
+  1. `bunx cap sync android` ran without `CAP_DEBUG=1`, so
+     `capacitor.config.ts` shipped `webContentsDebuggingEnabled: false` and
+     the flows' `androidWebViewHierarchy: devtools` had no DevTools socket to
+     read — the landing rendered (logcat: crashShield installed, hero images
+     served) while every text assertion timed out. Cap sync now sets
+     `CAP_DEBUG=1`, same as signed-apk-smoke.
+  2. The Nexus 6 (1440x2560) AVD under swiftshader ran out of memory: lmkd
+     "device is not responding", `com.google.android.gms.persistent` died and
+     Android killed the app with it ("depends on provider
+     …FontsProvider in dying proc"). Emulator is now `pixel_5`, 4 GB RAM,
+     512 MB heap, 3 cores, `-no-snapshot`; Maps/YouTube/Messages/QSB are
+     disabled on the device before install.
+  3. The runner's inline `script:` executes each line via a fresh `sh -c`, so
+     `trap`/`set -e`/`LOGCAT_PID` never carried over and no final screenshot
+     or Maestro debug output was collected. Moved to
+     `scripts/ci/maestro-emulator.sh` (single bash process, EXIT trap,
+     `--debug-output`, meminfo + devtools socket dumps, logcat crash tail on
+     failure).
+- `maestro/smoke.yaml`: first-paint tokens refreshed to the current JSR
+  COACHING landing ("Admission help|Signup|Login|Dashboard|…"); the old
+  "Angreji bolne|safar shuru|Free lesson dekhein" copy no longer exists.
+- Known, non-blocking: Firebase Installations returns 403
+  `API_KEY_ANDROID_APP_BLOCKED` for the debug package (the Android API key is
+  restricted to `com.jsrcoaching.app`). Push tokens fail on CI only; add the
+  debug package + debug-keystore SHA-1 to the key restriction in Google Cloud
+  → Credentials if CI ever needs FCM.
 
 ### Fixed — lesson completion survives a reload
 - "Mark as done" (My Courses) and the 80 %-watched auto-complete (lesson

@@ -77,6 +77,12 @@ jobs:
         run: bun run build
 
       - name: 🔁 Cap sync
+        env:
+          # capacitor.config.ts only turns on WebView DevTools when CAP_DEBUG=1
+          # (same switch signed-apk-smoke uses). Without it the flows'
+          # `androidWebViewHierarchy: devtools` sees an empty tree — the app
+          # rendered fine in run #88 but every text assertion timed out.
+          CAP_DEBUG: '1'
         run: bunx cap sync android
 
       - name: 🔐 Verify Maestro test credentials
@@ -146,37 +152,22 @@ jobs:
           api-level: 33
           target: google_apis
           arch: x86_64
-          profile: Nexus 6
+          # pixel_5 (1080x2340) instead of Nexus 6 (1440x2560): with
+          # swiftshader software GL every extra pixel is CPU + RAM. Run #88's
+          # emulator hit lmkd "device is not responding", Play services died
+          # and Android killed the app with it (FontsProvider dependency).
+          profile: pixel_5
+          ram-size: 4096M
+          heap-size: 512M
+          cores: 3
           force-avd-creation: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot
           disable-animations: true
-          script: |
-            # dash-safe: android-emulator-runner executes this under /bin/sh,
-            # where `set -o pipefail` aborts the whole script (Illegal option).
-            set -eu
-            mkdir -p maestro-artifacts
-            adb logcat -c
-            adb logcat -v threadtime > maestro-artifacts/logcat.txt 2>&1 &
-            LOGCAT_PID=$!
-            trap 'adb shell screencap -p /sdcard/maestro-final.png >/dev/null 2>&1 || true; adb pull /sdcard/maestro-final.png maestro-artifacts/final-screen.png >/dev/null 2>&1 || true; adb shell pm list packages > maestro-artifacts/packages.txt 2>&1 || true; adb shell getprop ro.product.cpu.abilist > maestro-artifacts/device-abis.txt 2>&1 || true; adb shell dumpsys package com.jsrcoaching.app.debug > maestro-artifacts/app-package.txt 2>&1 || true; kill $LOGCAT_PID >/dev/null 2>&1 || true' EXIT
-            adb uninstall com.jsrcoaching.app.debug >/dev/null 2>&1 || true
-            adb install -r android/app/build/outputs/apk/debug/app-debug.apk
-            adb shell pm path com.jsrcoaching.app.debug | tee maestro-artifacts/install-check.txt
-            grep -q '^package:' maestro-artifacts/install-check.txt || { echo 'com.jsrcoaching.app.debug was not installed'; exit 1; }
-            # Prefer the dedicated MAESTRO_* secrets (same pair signed-apk-smoke
-            # uses); fall back to TEST_USER_* so forks without them still run.
-            # NOTE: this script runs one line per `sh -c`, so no multi-line
-            # if/fi blocks and no `export` carrying over between lines.
-            [ -n "${MAESTRO_EMAIL:-$TEST_USER_EMAIL}" ] && [ -n "${MAESTRO_PASSWORD:-$TEST_USER_PASSWORD}" ] || { echo "::error::No Maestro login credentials (MAESTRO_EMAIL/PASSWORD or TEST_USER_EMAIL/PASSWORD)"; exit 1; }
-            # Smoke is the gate — it must fail the job when it fails. The
-            # previous `|| echo "smoke failed"` swallowed real regressions and
-            # let the job report green while login/dashboard were broken.
-            maestro test --env MAESTRO_EMAIL="${MAESTRO_EMAIL:-$TEST_USER_EMAIL}" --env MAESTRO_PASSWORD="${MAESTRO_PASSWORD:-$TEST_USER_PASSWORD}" maestro/smoke.yaml --format junit --output maestro-report.xml
-            # Secondary flows stay non-blocking — they cover optional paths
-            # (pdf viewer back-nav, cold-start deep link) that flake on cold
-            # emulators but shouldn't gate release.
-            maestro test maestro/pdf-back.yaml || true
-            maestro test maestro/back-button-cold-start.yaml || true
+          disable-spellchecker: true
+          # One bash process for the whole emulator session: the runner executes
+          # each `script:` line through a fresh `sh -c`, so trap/set -e/variables
+          # never carried over inline. See scripts/ci/maestro-emulator.sh.
+          script: bash scripts/ci/maestro-emulator.sh
 
       - name: 📤 Upload Maestro report + screenshots
         if: always()
