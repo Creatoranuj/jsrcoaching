@@ -1,0 +1,141 @@
+# Maestro flow — overlay back-button contract (Android hardware Back).
+#
+# Contract under test (useOverlayBackClose + useAndroidBackButton):
+#   an in-app overlay (here: the comment-image viewer in LessonView) pushes a
+#   history sentinel, so hardware Back closes the overlay and the student STAYS
+#   on the lesson. Before 2026-09-23 the comment image opened the external
+#   browser and the viewer had no sentinel — Back dumped the student out of
+#   the lesson. Regression also covered on web by
+#   e2e/comment-image-in-app.spec.ts.
+#
+# Replaces the old `pdf-back.yaml`, which never ran anything real: it tapped
+# `index: 0` on My Courses, looked for ".pdf" text (the E2E course has no PDF
+# lesson) and asserted an `id: pdf-viewer` that does not exist in the app.
+#
+# Fixture: a lesson with an image comment in a course the E2E student is
+# enrolled in. `.github/scripts/maestro-preflight.mjs` resolves it with the
+# verified login and exports MAESTRO_COURSE_ID / MAESTRO_LESSON_ID;
+# scripts/ci/maestro-emulator.sh skips this flow when they are unset.
+#
+# Run locally (app installed + signed in or credentials given):
+#   maestro test maestro/overlay-back.yaml \
+#     --env MAESTRO_EMAIL=... --env MAESTRO_PASSWORD=... \
+#     --env MAESTRO_COURSE_ID=30 --env MAESTRO_LESSON_ID=<lesson uuid>
+#
+# `appId` stays the production id: the CI workflow sed-rewrites it to the
+# `.debug` variant it actually installs (see maestro-android.yml).
+appId: com.jsrcoaching.app
+# Same reason as smoke.yaml: the app lives in a Capacitor WebView, the Android
+# a11y tree exposes nothing — Maestro must read the DOM through DevTools.
+# NOTE for selectors: Maestro's DOM walker maps `id` → aria-label → name →
+# title → data-testid onto resource-id, uses only DIRECT text nodes as `text`,
+# and drops <img>/<svg> nodes entirely (which is why the comment image is
+# wrapped in a labelled <button> in CommentsPanel.tsx).
+androidWebViewHierarchy: devtools
+---
+# 1) Warm launch — keep the session smoke.yaml signed in with. No screenshots /
+#    waitForAnimationToEnd here either (null-screenshot abort on API 33).
+- launchApp
+- extendedWaitUntil:
+    visible: "Admission help|Signup|Login|Dashboard|My Courses|Welcome Back|Sign In|Log In|Quick Actions|Continue where you left"
+    timeout: 180000
+- assertNotVisible:
+    text: "Device integrity check"
+
+# 2) Session did not survive (fresh emulator / cleared state) → sign in with
+#    the pair preflight verified. Skipped entirely when a signed-in token is
+#    already on screen.
+- runFlow:
+    when:
+      notVisible: "Dashboard|Quick Actions|Continue where you left|No active courses"
+    commands:
+      - tapOn:
+          text: "Login|Sign In|Log In|Get Started"
+          optional: true
+      - extendedWaitUntil:
+          visible: "Welcome Back|Email Address|Email"
+          timeout: 60000
+      - tapOn:
+          id: "email"
+          optional: true
+      - tapOn:
+          text: "Email Address"
+          optional: true
+      - inputText: ${MAESTRO_EMAIL}
+      - hideKeyboard
+      - tapOn:
+          id: "password"
+          optional: true
+      - tapOn:
+          text: "Password"
+          optional: true
+      - inputText: ${MAESTRO_PASSWORD}
+      - hideKeyboard
+      - scrollUntilVisible:
+          element:
+            id: "login-submit"
+          direction: DOWN
+          timeout: 10000
+          optional: true
+      - tapOn:
+          id: "login-submit"
+          optional: true
+      - tapOn:
+          text: "Sign In"
+          optional: true
+      - extendedWaitUntil:
+          visible: "Quick Actions|All Classes|No active courses|Continue where you left|Dashboard|My Courses"
+          timeout: 120000
+
+# 3) Deep-link straight into the lesson's Comments tab. Safe now: the app has
+#    hydrated (step 1), so Capacitor's appUrlOpen listener is registered —
+#    the old smoke.yaml bug was firing openLink right after launchApp.
+#    MainActivity is singleTask, so the running instance receives the intent.
+- openLink: com.jsrcoaching.app://classes/${MAESTRO_COURSE_ID}/lessons?lessonId=${MAESTRO_LESSON_ID}&tab=comments&from=maestro
+
+# Lesson screen mounted: the chip strip is the first stable token (video
+# players and the YouTube iframe are ignored on purpose).
+- extendedWaitUntil:
+    visible: "Comments|Ask Doubt|Timeline|Bookmarks"
+    timeout: 90000
+- tapOn:
+    text: "Comments"
+    optional: true
+
+# 4) The seeded image comment — <button aria-label="Open comment image">.
+#    Comments load async and sit below the player, so scroll for it.
+- scrollUntilVisible:
+    element:
+      id: "Open comment image"
+    direction: DOWN
+    timeout: 45000
+- tapOn:
+    id: "Open comment image"
+
+# 5) In-app viewer (UniversalFileViewer IMAGE) must open — NOT the external
+#    browser. Root carries data-testid="doc-reader-shell".
+- extendedWaitUntil:
+    visible:
+      id: "doc-reader-shell"
+    timeout: 20000
+- assertVisible:
+    id: "Back"
+
+# 6) Hardware Back closes the overlay only — we must still be on the lesson
+#    with the Comments panel (the image button is a lesson-only element).
+- pressKey: Back
+- extendedWaitUntil:
+    notVisible:
+      id: "doc-reader-shell"
+    timeout: 10000
+- assertVisible:
+    id: "Open comment image"
+- assertVisible:
+    text: "Comments"
+
+# 7) One more Back leaves the lesson but must NOT kill the app: the deep link
+#    was pushed on top of the signed-in home, so we land back there.
+- pressKey: Back
+- extendedWaitUntil:
+    visible: "Dashboard|Quick Actions|Continue where you left|My Courses|All Classes|No active courses|Admission help"
+    timeout: 30000

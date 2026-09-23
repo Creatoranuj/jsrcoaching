@@ -5,6 +5,9 @@
  *   1. Does NOT open a new browser tab / window (would signal `window.open`
  *      escaping the WebView).
  *   2. Mounts the in-app <DocReaderShell> overlay (data-testid).
+ *   3. Browser/hardware Back closes ONLY the overlay — the student stays on
+ *      the lesson (history sentinel via useOverlayBackClose). The Android
+ *      twin of this check is maestro/overlay-back.yaml.
  *
  * Fixture: a lesson in E2E_COURSE_ID that has at least one comment with an
  * image. CI resolves E2E_LESSON_ID automatically in
@@ -68,10 +71,19 @@ test.describe("Comment image opens in-app", () => {
     await commentImage.click({ timeout: 20_000 });
 
     // In-app viewer must mount within a short window.
-    await expect(page.getByTestId("doc-reader-shell")).toBeVisible({ timeout: 10_000 });
+    const viewer = page.getByTestId("doc-reader-shell");
+    await expect(viewer).toBeVisible({ timeout: 10_000 });
 
     // No popup / new tab should have been created.
     expect(popupOpened).toBe(false);
     expect(context.pages().length).toBe(1);
+
+    // Back closes the overlay only. Without the sentinel this pops the lesson
+    // route itself and the student lands on the dashboard (the pre-2026-09-23
+    // behaviour on Android hardware Back).
+    await page.goBack();
+    await expect(viewer).toBeHidden({ timeout: 10_000 });
+    await expect(page).toHaveURL(new RegExp(`/classes/${COURSE_ID}/lessons`));
+    await expect(page.getByRole("button", { name: "Open comment image" }).first()).toBeVisible({ timeout: 10_000 });
   });
 });

@@ -9,7 +9,9 @@
 # One bash process = one lifetime for the trap + variables.
 #
 # Inputs (env): MAESTRO_EMAIL / MAESTRO_PASSWORD (preferred) or
-#               TEST_USER_EMAIL / TEST_USER_PASSWORD, APP_ID (default debug id)
+#               TEST_USER_EMAIL / TEST_USER_PASSWORD, APP_ID (default debug id),
+#               MAESTRO_COURSE_ID / MAESTRO_LESSON_ID (optional, from preflight;
+#               enables the overlay-back secondary flow)
 # Outputs:      maestro-artifacts/**  (logcat, final screen, package dumps,
 #               Maestro debug output), maestro-report.xml (junit)
 set -euo pipefail
@@ -81,6 +83,26 @@ maestro test \
   maestro/smoke.yaml
 
 # Secondary flows stay non-blocking — optional paths that flake on cold
-# emulators and shouldn't gate release.
-maestro test --debug-output "$ART/maestro-debug-secondary" maestro/pdf-back.yaml || echo "::warning::pdf-back flow failed (non-blocking)"
-maestro test --debug-output "$ART/maestro-debug-secondary" maestro/back-button-cold-start.yaml || echo "::warning::back-button-cold-start flow failed (non-blocking)"
+# emulators and shouldn't gate release. Each gets its own debug dir so a
+# failure screenshot from one never overwrites the other's.
+#
+# overlay-back needs the image-comment fixture preflight resolved
+# (MAESTRO_COURSE_ID / MAESTRO_LESSON_ID via $GITHUB_ENV); without it the
+# deep link has nowhere to go, so skip loudly instead of failing quietly.
+if [ -n "${MAESTRO_COURSE_ID:-}" ] && [ -n "${MAESTRO_LESSON_ID:-}" ]; then
+  maestro test \
+    --env MAESTRO_EMAIL="$EMAIL" \
+    --env MAESTRO_PASSWORD="$PASSWORD" \
+    --env MAESTRO_COURSE_ID="$MAESTRO_COURSE_ID" \
+    --env MAESTRO_LESSON_ID="$MAESTRO_LESSON_ID" \
+    --debug-output "$ART/maestro-debug-overlay-back" \
+    maestro/overlay-back.yaml \
+    && echo "overlay-back flow passed" \
+    || echo "::warning::overlay-back flow failed (non-blocking) — see maestro-artifacts/maestro-debug-overlay-back"
+else
+  echo "::notice::overlay-back flow skipped — preflight found no lesson with an image comment for this student (MAESTRO_COURSE_ID/MAESTRO_LESSON_ID unset)"
+fi
+
+maestro test --debug-output "$ART/maestro-debug-cold-start" maestro/back-button-cold-start.yaml \
+  && echo "back-button-cold-start flow passed" \
+  || echo "::warning::back-button-cold-start flow failed (non-blocking) — see maestro-artifacts/maestro-debug-cold-start"

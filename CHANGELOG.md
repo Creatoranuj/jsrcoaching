@@ -131,6 +131,44 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   upload step skipped dot-directories, which is why runs #88-#93 only ever
   shipped `final-screen.png`. `include-hidden-files: true` added.
 
+### Fixed — hardware Back inside the comment-image viewer
+- The in-app image viewer LessonView mounts for comment attachments had no
+  history sentinel: on Android, hardware Back fell through
+  `useAndroidBackButton` to route-level back and dropped the student out of
+  the lesson (browser Back did the same on web). LessonView now registers the
+  overlay with `useOverlayBackClose("lesson-comment-image")` — Back closes the
+  viewer, the lesson and its Comments panel stay put; programmatic close pops
+  the sentinel itself.
+- The comment image is a real `<button aria-label="Open comment image">`
+  wrapping the `<img>` (keyboard focusable; Maestro's DevTools DOM walker
+  drops `<img>` nodes and maps aria-label → resource-id, so this is the only
+  handle the Android flow can tap). Playwright still targets the `<img>` and
+  now also asserts the Back contract (`e2e/comment-image-in-app.spec.ts`);
+  unit test `src/test/commentsPanelImageButton.test.tsx`.
+
+### CI — Maestro secondary flows (rewritten)
+- `maestro/pdf-back.yaml` never exercised anything: it tapped `index: 0` on
+  My Courses, waited for ".pdf" text (the E2E course has no PDF lesson) and
+  asserted `id: pdf-viewer`, which does not exist in the app — and it ran
+  without `androidWebViewHierarchy: devtools`, so every assertion was blind
+  anyway. Replaced by `maestro/overlay-back.yaml`: warm launch (reuses the
+  smoke session, signs in only when needed), `openLink` deep link to the
+  lesson's Comments tab (safe now — the app has hydrated and MainActivity is
+  `singleTask`), tap the image comment, assert `doc-reader-shell`, hardware
+  Back → viewer gone + still on the lesson, second Back → home, app alive.
+- Fixture discovery: `maestro-preflight.mjs` resolves a lesson with an image
+  comment inside an enrolled course with the verified session (honours
+  `E2E_LESSON_ID` / `E2E_COURSE_ID` when still valid) and exports
+  `MAESTRO_COURSE_ID` / `MAESTRO_LESSON_ID`; `maestro-emulator.sh` passes
+  them via `--env` and skips the flow with a notice when none is found. Each
+  secondary flow gets its own `--debug-output` dir.
+- `back-button-cold-start.yaml` gained `androidWebViewHierarchy: devtools`
+  (same blind-assertion root cause as the smoke flow on 2026-07-16), real
+  landing tokens (`Admission help|Signup|Login`) and a 180 s first-paint
+  budget instead of 8 s — a cold WebView on the swiftshader emulator needs
+  60-120 s.
+- Both secondary flows stay non-blocking until they pass twice in a row.
+
 ---
 
 ## [v1.16.3] — 2026-09-21

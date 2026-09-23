@@ -73,6 +73,7 @@ import { CommentsPanel } from "../features/lesson/components/CommentsPanel";
 import UniversalFileViewer from "../components/library/UniversalFileViewer";
 import { DppCard } from "../features/lesson/components/DppCard";
 import { useDownloads } from "../hooks/useDownloads";
+import useOverlayBackClose from "../hooks/useOverlayBackClose";
 import { SafeBoundary, useProtectedSurface } from "@/lib/safety";
 import { pushPlayerBusy } from "../lib/playerBusy";
 import { resolveDeepLinkPdf } from "../lib/resolveDeepLinkPdf";
@@ -410,6 +411,11 @@ const LessonView = () => {
   // player) so that in-lesson attachment chips remain inline.
   const [immersivePdf, setImmersivePdf] = useState<{ id?: string; url: string; title: string; badge?: string } | null>(null);
   const [commentImageViewer, setCommentImageViewer] = useState<{ url: string; title: string } | null>(null);
+  // Hardware / browser back must close the comment-image overlay and stay on
+  // the lesson — without a sentinel `useAndroidBackButton` falls through to
+  // route-level back and dumps the student out of the lesson entirely.
+  const closeCommentImageViewer = useCallback(() => setCommentImageViewer(null), []);
+  useOverlayBackClose(!!commentImageViewer, closeCommentImageViewer, "lesson-comment-image");
   const [notesOpen, setNotesOpen] = useState<boolean>(true);
   const [isPiPMode, setIsPiPMode] = useState(false);
   const [pdfToolbarOpen, setPdfToolbarOpen] = useState(false);
@@ -2194,7 +2200,7 @@ const LessonView = () => {
           title={commentImageViewer.title}
           fileType="IMAGE"
           source="attachment"
-          onBack={() => setCommentImageViewer(null)}
+          onBack={closeCommentImageViewer}
         />
       )}
 
