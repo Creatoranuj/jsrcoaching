@@ -205,6 +205,12 @@ export default defineConfig(({ mode }) => ({
         // `advancedChunks` is deprecated, and `manualChunks` is ignored when
         // `codeSplitting` is active, which is exactly what Replit reported.
         codeSplitting: {
+          // Default `true` drags every dependency of a matched module into the
+          // group: shared helpers used by react-pdf / react-notion-x were
+          // captured into vendor-pdf / vendor-notion, so `utils.ts` and the
+          // entry statically imported ~150 KB of PDF/Notion code on the home
+          // page (Lighthouse #56). Groups now own only the modules they match.
+          includeDependenciesRecursively: false,
           groups: [
             // Highest priority — pinned vendor chunks. Higher priority wins on overlap.
             { name: 'vendor-react',     test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/,                          priority: 100 },
@@ -216,9 +222,14 @@ export default defineConfig(({ mode }) => ({
             // pdfjs/react-pdf is the single largest dep in the tree (~230KB gz combined) and
             // is ONLY needed on Downloads / DocumentReader / FastPdfReader. Isolating it means
             // the initial entry never carries any of it.
-            { name: 'vendor-pdf',       test: /[\\/]node_modules[\\/](react-pdf|pdfjs-dist)[\\/]/,                               priority: 85 },
+            { name: 'vendor-pdf',       test: /[\\/]node_modules[\\/](react-pdf|pdfjs-dist)[\\/](?!.*\.css$)/,                               priority: 85 },
+            // Both groups exclude *.css (Lighthouse #55/#56): when the stylesheet
+            // was pulled into the vendor group, Vite hoisted vendor-pdf.css and
+            // vendor-notion.css into index.html as render-blocking <link>s on
+            // every page. Leaving the CSS out keeps it with the lazy
+            // FastPdfReader / NotionPageRenderer chunks that import it.
             // Notion renderer — heavy, lesson-only.
-            { name: 'vendor-notion',    test: /[\\/]node_modules[\\/](react-notion-x|notion-types|notion-utils|notion-client)[\\/]/, priority: 85 },
+            { name: 'vendor-notion',    test: /[\\/]node_modules[\\/](react-notion-x|notion-types|notion-utils|notion-client)[\\/](?!.*\.css$)/, priority: 85 },
             // Recharts + d3 subtree — admin analytics only, must never leak into entry.
             { name: 'vendor-charts',    test: /[\\/]node_modules[\\/](recharts|d3-[^\\/]+|victory-vendor)[\\/]/,                 priority: 85 },
             // Video/media players — lesson-only.
