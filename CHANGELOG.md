@@ -9,6 +9,17 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased] — 2026-09-23
 
+### CI — Maestro Android E2E (never green before)
+- Every run since the `.debug` applicationIdSuffix landed died in
+  `:app:processDebugGoogleServices` — "No matching client found for package
+  name 'com.jsrcoaching.app.debug'" — before the emulator ever booted.
+  Registered `com.jsrcoaching.app.debug` as a second Android app in the
+  `jsr-app-403f6` Firebase project (app id
+  `1:586153778410:android:1c0bd81f8573da97034b93`) and refreshed
+  `android/app/google-services.json` with the console-generated file, which
+  now carries both clients. Production client + keys are unchanged; debug/CI
+  builds get their own Firebase app instead of a hand-duplicated entry.
+
 ### Fixed — lesson completion survives a reload
 - "Mark as done" (My Courses) and the 80 %-watched auto-complete (lesson
   player) only wrote `user_progress` and component state. The course-detail
