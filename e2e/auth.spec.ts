@@ -183,7 +183,8 @@ test.describe("Authenticated student", () => {
   test.skip(!HAS_USER, "TEST_USER_EMAIL / TEST_USER_PASSWORD not set");
 
   test("should redirect to dashboard on successful login", async ({ page }) => {
-    await loginAndLand(page, TEST_USER.email, TEST_USER.password);
+    // The one place that must drive the real form even when a session is cached.
+    await signInAndLand(page, TEST_USER.email, TEST_USER.password, AFTER_LOGIN, { fresh: true });
   });
 
   test("should maintain session across page refresh", async ({ page }) => {

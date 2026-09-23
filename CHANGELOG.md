@@ -56,6 +56,13 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   restricted to `com.jsrcoaching.app`). Push tokens fail on CI only; add the
   debug package + debug-keystore SHA-1 to the key restriction in Google Cloud
   → Credentials if CI ever needs FCM.
+- Run #91 (preflight applied) signed in with the verified pair and walked
+  Dashboard → My Courses → Downloads → Profile. It failed on the last
+  assertion only: the Settings button sits below the fold on Profile, so both
+  optional taps (`profile-settings` id, "Settings" text) were skipped and the
+  Settings-screen check ran against Profile. `maestro/smoke.yaml` now scrolls
+  the button into view first (same pattern as `login-submit`) and the
+  Settings check also accepts the Notifications/Preferences card titles.
 
 ### Fixed — lesson completion survives a reload
 - "Mark as done" (My Courses) and the 80 %-watched auto-complete (lesson
@@ -69,6 +76,16 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   and Pixel 7. Unit-tested (`courseProgressCache.test.ts`).
 
 ### CI — Playwright E2E
+- Run #283: four tests (learning-journey, lesson-completion x2, payment-flow)
+  landed on `/login` after a correct submit and Pixel 7 legs flaked the same
+  way. ~100 password sign-ins per run from one runner IP exceed Supabase's
+  default sign-in limit (30 / 5 min / IP). `e2e/helpers/auth.ts#signIn` now
+  drives the login form once per account per worker, captures the
+  `sb-<ref>-auth-token` localStorage entry, and restores it for every later
+  call (landing on `/dashboard` directly; falls back to the form if the app
+  bounces). Wrong-credential tests never cache; `smoke › login flow` and
+  `auth › redirect to dashboard` pass `{ fresh: true }` so the real form is
+  still exercised on every project.
 - `auth › dashboard within 20 s`: the retry loop re-clicked without
   re-filling, so after one wiped render every attempt submitted an empty
   form and the Pixel 7 leg burned its whole budget (flaky). Each attempt now
