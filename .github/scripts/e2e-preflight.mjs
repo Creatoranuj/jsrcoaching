@@ -88,102 +88,96 @@ const courseIds = [...new Set([
   process.env.TEST_PAID_COURSE_ID,
 ].filter(Boolean))];
 
-if (courseIds.length > 0) {
-  const safeCourseIds = courseIds.map(safeId);
-  const coursesResponse = await fetch(
-    `${baseUrl}/rest/v1/courses?select=id&id=in.(${safeCourseIds.join(",")})`,
-    { headers },
-  );
-
-  if (!coursesResponse.ok) {
-    console.error(`::error::E2E course preflight could not read configured courses (${coursesResponse.status}).`);
-    process.exit(1);
-  }
-
-  const courses = await coursesResponse.json();
-  const found = new Set(courses.map((course) => String(course.id)));
-  const missingCourses = courseIds.filter((id) => !found.has(String(id)));
-  if (missingCourses.length > 0) {
-    console.error(`::error::Configured E2E course IDs do not exist: ${missingCourses.join(", ")}`);
-    process.exit(1);
-  }
+// Courses the E2E student can actually open: the configured ones, everything
+// it is enrolled in, and free courses. RLS already hides the rest, but a quiz
+// or lesson in a paid course the student never bought would bounce the spec
+// to /dashboard, so discovery only looks inside this set.
+async function openableCourseIds() {
+  const ids = new Set(courseIds.map((id) => String(id)));
+  // RLS already scopes enrollments to the signed-in student; the explicit
+  // filter just keeps the query cheap if that policy ever widens.
+  const userId = session.user?.id ? `&user_id=eq.${safeId(session.user.id)}` : "";
+  const enrollments = await rest(`enrollments?select=course_id${userId}&limit=200`);
+  for (const row of enrollments) if (row.course_id != null) ids.add(String(row.course_id));
+  const free = await rest(`courses?select=id&or=(price.is.null,price.eq.0)&limit=200`);
+  for (const row of free) if (row.id != null) ids.add(String(row.id));
+  return [...ids].map(safeId);
 }
 
-console.log(`E2E preflight passed: student sign-in and ${courseIds.length} configured course ID(s) verified.`);
+const openable = await openableCourseIds();
 
-// ---------------------------------------------------------------------------
-// Optional fixture discovery (never fails the job).
-// ---------------------------------------------------------------------------
-const resolved = {};
-
-async function quizHasQuestions(quizId) {
-  try {
-    const res = await fetch(`${baseUrl}/rest/v1/rpc/get_quiz_questions`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ _quiz_id: quizId }),
-    });
-    if (!res.ok) return false;
-    const rows = await res.json();
-    return Array.isArray(rows) && rows.length > 0;
-  } catch {
-    return false;
-  }
-}
-
-if (courseIds.length > 0) {
-  const safeCourseIds = courseIds.map(safeId);
+if (openable.length > 0) {
+  const configuredSet = new Set(courseIds.map((id) => String(id)));
+  // Configured courses first so a fixture in E2E_COURSE_ID always wins.
+  const searchOrder = [
+    ...openable.filter((id) => configuredSet.has(id)),
+    ...openable.filter((id) => !configuredSet.has(id)),
+  ];
+  const inList = `in.(${searchOrder.join(",")})`;
 
   // --- E2E_QUIZ_ID -----------------------------------------------------------
   const configuredQuiz = process.env.E2E_QUIZ_ID?.trim();
   let quizId = null;
   if (configuredQuiz) {
-    const visible = await rest(`quizzes?select=id&id=eq.${safeId(configuredQuiz)}&is_published=eq.true&limit=1`);
+    const visible = await rest(
+      `quizzes?select=id&id=eq.${safeId(configuredQuiz)}&is_published=eq.true&course_id=${inList}&limit=1`,
+    );
     if (visible.length > 0 && (await quizHasQuestions(configuredQuiz))) {
       quizId = configuredQuiz;
     } else {
-      console.log(`::notice::E2E_QUIZ_ID secret is not attemptable by the E2E student (unpublished, wrong course, or no questions) — looking for another quiz.`);
+      console.log(`::notice::E2E_QUIZ_ID secret is not attemptable by the E2E student (unpublished, course not openable, or no questions) — looking for another quiz.`);
     }
   }
   if (!quizId) {
     const candidates = await rest(
-      `quizzes?select=id,title&is_published=eq.true&course_id=in.(${safeCourseIds.join(",")})&order=created_at.desc&limit=15`,
+      `quizzes?select=id,title,course_id&is_published=eq.true&course_id=${inList}&order=created_at.desc&limit=40`,
     );
+    // Keep the configured-course-first ordering PostgREST cannot express.
+    const rank = new Map(searchOrder.map((id, i) => [id, i]));
+    candidates.sort((a, b) => (rank.get(String(a.course_id)) ?? 1e9) - (rank.get(String(b.course_id)) ?? 1e9));
     for (const q of candidates) {
       if (await quizHasQuestions(q.id)) {
         quizId = q.id;
-        console.log(`::notice::E2E_QUIZ_ID resolved to "${q.title}" (${q.id}).`);
+        console.log(`::notice::E2E_QUIZ_ID resolved to "${q.title}" (${q.id}, course ${q.course_id}).`);
         break;
       }
     }
   }
   if (quizId) resolved.E2E_QUIZ_ID_RESOLVED = quizId;
-  else console.log("::notice::No attemptable quiz with questions found in the configured courses — quiz spec will skip.");
+  else console.log(`::notice::No attemptable quiz with questions in ${searchOrder.length} openable course(s) — quiz spec will skip. Publish a quiz with questions in E2E_COURSE_ID to enable it.`);
 
   // --- E2E_LESSON_ID (lesson with an image comment) ---------------------------
-  const courseForLesson = process.env.E2E_COURSE_ID?.trim();
-  if (courseForLesson) {
-    const configuredLesson = process.env.E2E_LESSON_ID?.trim();
-    let lessonId = null;
-    if (configuredLesson) {
-      const rows = await rest(`comments?select=lesson_id&lesson_id=eq.${safeId(configuredLesson)}&image_url=not.is.null&limit=1`);
-      if (rows.length > 0) lessonId = configuredLesson;
+  const configuredLesson = process.env.E2E_LESSON_ID?.trim();
+  let lesson = null; // { id, course_id }
+  if (configuredLesson) {
+    const rows = await rest(`comments?select=lesson_id&lesson_id=eq.${safeId(configuredLesson)}&image_url=not.is.null&limit=1`);
+    if (rows.length > 0) {
+      const meta = await rest(`lessons?select=id,course_id&id=eq.${safeId(configuredLesson)}&limit=1`);
+      if (meta.length > 0 && searchOrder.includes(String(meta[0].course_id))) lesson = meta[0];
     }
-    if (!lessonId) {
-      const lessons = await rest(`lessons?select=id&course_id=eq.${safeId(courseForLesson)}&order=position.asc&limit=200`);
-      if (lessons.length > 0) {
-        const ids = lessons.map((l) => safeId(l.id)).join(",");
-        const rows = await rest(
-          `comments?select=lesson_id&lesson_id=in.(${ids})&image_url=not.is.null&order=created_at.desc&limit=1`,
-        );
-        if (rows.length > 0) {
-          lessonId = rows[0].lesson_id;
-          console.log(`::notice::E2E_LESSON_ID resolved to ${lessonId} (has an image comment).`);
-        }
+  }
+  if (!lesson) {
+    // Comments RLS is per-lesson; walk openable courses in priority order and
+    // stop at the first lesson that has an image comment.
+    for (const courseId of searchOrder) {
+      const lessons = await rest(`lessons?select=id&course_id=eq.${courseId}&order=position.asc&limit=200`);
+      if (lessons.length === 0) continue;
+      const ids = lessons.map((l) => safeId(l.id)).join(",");
+      const rows = await rest(
+        `comments?select=lesson_id&lesson_id=in.(${ids})&image_url=not.is.null&order=created_at.desc&limit=1`,
+      );
+      if (rows.length > 0) {
+        lesson = { id: rows[0].lesson_id, course_id: courseId };
+        console.log(`::notice::E2E_LESSON_ID resolved to ${lesson.id} in course ${courseId} (has an image comment).`);
+        break;
       }
     }
-    if (lessonId) resolved.E2E_LESSON_ID_RESOLVED = lessonId;
-    else console.log("::notice::No lesson with an image comment in E2E_COURSE_ID — comment-image spec will skip.");
+  }
+  if (lesson) {
+    resolved.E2E_LESSON_ID_RESOLVED = lesson.id;
+    resolved.E2E_LESSON_COURSE_ID_RESOLVED = String(lesson.course_id);
+  } else {
+    console.log(`::notice::No lesson with an image comment in ${searchOrder.length} openable course(s) — comment-image spec will skip. Post one comment with an image in E2E_COURSE_ID to enable it.`);
   }
 }
 

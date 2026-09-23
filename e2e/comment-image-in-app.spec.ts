@@ -26,8 +26,10 @@ import { signIn } from "./helpers/auth";
 
 const EMAIL = process.env.E2E_EMAIL;
 const PASSWORD = process.env.E2E_PASSWORD;
-const COURSE_ID = process.env.E2E_COURSE_ID;
+// Discovery may find the image comment in another course the student can
+// open (free / enrolled); it then exports the matching course id as well.
 const LESSON_ID = process.env.E2E_LESSON_ID;
+const COURSE_ID = process.env.E2E_LESSON_COURSE_ID || process.env.E2E_COURSE_ID;
 
 async function login(page: Page) {
   await signIn(page, EMAIL!, PASSWORD!);
@@ -37,7 +39,7 @@ async function login(page: Page) {
 test.describe("Comment image opens in-app", () => {
   test("tapping a comment image mounts DocReaderShell (no new tab)", async ({ page, context }) => {
     test.skip(!EMAIL || !PASSWORD || !COURSE_ID, "E2E_EMAIL / E2E_PASSWORD / E2E_COURSE_ID not set");
-    test.skip(!LESSON_ID, "E2E_LESSON_ID not set — no lesson with an image comment in E2E_COURSE_ID");
+    test.skip(!LESSON_ID, "E2E_LESSON_ID not set — no lesson with an image comment visible to the E2E student");
 
     let popupOpened = false;
     context.on("page", () => { popupOpened = true; });

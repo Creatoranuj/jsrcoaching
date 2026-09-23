@@ -60,3 +60,19 @@
 - [x] Add 1280×720 guidance and non-blocking ratio warning to thumbnail upload.
 - [x] Verify typecheck and full automated suite (955 passed, 6 intentionally skipped).
 - [ ] Mobile/desktop live rendering will be confirmed after the repository commit is deployed.
+
+## 2026-09-23 — Phase 2 (speed, mobile tests, pipeline) + owner asks
+- [x] Admin dashboard 60-second snapshot cache (React Query) — commit 62c2772
+- [x] Enrollment progress writer migration checked in (`20260927090000_enrollment_progress_writer.sql`) — commit 7d7556e, drift CI green
+- [ ] Playwright E2E must be reliably green AND run more than 45/64 tests: wire existing secrets to the RLS specs, auto-discover lesson/quiz fixtures in preflight, add an Android (Pixel 7 emulation) leg, prove it via workflow_dispatch before merging
+- [ ] OWNER: add `E2E_ADMIN_EMAIL` / `E2E_ADMIN_PASSWORD` repo secrets (dedicated admin test account) — unblocks 12 admin/refund/payment-review specs
+- [ ] Load test ("kitna student load jhel sakta hai"): k6 scenarios for landing + login + dashboard + lesson, distributed from a GitHub Actions matrix, Supabase free-tier metrics scraped during the run, egress budget capped; report with breaking point + p95 per stage
+- [ ] Post-load-test fixes as expert: caching, query consolidation, feature kill-switches for the heaviest free-tier consumers (candidates: `user_sessions` PATCH loop, presence/realtime, admin polling)
+- [ ] Thumbnails → WebP on upload (canvas re-encode, max 1280 px, keep original when smaller)
+- [ ] Page-load monitoring persisted + admin monitor screen
+- [ ] Workflow SHA pinning (all `.github/workflows/*.yml`, `workflow` scope now granted)
+- [ ] Release bookkeeping: CHANGELOG v1.17.0, IMPLEMENTATION_STATUS
+- [ ] Always: `save.sh` after every edit; ZIP of sandbox source into Files when credits run low / at the end of the run
+- [ ] OWNER: connect Supabase project "Creatoranuj's Project" to this Lovable workspace — only possible from the Lovable UI (Project Settings → Connectors → Supabase → choose the project); chat cannot link an existing Supabase project. Once linked, the load-test observer and DB tooling can read metrics directly from chat.
+- [ ] OWNER (asked again 03:25 UTC, new workspace): link Supabase project "Creatoranuj's Project" via Project Settings → Connectors → Supabase — chat can only create a NEW Lovable Cloud project (supabase--enable), which would be the wrong backend; do not call it
+- [ ] (3rd ask 03:27 UTC) Supabase "Creatoranuj's Project" still not visible from the sandbox (no SUPABASE_URL, no DB tools) — owner must finish the link in Project Settings → Connectors → Supabase; re-check env on next turn

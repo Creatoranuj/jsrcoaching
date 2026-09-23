@@ -66,10 +66,13 @@ test.describe("lesson completion", () => {
   test("marking a lesson complete sticks across a reload", async ({ page }) => {
     // The explicit "Mark as done" toggle lives on the lesson rows of the
     // My Courses detail screen (LectureCard with onMarkComplete), not inside
-    // the player and not on /classes/:id/chapter/:id — the old version looked
-    // there and always skipped with "no explicit complete button".
+    // the player and not on /classes/:id/chapter/:id (LectureListing never
+    // passes onMarkComplete) — the old version looked there and always
+    // skipped with "no explicit complete button".
     await login(page);
-    await page.goto(`/my-courses/${COURSE_ID}`);
+    // Without `chapter=` the screen shows the chapter folders first; `__all__`
+    // is the synthetic "All Content" chapter that lists every lesson row.
+    await page.goto(`/my-courses/${COURSE_ID}?chapter=__all__`);
 
     const toggles = page.getByRole("button", { name: /^mark as (not )?done$/i });
     await expect(toggles.first(), `course ${COURSE_ID}: no lesson row with a Mark-as-done toggle`).toBeVisible({

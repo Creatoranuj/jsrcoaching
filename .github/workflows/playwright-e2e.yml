@@ -114,6 +114,7 @@ jobs:
           # questions / has an image comment); the raw secret is only a fallback.
           E2E_QUIZ_ID: ${{ env.E2E_QUIZ_ID_RESOLVED || secrets.E2E_QUIZ_ID }}
           E2E_LESSON_ID: ${{ env.E2E_LESSON_ID_RESOLVED }}
+          E2E_LESSON_COURSE_ID: ${{ env.E2E_LESSON_COURSE_ID_RESOLVED }}
           # RLS specs (profiles-pii, receipts bucket) talk to Supabase directly
           # with the anon key + a student session. Same values as the app build.
           E2E_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
