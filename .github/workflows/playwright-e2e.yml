@@ -60,7 +60,9 @@ jobs:
         run: |
           node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('./package.json', 'utf8')); if (!p.devDependencies?.['@playwright/test']) { console.error('::error::@playwright/test is missing from devDependencies'); process.exit(1) }"
 
-      - name: 🔐 Verify E2E account and configured courses
+      # Also resolves quiz / lesson fixtures as the E2E student and exports
+      # them via $GITHUB_ENV (E2E_QUIZ_ID_RESOLVED, E2E_LESSON_ID_RESOLVED).
+      - name: 🔐 Verify E2E account, courses + resolve fixtures
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
@@ -69,6 +71,8 @@ jobs:
           E2E_COURSE_ID: ${{ secrets.E2E_COURSE_ID }}
           E2E_PAID_COURSE_ID: ${{ secrets.E2E_PAID_COURSE_ID }}
           TEST_PAID_COURSE_ID: ${{ secrets.TEST_PAID_COURSE_ID }}
+          E2E_QUIZ_ID: ${{ secrets.E2E_QUIZ_ID }}
+          E2E_LESSON_ID: ${{ secrets.E2E_LESSON_ID }}
         run: node .github/scripts/e2e-preflight.mjs
 
       # Cache Playwright's browser download (~180MB) between runs.
@@ -94,7 +98,7 @@ jobs:
       # :8080 and `reuseExistingServer` is false on CI, so starting a second
       # one made every run die with "http://localhost:8080 is already used".
 
-      - name: 🧪 Run Playwright (chromium only)
+      - name: 🧪 Run Playwright (desktop Chromium + Pixel 7 emulation)
         env:
           CI: 'true'
           BASE_URL: 'http://localhost:8080'
@@ -106,7 +110,24 @@ jobs:
           # Learning-journey legs; unset => those legs skip cleanly (never red).
           E2E_COURSE_ID: ${{ secrets.E2E_COURSE_ID }}
           E2E_PAID_COURSE_ID: ${{ secrets.E2E_PAID_COURSE_ID || secrets.TEST_PAID_COURSE_ID }}
-          E2E_QUIZ_ID: ${{ secrets.E2E_QUIZ_ID }}
+          # Preflight resolves these *as the E2E student* (RLS-visible, has
+          # questions / has an image comment); the raw secret is only a fallback.
+          E2E_QUIZ_ID: ${{ env.E2E_QUIZ_ID_RESOLVED || secrets.E2E_QUIZ_ID }}
+          E2E_LESSON_ID: ${{ env.E2E_LESSON_ID_RESOLVED }}
+          # RLS specs (profiles-pii, receipts bucket) talk to Supabase directly
+          # with the anon key + a student session. Same values as the app build.
+          E2E_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          E2E_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          E2E_STUDENT_EMAIL: ${{ secrets.E2E_STUDENT_EMAIL || secrets.E2E_EMAIL }}
+          E2E_STUDENT_PASSWORD: ${{ secrets.E2E_STUDENT_PASSWORD || secrets.E2E_PASSWORD }}
+          E2E_TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+          E2E_TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+          # Admin specs (admin.spec, refund-journey, payment review, chatbot
+          # prompt-injection) run as soon as a dedicated admin test account is
+          # added as repo secrets; until then they skip with a clear reason.
+          E2E_ADMIN_EMAIL: ${{ secrets.E2E_ADMIN_EMAIL }}
+          E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
+          E2E_ENROLLED_COURSE_ID: ${{ secrets.E2E_COURSE_ID }}
         # Hard gate: a green run must mean green tests. The old `|| warning`
         # swallowed real failures and reported success. Report + traces are
         # still uploaded by the always() step below.
@@ -114,7 +135,10 @@ jobs:
         # json reporter then writes to stdout instead of
         # test-results/results.json, which left the failure-summary step with
         # nothing to read. Reporters live in playwright.config.ts.
-        run: bunx playwright test --project=chromium
+        # `android-pixel7` is Chromium with Pixel 7 emulation (touch, DPR,
+        # 412x915, mobile UA) — no extra browser download. Its testMatch in
+        # playwright.config.ts limits it to the student-facing mobile specs.
+        run: bunx playwright test --project=chromium --project=android-pixel7
 
       # Failed test names + first error lines as plain text (job log annotations
       # + step summary), so diagnosing a red run never needs the artifact zip.

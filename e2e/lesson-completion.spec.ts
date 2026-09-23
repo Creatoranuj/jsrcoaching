@@ -64,21 +64,46 @@ test.describe("lesson completion", () => {
   });
 
   test("marking a lesson complete sticks across a reload", async ({ page }) => {
+    // The explicit "Mark as done" toggle lives on the lesson rows of the
+    // My Courses detail screen (LectureCard with onMarkComplete), not inside
+    // the player and not on /classes/:id/chapter/:id — the old version looked
+    // there and always skipped with "no explicit complete button".
     await login(page);
-    await openFirstLesson(page);
+    await page.goto(`/my-courses/${COURSE_ID}`);
 
-    const markDone = page
-      .getByRole("button", { name: /mark (as )?(complete|done)|complete lesson|poora hua/i })
-      .first();
-    test.skip(!(await markDone.count()), "This lesson has no explicit complete button");
+    const toggles = page.getByRole("button", { name: /^mark as (not )?done$/i });
+    await expect(toggles.first(), `course ${COURSE_ID}: no lesson row with a Mark-as-done toggle`).toBeVisible({
+      timeout: 30_000,
+    });
 
-    await markDone.click();
-    await expect(page.locator("body")).toContainText(/complete|completed|done/i, { timeout: 15_000 });
+    // Flip the first toggle, prove the new state survives a reload, then
+    // flip it back so the fixture account is left exactly as we found it.
+    const first = toggles.first();
+    const before = (await first.getAttribute("aria-pressed")) === "true";
+    const flipped = String(!before);
+
+    const progressWrite = page.waitForResponse(
+      (res) => /user_progress/.test(res.url()) && res.request().method() !== "GET" && res.ok(),
+      { timeout: 15_000 },
+    );
+    await first.click();
+    await progressWrite;
+    await expect(first).toHaveAttribute("aria-pressed", flipped);
 
     const url = page.url();
     await page.reload();
     expect(page.url()).toBe(url);
-    await expect(page.locator("body")).toContainText(/complete|completed|done/i, { timeout: 20_000 });
+    await expect(toggles.first()).toBeVisible({ timeout: 30_000 });
+    await expect(toggles.first()).toHaveAttribute("aria-pressed", flipped, { timeout: 20_000 });
+
+    // Restore.
+    const restoreWrite = page.waitForResponse(
+      (res) => /user_progress/.test(res.url()) && res.request().method() !== "GET" && res.ok(),
+      { timeout: 15_000 },
+    );
+    await toggles.first().click();
+    await restoreWrite;
+    await expect(toggles.first()).toHaveAttribute("aria-pressed", String(before));
   });
 
   test("course progress reflects completed lessons", async ({ page }) => {

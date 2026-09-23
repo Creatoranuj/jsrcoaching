@@ -51,9 +51,22 @@ export default defineConfig({
       use: { ...devices["iPhone 12"] },
     },
     {
-      // Closer to typical JSR Coaching user device (Android 13+, large screen)
+      // Closer to typical JSR Coaching user device (Android 13+, large screen).
+      // Runs in CI next to desktop chromium (same browser binary, Pixel 7
+      // emulation: 412x915, DPR 2.6, touch, mobile UA). Limited to the
+      // student-facing journeys — admin / RLS / payment specs are viewport-
+      // independent and already covered by the desktop project.
       name: "android-pixel7",
       use: { ...devices["Pixel 7"] },
+      testMatch: [
+        /smoke\.spec\.ts$/,
+        /auth\.spec\.ts$/,
+        /exit-hint\.spec\.ts$/,
+        /breadcrumb-back\.spec\.ts$/,
+        /safe-area\.spec\.ts$/,
+        /learning-journey\.spec\.ts$/,
+        /lesson-completion\.spec\.ts$/,
+      ],
     },
     {
       // iOS modern device profile for App Store readiness checks
