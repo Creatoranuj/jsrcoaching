@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render } from "@testing-library/react";
+import { render, act } from "@testing-library/react";
 import { screen, fireEvent, waitFor } from "@testing-library/dom";
 import { BrowserRouter } from "react-router-dom";
+import { LOGIN_TIMEOUT_MS } from "@/lib/loginErrors";
 
 // Mock the auth context
 const mockLogin = vi.fn();
@@ -221,6 +222,55 @@ describe("Login Page", () => {
       await waitFor(() => {
         expect(screen.getByText("Signing in...")).toBeInTheDocument();
       });
+    });
+
+    // Regression guards for the Supabase cold-start / 504 hang seen on
+    // 2026-09-24: a waking Auth service must never read as a wrong password
+    // ("{}") and must never spin "Signing in..." forever.
+    it("should show the calm server-waking copy on a 5xx auth error, not raw '{}'", async () => {
+      mockLogin.mockResolvedValueOnce({
+        error: { name: "AuthRetryableFetchError", message: "{}", status: 504 },
+      });
+      renderLogin();
+
+      fireEvent.change(screen.getByLabelText("Email Address"), { target: { value: "s@example.com" } });
+      fireEvent.change(screen.getByLabelText("Password"), { target: { value: "correct-horse" } });
+      fireEvent.click(screen.getByTestId("login-submit"));
+
+      await waitFor(() => {
+        expect(screen.getByText(/Server jaag raha hai/)).toBeInTheDocument();
+      });
+      expect(screen.queryByText("{}")).not.toBeInTheDocument();
+      expect(screen.queryByText("Invalid email or password.")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+    });
+
+    it("should stop waiting after the login deadline and offer Retry", async () => {
+      vi.useFakeTimers();
+      try {
+        mockLogin.mockImplementation(() => new Promise(() => {})); // Auth never answers
+        renderLogin();
+
+        fireEvent.change(screen.getByLabelText("Email Address"), { target: { value: "s@example.com" } });
+        fireEvent.change(screen.getByLabelText("Password"), { target: { value: "correct-horse" } });
+        fireEvent.click(screen.getByTestId("login-submit"));
+
+        // Let the async offline check + login call start.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(50);
+        });
+        expect(screen.getByText("Signing in...")).toBeInTheDocument();
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(LOGIN_TIMEOUT_MS + 100);
+        });
+
+        expect(screen.getByText(/Login me zyada der lag rahi hai/)).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+        expect(screen.getByTestId("login-submit")).not.toBeDisabled();
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

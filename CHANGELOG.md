@@ -7,6 +7,45 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [v1.17.1] — 2026-09-24
+
+Supabase Auth returned 504s / hung during the 2026-09-24 restart window and the
+student login screen spun "Signing in..." indefinitely (screen recording,
+07:00 IST). Home page is now prerendered at build time (PR #82) and the
+optional Google Drive upload step is gone from the APK workflow.
+
+### Fixed
+- Login: a waking / restarting Auth service (502/503/504, gotrue's
+  `AuthRetryableFetchError` with body `"{}"`) now shows calm Hinglish copy —
+  "Server jaag raha hai — 30-60 second baad dobara try karo. Aapka
+  email/password galat nahi hai." — with a Retry button, instead of a raw
+  `{}` or a wrong-password message (`src/lib/loginErrors.ts`,
+  `src/pages/Login.tsx`).
+- Login: one sign-in attempt now has a 25 s client-side deadline
+  (`withLoginTimeout`). On expiry the button re-enables with "Login me zyada
+  der lag rahi hai…" + Retry; a late success still signs the user in through
+  `onAuthStateChange`. Offline (`status 0`) keeps the existing network copy.
+
+### Changed
+- Home page is rendered to static HTML at build time and injected into
+  `dist/index.html` (`scripts/prerender-home.mjs`, `src/prerender/`), so the
+  headline and hero photo paint before JavaScript loads. Local Lighthouse:
+  LCP 6.7 s → ~3.8 s, score 0.60 → ~0.71 (PR #82).
+- APK workflow: removed the optional "Upload APK + AAB to Google Drive" step
+  (failed on multipart EOF / stale key; artifacts + GitHub Release remain).
+- Ops: GitHub repo secret `LOVABLE_API_KEY` refreshed after the Lovable
+  workspace move; Deploy Supabase Edge Functions re-syncs it into function
+  secrets (`ai-health` was answering `gateway_unauthorized`).
+- `package.json` version now tracks the CHANGELOG (was stuck at 1.16.3).
+
+### Verified
+- `src/test/loginErrors.test.ts` (6) + `src/test/components/Login.test.tsx`
+  (20, incl. 2 new regression guards that fail without the fix); `bun run
+  typecheck`; eslint on touched files; Playwright E2E green on PR #82 head
+  `a6d3a1c` after Supabase recovered.
+
+---
+
 ## [v1.17.0] — 2026-09-23
 
 Both end-to-end suites green on the same commit for the first time —

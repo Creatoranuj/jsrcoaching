@@ -11,6 +11,13 @@ import { tapHaptic } from "@/lib/native/haptics";
 import { validateEmailDomain } from "../lib/emailBlocklist";
 import { getNetworkStatus } from "@/lib/native/network";
 import { getErrorMessage } from "@/lib/errorMessage";
+import {
+  LOGIN_TIMEOUT_MESSAGE,
+  LoginTimeoutError,
+  SERVER_WAKING_MESSAGE,
+  isRetryableAuthError,
+  withLoginTimeout,
+} from "@/lib/loginErrors";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -79,9 +86,21 @@ const Login = () => {
     try {
       setIsLoading(true);
 
-      const { error } = await login(email.trim(), password);
+      // Deadline + cold-start copy (audit 2026-09-24): a waking Auth service
+      // must never look like a wrong password or hang the button forever.
+      const { error } = await withLoginTimeout(login(email.trim(), password));
 
       if (error) {
+        if (error instanceof LoginTimeoutError) {
+          setErrorMessage(LOGIN_TIMEOUT_MESSAGE);
+          setIsNetworkError(true);
+          return;
+        }
+        if (isRetryableAuthError(error)) {
+          setErrorMessage(SERVER_WAKING_MESSAGE);
+          setIsNetworkError(true);
+          return;
+        }
         const errorMsg = mapError(error.message || "");
         const isNetwork = /network|fetch|timeout|abort|timed|connection/i.test(error.message || "");
         setErrorMessage(errorMsg);
