@@ -37,6 +37,15 @@ optional Google Drive upload step is gone from the APK workflow.
   workspace move; Deploy Supabase Edge Functions re-syncs it into function
   secrets (`ai-health` was answering `gateway_unauthorized`).
 - `package.json` version now tracks the CHANGELOG (was stuck at 1.16.3).
+- Database (Supabase Advisor, applied live 2026-09-24, migration
+  `20260924024800_advisor_duplicate_indexes_idle_session_index.sql`): dropped
+  two redundant `(lesson_id, user_id)` indexes on `lecture_notes` (the UNIQUE
+  `lecture_notes_lesson_id_user_id_key` stays, so upsert `on_conflict` is
+  unchanged) and the duplicate `webhook_events_received_at_idx`; added partial
+  index `idx_user_sessions_active_last_active` so the hourly
+  `deactivate_idle_user_sessions(72)` cron reads ~28 blocks instead of
+  seq-scanning the 1.1 MB heap (~165 blocks) — the only app query behind the
+  "Disk IO budget" warnings. No data or RLS change.
 
 ### Verified
 - `src/test/loginErrors.test.ts` (6) + `src/test/components/Login.test.tsx`
