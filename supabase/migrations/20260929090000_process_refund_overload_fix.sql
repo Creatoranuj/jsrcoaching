@@ -10,7 +10,10 @@
 -- (the function only surfaced a warning).
 --
 -- Replace the old overload so PostgREST resolves the call unambiguously.
+-- (Also drop the 3-arg form when present: on environments where 20260803024120
+-- did apply it RETURNS void, and Postgres cannot change a return type in place.)
 DROP FUNCTION IF EXISTS public.process_refund(text);
+DROP FUNCTION IF EXISTS public.process_refund(text, boolean, numeric);
 
 CREATE OR REPLACE FUNCTION public.process_refund(_razorpay_order_id text, _is_full boolean DEFAULT true, _refund_amount numeric DEFAULT NULL)
  RETURNS jsonb
