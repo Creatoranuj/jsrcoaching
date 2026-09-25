@@ -7,6 +7,36 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [v1.17.2] — 2026-09-25
+
+Backend hardening release. Supabase Advisor flagged 21 tables where two
+permissive RLS policies overlapped on the same (table, command) pair; each
+pair is now merged into a single policy with identical access. A grep-level
+guard was added so new Realtime subscriptions cannot ship without cleanup.
+
+### Changed
+- RLS: 21 duplicate permissive policy pairs merged into one `merged_*` policy
+  per (table, command). Access is unchanged — admins see everything, users see
+  their own rows, anonymous visitors see only active public rows. All merged
+  predicates use `(select auth.uid())` so the check is evaluated once per
+  query instead of per row. Migration
+  `supabase/migrations/20260928090000_merge_duplicate_permissive_policies.sql`
+  (already applied live on 2026-09-25).
+
+### Added
+- `scripts/check-realtime-cleanup.mjs` — CI guard that fails when a file calls
+  `supabase.channel(...)` without a matching `removeChannel()` / `unsubscribe()`,
+  wired into the Code Guards workflow. Leaked subscriptions were the leading
+  suspect behind the 26 Realtime errors seen in the dashboard.
+
+### Verified (no code change needed)
+- Payment double-verify is already idempotent: `complete_paid_enrollment` locks
+  the payment row and a unique (user, course) constraint prevents a second
+  enrollment, so two parallel verifies cannot double-enroll. A repeat verify
+  only writes an extra audit-log line.
+
+---
+
 ## [v1.17.1] — 2026-09-24
 
 Supabase Auth returned 504s / hung during the 2026-09-24 restart window and the
