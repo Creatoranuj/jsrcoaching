@@ -25,6 +25,8 @@ first-submitter-wins hole in the subscription flow were fixed.
   `anon` policy (active rows only) and one `authenticated` policy (active rows
   or admin) — still a single permissive policy per role — and adds a guard
   that aborts the migration if any anon-visible policy references `has_role`.
+  The same migration narrows the legacy `comments` SELECT policy from
+  `public` to `authenticated` (its USING clause already required a session).
 - `search_lectures` RPC failed for every caller with `42804` (rank
   `double precision` vs declared `real`) since 2026-07-29. Migration
   `20260930090100_search_lectures_rank_real.sql` casts the rank.

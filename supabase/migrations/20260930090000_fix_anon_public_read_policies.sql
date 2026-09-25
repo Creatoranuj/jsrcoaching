@@ -69,6 +69,22 @@ CREATE POLICY site_settings_select_auth ON public.site_settings
   FOR SELECT TO authenticated
   USING (is_public IS TRUE OR public.has_role((select auth.uid()), 'admin'::public.app_role));
 
+-- comments -------------------------------------------------------------------
+-- 20260719115435 declares this policy TO authenticated, but the live schema
+-- (and the CI baseline dumped from it) still carries the older TO public
+-- version of the same name, so anon SELECTs on comments error with 42501
+-- instead of returning nothing. Narrow the role list; the USING clause is
+-- unchanged.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_policies
+              WHERE schemaname = 'public' AND tablename = 'comments'
+                AND policyname = 'Enrolled users and staff can view comments'
+                AND 'public' = ANY(roles)) THEN
+    ALTER POLICY "Enrolled users and staff can view comments" ON public.comments TO authenticated;
+  END IF;
+END $$;
+
 -- Guard: fail the migration (and the CI drift check) if any policy granted to
 -- anon still references has_role(), so this class of regression cannot ship
 -- again silently.
