@@ -449,13 +449,24 @@ const BuyCourse = () => {
 
   // Stable per-(user,course,attempt-window) idempotency key. We persist it
   // so re-tries within the same checkout session reuse the same Razorpay
-  // order instead of creating duplicates. A fresh key is minted only when
-  // the user finishes or explicitly leaves and comes back hours later.
+  // order instead of creating duplicates. A fresh key is minted when the
+  // user finishes, explicitly leaves, or the stored key is older than
+  // IDEM_KEY_TTL_MS — the leading segment is a base36 mint timestamp, so age
+  // is read from the value itself. Without the TTL a key from an abandoned
+  // checkout (e.g. minted under the previous Razorpay key) lived forever and
+  // sent every later attempt through the server's order-reuse check.
+  const IDEM_KEY_TTL_MS = 24 * 60 * 60 * 1000;
+  const mintIdemKey = () =>
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  const idemKeyAgeMs = (v: string): number => {
+    const ts = parseInt(v.split("-")[0] ?? "", 36);
+    return Number.isFinite(ts) && ts > 0 ? Date.now() - ts : Number.POSITIVE_INFINITY;
+  };
   const idemKeyFor = (uid: string, cid: string): string => {
     const k = `nb:idem:${uid}:${cid}`;
     let v = safeGet(k);
-    if (!v) {
-      v = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    if (!v || idemKeyAgeMs(v) > IDEM_KEY_TTL_MS) {
+      v = mintIdemKey();
       safeSet(k, v);
     }
     return v;

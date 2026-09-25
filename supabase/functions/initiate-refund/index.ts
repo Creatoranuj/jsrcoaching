@@ -1,11 +1,15 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { buildCorsHeaders } from "../_shared/cors.ts";
+// Money-moving function: same STRICT origin allow-list as create/verify
+// (production, staging, Android app). It used the general site allow-list,
+// which also admits Lovable preview hosts — admin+JWT gated, but the only
+// payment function with the looser policy. Aligned before the live-key switch.
+import { buildPaymentCorsHeaders as buildCorsHeaders, paymentPreflight } from "../_shared/cors.ts";
 import { guardSwitch } from "../_shared/systemSwitch.ts";
 
 Deno.serve(async (req) => {
   const corsHeaders = buildCorsHeaders(req);
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    return paymentPreflight(req);
   }
 
   // Survival Mode: admin ne is function ko band kiya ho to yahin ruk jao.
@@ -110,7 +114,9 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (!['completed', 'captured', 'paid', 'success'].includes(String(payment.status))) {
+    // `partially_refunded` stays refundable (a second partial or the remaining
+    // balance). Razorpay itself rejects a refund that exceeds what is left.
+    if (!['completed', 'captured', 'paid', 'success', 'partially_refunded'].includes(String(payment.status))) {
       return new Response(
         JSON.stringify({ success: false, error: `Payment is not in a refundable state (status: ${payment.status})` }),
         { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

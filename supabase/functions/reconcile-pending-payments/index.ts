@@ -137,10 +137,19 @@ Deno.serve(async (req) => {
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
   const basic = btoa(`${KEY_ID}:${KEY_SECRET}`);
 
+  // Only look at orders from the last 7 days. Older pending rows are abandoned
+  // checkouts (or orders created under a previous key — Razorpay answers
+  // those with an empty payments list, never an error, so they would stay
+  // "pending" and eat the oldest-first 200-row budget on every sweep). A
+  // capture landing after 7 days still enrolls via razorpay-webhook.
+  const RECONCILE_WINDOW_DAYS = 7;
+  const windowStart = new Date(Date.now() - RECONCILE_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
+
   const { data: pending, error: pendingErr } = await admin
     .from("razorpay_payments")
     .select("id, razorpay_order_id, user_id, course_id, amount, status")
     .eq("status", "pending")
+    .gte("created_at", windowStart)
     .order("created_at", { ascending: true })
     .limit(200);
 

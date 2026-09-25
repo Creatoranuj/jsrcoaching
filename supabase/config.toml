@@ -5,3 +5,14 @@ project_id = "wegamscqtvqhxowlskfm"
 # non-sensitive column (the current release link) and returns a redirect.
 [functions.app-download]
 verify_jwt = false
+
+# Razorpay calls these server-to-server with NO Supabase JWT. They must stay
+# public at the gateway; the security boundary is the HMAC signature check
+# (RAZORPAY_WEBHOOK_SECRET) + replay guard inside each function. Declared here
+# so a future config sync cannot silently re-enable JWT verification and
+# break live enrollment / refund bookkeeping.
+[functions.razorpay-webhook]
+verify_jwt = false
+
+[functions.razorpay-refund-webhook]
+verify_jwt = false

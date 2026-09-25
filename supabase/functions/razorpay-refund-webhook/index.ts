@@ -35,8 +35,10 @@ function getSupabaseAdmin() {
 
 // The edge runtime has no generated Database types. logSecurityAlert only
 // ever calls `.from(table).insert(row)`, so a narrow structural type covers
-// every call site without needing full generated Database types.
-type AdminClient = { from(table: string): { insert(row: Record<string, unknown>): Promise<{ error: unknown }> } };
+// every call site without needing full generated Database types. The builder
+// is thenable (PromiseLike), not a real Promise — typing it as Promise made
+// `deno check` reject the real client.
+type AdminClient = { from(table: string): { insert(row: Record<string, unknown>): PromiseLike<{ error: unknown }> } };
 
 async function logSecurityAlert(
   supabaseAdmin: AdminClient,
@@ -125,7 +127,12 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (event !== 'payment.refunded') {
+    // `payment.refunded` fires for BOTH full and partial refunds (dashboard or
+    // API). `refund.processed` carries the same payment entity and is the
+    // event most merchants subscribe to in the live dashboard, so accept it
+    // too — the replay guard above and the status checks below keep a
+    // double-subscribed webhook idempotent.
+    if (event !== 'payment.refunded' && event !== 'refund.processed') {
       return new Response(JSON.stringify({ status: 'ignored', event }), {
         status: 200, headers: jsonHeaders
       });
@@ -147,6 +154,16 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Full vs partial, decided from Razorpay's own numbers (paise). A partial
+    // refund must NOT revoke course access — that mirrors initiate-refund,
+    // which keeps the enrollment for partial refunds. Before this check a
+    // ₹50 goodwill refund on a ₹299 course silently kicked the student out.
+    const amountPaise = Number(payment.amount ?? 0);
+    const refundedPaise = Number(payment.amount_refunded ?? 0);
+    const isFullRefund =
+      payment.refund_status === 'full' ||
+      (amountPaise > 0 && refundedPaise >= amountPaise);
+
     // Look up the payment record
     const { data: paymentRecord, error: lookupError } = await supabaseAdmin
       .from('razorpay_payments')
@@ -161,27 +178,58 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Idempotency: skip if already refunded
+    // Idempotency: a fully refunded order is terminal; a partially refunded
+    // order that receives another partial event has nothing new to record.
     if (paymentRecord.status === 'refunded') {
       console.log('Refund already processed for order:', razorpayOrderId);
       return new Response(JSON.stringify({ status: 'already_processed' }), {
         status: 200, headers: jsonHeaders
       });
     }
+    if (!isFullRefund && paymentRecord.status === 'partially_refunded') {
+      console.log('Partial refund already recorded for order:', razorpayOrderId);
+      return new Response(JSON.stringify({ status: 'already_processed', partial: true }), {
+        status: 200, headers: jsonHeaders
+      });
+    }
 
-    // Update payment status to refunded
+    const nextStatus = isFullRefund ? 'refunded' : 'partially_refunded';
     const { error: updatePaymentError } = await supabaseAdmin
       .from('razorpay_payments')
-      .update({ status: 'refunded', updated_at: new Date().toISOString() })
+      .update({ status: nextStatus, updated_at: new Date().toISOString() })
       .eq('razorpay_order_id', razorpayOrderId);
 
     if (updatePaymentError) {
-      console.error('Failed to update payment to refunded:', updatePaymentError);
+      console.error(`Failed to update payment to ${nextStatus}:`, updatePaymentError);
     } else {
-      console.log('Payment marked as refunded:', razorpayOrderId);
+      console.log(`Payment marked as ${nextStatus}:`, razorpayOrderId,
+        `(${refundedPaise}/${amountPaise} paise)`);
     }
 
-    // Deactivate enrollment
+    if (!isFullRefund) {
+      // Course access stays. Leave a forensic line so support can see why
+      // the payment row says partially_refunded while the enrollment is active.
+      const { error: partialAuditErr } = await supabaseAdmin.from('audit_log').insert({
+        user_id: paymentRecord.user_id,
+        action: 'partial_refund_webhook',
+        table_name: 'razorpay_payments',
+        record_count: 1,
+        metadata: {
+          razorpay_order_id: razorpayOrderId,
+          course_id: paymentRecord.course_id,
+          amount_paise: amountPaise,
+          refunded_paise: refundedPaise,
+          event,
+        },
+      });
+      if (partialAuditErr) console.error('Failed to write partial refund audit log:', partialAuditErr);
+
+      return new Response(JSON.stringify({ status: 'ok', partial: true }), {
+        status: 200, headers: jsonHeaders
+      });
+    }
+
+    // Full refund → deactivate enrollment
     const { error: enrollError } = await supabaseAdmin
       .from('enrollments')
       .update({ status: 'refunded' })
@@ -194,7 +242,7 @@ Deno.serve(async (req) => {
     } else {
       console.log('Enrollment deactivated for user:', paymentRecord.user_id, 'course:', paymentRecord.course_id);
       // Forensic trail for enrollment revocation via refund.
-      await supabaseAdmin.from('audit_log').insert({
+      const { error: auditErr } = await supabaseAdmin.from('audit_log').insert({
         user_id: paymentRecord.user_id,
         action: 'refund_enrollment_revoked',
         table_name: 'enrollments',
@@ -202,10 +250,12 @@ Deno.serve(async (req) => {
         metadata: {
           razorpay_order_id: razorpayOrderId,
           course_id: paymentRecord.course_id,
+          amount_paise: amountPaise,
+          refunded_paise: refundedPaise,
+          event,
         },
-      }).then(({ error }) => {
-        if (error) console.error('Failed to write refund audit log:', error);
       });
+      if (auditErr) console.error('Failed to write refund audit log:', auditErr);
     }
 
     return new Response(JSON.stringify({ status: 'ok' }), {

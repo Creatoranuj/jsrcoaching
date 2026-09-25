@@ -13,6 +13,42 @@ Backend hardening release. Supabase Advisor flagged 21 tables where two
 permissive RLS policies overlapped on the same (table, command) pair; each
 pair is now merged into a single policy with identical access. A grep-level
 guard was added so new Realtime subscriptions cannot ship without cleanup.
+Razorpay test-mode data was purged and the payment path reviewed ahead of the
+test → live key switch (see `docs/runbooks/razorpay-go-live.md`).
+
+### Fixed
+- Refunds: the live database still had the one-argument `process_refund`, but
+  `initiate-refund` has called the three-argument form since 2026-08-03. Every
+  admin refund succeeded on Razorpay and then failed to record in the app —
+  payment stayed `completed`, student kept access. Migration
+  `20260929090000_process_refund_overload_fix.sql` (applied live 2026-09-25)
+  installs the correct function and drops the stale overload.
+- `razorpay-refund-webhook`: a partial refund (dashboard or API) revoked the
+  whole enrollment. It now reads `amount_refunded` / `refund_status` from the
+  payment entity — partial refunds mark the row `partially_refunded` and keep
+  access (matching `initiate-refund`); only full refunds revoke. Also accepts
+  `refund.processed` alongside `payment.refunded`, idempotently.
+- `initiate-refund`: `partially_refunded` payments can be refunded again (the
+  remaining balance); previously a second partial refund was rejected.
+- `reconcile-pending-payments`: the oldest-first 200-row sweep now only looks
+  at orders from the last 7 days. Abandoned or previous-key orders answered
+  with an empty payments list forever and would have crowded out fresh
+  pending rows after the key switch.
+
+### Changed
+- `initiate-refund` uses the strict payment origin allow-list
+  (`buildPaymentCorsHeaders`) like every other money-moving function; it was
+  the only one still on the general site list.
+- `supabase/config.toml` declares `verify_jwt = false` for `razorpay-webhook`
+  and `razorpay-refund-webhook` explicitly — Razorpay sends no Supabase JWT and
+  the HMAC check is the boundary. Previously only implied by the platform
+  default.
+- Checkout idempotency key (`nb:idem:<user>:<course>`) expires after 24 h; a
+  key from an abandoned checkout no longer lives forever in local storage.
+- Data: 39 test-mode Razorpay orders (19–24 Sep) and their derived rows (29
+  test enrollments, 52 payment events, 34 webhook receipts, 39 audit lines, 1
+  seeded subscription) were deleted from the live database; live-key rows were
+  untouched. Backup retained outside the repo.
 
 ### Changed
 - RLS: 21 duplicate permissive policy pairs merged into one `merged_*` policy

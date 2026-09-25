@@ -4023,7 +4023,10 @@ export type Database = {
         }
         Returns: boolean
       }
-      process_refund: { Args: { _razorpay_order_id: string }; Returns: Json }
+      process_refund: {
+        Args: { _razorpay_order_id: string; _is_full?: boolean; _refund_amount?: number }
+        Returns: Json
+      }
       purge_expired_phone_otps: { Args: never; Returns: undefined }
       record_app_install: {
         Args: {
