@@ -32,6 +32,9 @@ jobs:
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF || 'wegamscqtvqhxowlskfm' }}
       SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
       LOVABLE_API_KEY: ${{ secrets.LOVABLE_API_KEY }}
+      RAZORPAY_KEY_ID: ${{ secrets.RAZORPAY_KEY_ID }}
+      RAZORPAY_KEY_SECRET: ${{ secrets.RAZORPAY_KEY_SECRET }}
+      RAZORPAY_WEBHOOK_SECRET: ${{ secrets.RAZORPAY_WEBHOOK_SECRET }}
     steps:
       - uses: actions/checkout@v5
 
@@ -58,6 +61,14 @@ jobs:
         if: steps.gate.outputs.ready == 'true' && env.LOVABLE_API_KEY != ''
         run: |
           supabase secrets set LOVABLE_API_KEY="$LOVABLE_API_KEY" --project-ref "$SUPABASE_PROJECT_REF"
+
+      # Razorpay keys live in repo secrets; keep function runtime in sync
+      # (live switch 2026-09-25). All three must be present to avoid a
+      # half-switched test/live mix.
+      - name: Sync Razorpay keys into function secrets
+        if: steps.gate.outputs.ready == 'true' && env.RAZORPAY_KEY_ID != '' && env.RAZORPAY_KEY_SECRET != '' && env.RAZORPAY_WEBHOOK_SECRET != ''
+        run: |
+          supabase secrets set RAZORPAY_KEY_ID="$RAZORPAY_KEY_ID" RAZORPAY_KEY_SECRET="$RAZORPAY_KEY_SECRET" RAZORPAY_WEBHOOK_SECRET="$RAZORPAY_WEBHOOK_SECRET" --project-ref "$SUPABASE_PROJECT_REF"
 
       - name: Deploy all functions
         if: steps.gate.outputs.ready == 'true'
