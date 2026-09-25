@@ -17,6 +17,7 @@ on:
       - 'scripts/check-console-usage.mjs'
       - 'scripts/check-tap-targets.mjs'
       - 'scripts/check-lockfile-registry.mjs'
+      - 'scripts/check-realtime-cleanup.mjs'
       - '.github/workflows/code-guards.yml'
   pull_request:
     paths:
@@ -29,6 +30,7 @@ on:
       - 'scripts/check-console-usage.mjs'
       - 'scripts/check-tap-targets.mjs'
       - 'scripts/check-lockfile-registry.mjs'
+      - 'scripts/check-realtime-cleanup.mjs'
   workflow_dispatch:
 
 concurrency:
@@ -71,4 +73,7 @@ jobs:
 
       - name: Tap-target ceiling
         run: node scripts/check-tap-targets.mjs
+
+      - name: Realtime cleanup guard
+        run: node scripts/check-realtime-cleanup.mjs
 
