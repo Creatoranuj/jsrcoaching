@@ -2,8 +2,10 @@ import { requireRole } from "../_shared/auth.ts";
 import { errorResponse, internalError } from "../_shared/errors.ts";
 import { buildCorsHeaders } from "../_shared/cors.ts";
 import { guardSwitch } from "../_shared/systemSwitch.ts";
-
-const SSRF_BLOCKLIST = /^(localhost|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|0\.0\.0\.0|::1|fd[0-9a-f]{2}:)/i;
+// AUDIT 2026-09-25 [M2]: the old inline regex missed decimal/hex IPv4
+// (2130706433, 0x7f000001), IPv4-mapped IPv6 and *.internal hosts. Use the
+// shared validator (same one crawl4ai-bridge uses) as the single source of truth.
+import { validatePublicUrl } from "../_shared/safeUrl.ts";
 
 Deno.serve(async (req) => {
   const corsHeaders = buildCorsHeaders(req);
@@ -35,19 +37,11 @@ Deno.serve(async (req) => {
       return errorResponse("CONFIG_MISSING", corsHeaders, { message: "Firecrawl connector not configured" });
     }
 
-    let formattedUrl = url.trim();
-    if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
-      formattedUrl = `https://${formattedUrl}`;
+    const check = validatePublicUrl(url.trim());
+    if (!check.ok || !check.url) {
+      return errorResponse("INVALID_INPUT", corsHeaders, { message: check.reason ?? "URL not allowed" });
     }
-
-    try {
-      const parsed = new URL(formattedUrl);
-      if (!['https:', 'http:'].includes(parsed.protocol) || SSRF_BLOCKLIST.test(parsed.hostname)) {
-        return errorResponse("INVALID_INPUT", corsHeaders, { message: "URL not allowed" });
-      }
-    } catch {
-      return errorResponse("INVALID_INPUT", corsHeaders, { message: "Invalid URL" });
-    }
+    const formattedUrl = check.url.toString();
 
     const opts = (options ?? {}) as Record<string, unknown>;
     const response = await fetch('https://api.firecrawl.dev/v1/scrape', {

@@ -129,11 +129,63 @@ Deno.serve(async (req) => {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
-    const rzpPayment = rzpRes.data ?? {};
+    const rzpPayment = (rzpRes.data ?? {}) as { amount?: number; status?: string; order_id?: string };
     if (rzpPayment.amount !== plan.amount_paise) {
       console.error(`Amount tampering. Expected ${plan.amount_paise}, got ${rzpPayment.amount}`);
       return new Response(JSON.stringify({ error: 'Payment amount mismatch' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // AUDIT 2026-09-25 [H1]: bind the payment to the caller. Unlike the course
+    // flow (razorpay_payments row keyed by user_id), subscription orders are
+    // not persisted, so until now any signed-in user who obtained another
+    // user's (order_id, payment_id, signature) triple could activate the
+    // subscription on their own account ("first submitter wins"). The order
+    // notes are written server-side by create-subscription-order and are the
+    // trusted owner record — fetch the order from Razorpay and require a match.
+    if (rzpPayment.order_id !== razorpay_order_id) {
+      console.error('Subscription payment/order mismatch', {
+        user_id: user.id, order_id: razorpay_order_id, payment_order_id: rzpPayment.order_id,
+      });
+      return new Response(JSON.stringify({ error: 'Payment does not belong to this order' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    const orderRes = await razorpayFetchWithRetry(
+      `https://api.razorpay.com/v1/orders/${razorpay_order_id}`,
+      { headers: { 'Authorization': razorpayAuthHeader(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET) } },
+    );
+    if (!orderRes.ok) {
+      console.error('Razorpay subscription order fetch failed', {
+        status: orderRes.status, attempts: orderRes.attempts, network_error: orderRes.networkError,
+      });
+      if (orderRes.retryable) {
+        return new Response(JSON.stringify({
+          error: 'razorpay_unreachable',
+          retryable: true,
+          message: "We couldn't reach Razorpay to confirm. If your money was deducted, activation will happen automatically.",
+        }), { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({ error: 'Could not verify order with Razorpay' }), {
+        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    const rzpOrder = (orderRes.data ?? {}) as { notes?: Record<string, unknown>; amount?: number };
+    const orderNotes = rzpOrder.notes ?? {};
+    if (
+      orderNotes.type !== 'subscription' ||
+      orderNotes.user_id !== user.id ||
+      orderNotes.plan_slug !== plan.slug ||
+      rzpOrder.amount !== plan.amount_paise
+    ) {
+      console.error('Subscription order ownership mismatch', {
+        user_id: user.id, order_id: razorpay_order_id,
+        note_user: typeof orderNotes.user_id === 'string' ? orderNotes.user_id.slice(0, 8) : null,
+        note_plan: orderNotes.plan_slug, requested_plan: plan.slug, order_amount: rzpOrder.amount,
+      });
+      return new Response(JSON.stringify({ error: 'This payment was not made for your account' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
     if (rzpPayment.status !== 'captured') {

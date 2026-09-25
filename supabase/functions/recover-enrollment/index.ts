@@ -1,6 +1,10 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { razorpayFetchWithRetry } from "../_shared/razorpayFetch.ts";
-import { buildCorsHeaders } from "../_shared/cors.ts";
+// AUDIT 2026-09-25 [M1]: this function grants enrollments (via
+// complete_paid_enrollment) and calls the Razorpay API, so it belongs to the
+// strict payment origin allow-list like every other money path — not the
+// site-wide list that echoes any *.lovable.app preview origin.
+import { buildPaymentCorsHeaders as buildCorsHeaders } from "../_shared/cors.ts";
 import { guardSwitch } from "../_shared/systemSwitch.ts";
 
 Deno.serve(async (req) => {

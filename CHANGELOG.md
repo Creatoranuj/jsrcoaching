@@ -7,6 +7,45 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [v1.17.3] — 2026-09-25
+
+Deep security/functional audit after the live-key switch (database, Edge
+Functions, client, Android, live server probes as anonymous and as a
+throw-away student). No payment bypass, cross-user data exposure or privilege
+escalation was found. One production regression from v1.17.2 and one
+first-submitter-wins hole in the subscription flow were fixed.
+
+### Fixed
+- **Signed-out home page was empty** (courses, testimonials, hero, social
+  links, public settings). v1.17.2 merged the anon + admin SELECT policies
+  into one policy granted to `anon`; that policy calls `has_role()`, whose
+  EXECUTE is revoked from `anon`, so every anonymous read failed with
+  `42501 permission denied for function has_role`. Migration
+  `20260930090000_fix_anon_public_read_policies.sql` splits each into one
+  `anon` policy (active rows only) and one `authenticated` policy (active rows
+  or admin) — still a single permissive policy per role — and adds a guard
+  that aborts the migration if any anon-visible policy references `has_role`.
+- `search_lectures` RPC failed for every caller with `42804` (rank
+  `double precision` vs declared `real`) since 2026-07-29. Migration
+  `20260930090100_search_lectures_rank_real.sql` casts the rank.
+- `verify-subscription-payment` now fetches the Razorpay order and requires
+  its server-written notes (`user_id`, `plan_slug`, `type=subscription`) and
+  amount to match the caller and the requested plan. Previously any signed-in
+  user who obtained another user's `(order_id, payment_id, signature)` could
+  activate that subscription on their own account before the payer did.
+
+### Changed
+- `recover-enrollment` uses the strict payment origin allow-list
+  (`buildPaymentCorsHeaders`); it grants enrollments and calls Razorpay.
+- `firecrawl-scrape` validates target URLs with the shared
+  `validatePublicUrl()` (decimal/hex IPv4, IPv4-mapped IPv6, `*.internal`
+  and metadata addresses rejected) instead of a narrower inline regex.
+
+### Known / accepted
+- Email sign-up is open with auto-confirm on; fake accounts are possible but
+  gain nothing paid. Revisit if abuse appears (captcha / OTP-only sign-up).
+- `score-quiz` allows unlimited re-attempts (no `max_attempts` in schema).
+
 ## [v1.17.2] — 2026-09-25
 
 Backend hardening release. Supabase Advisor flagged 21 tables where two
