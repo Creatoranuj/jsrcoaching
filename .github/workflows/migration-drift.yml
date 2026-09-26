@@ -50,7 +50,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    # Seconds-fast replay-safety lint (no Postgres). Catches the bare
+    # DROP POLICY / DROP FUNCTION class that failed this workflow 3x on
+    # 2026-09-25 before the 30-minute Postgres job even boots.
+    name: Migration replay-safety lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+      - run: node scripts/check-migration-safety.mjs
+
   migrations-apply:
+    needs: lint
     name: Baseline + migrations apply on Supabase Postgres
     runs-on: ubuntu-24.04
     timeout-minutes: 30

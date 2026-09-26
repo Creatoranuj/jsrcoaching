@@ -52,7 +52,19 @@ jobs:
           fetch-depth: 1
 
       - name: Install ripgrep
-        run: sudo apt-get update && sudo apt-get install -y ripgrep
+        # Pinned static binary (sha256-verified) is ~10x faster than apt-get
+        # update + install; falls back to apt if the download fails.
+        run: |
+          set -e
+          URL=https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz
+          SHA=4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e
+          if curl -fsSL --max-time 30 "$URL" -o /tmp/rg.tgz && echo "$SHA  /tmp/rg.tgz" | sha256sum -c -; then
+            tar xzf /tmp/rg.tgz -C /tmp
+            sudo install /tmp/ripgrep-14.1.1-x86_64-unknown-linux-musl/rg /usr/local/bin/rg
+          else
+            sudo apt-get update && sudo apt-get install -y ripgrep
+          fi
+          rg --version
 
       # Runs before anything expensive: a lockfile pinned to a sandbox-private
       # registry (Replit / Lovable mirror) makes every downstream CI install

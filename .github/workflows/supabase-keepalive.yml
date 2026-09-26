@@ -16,6 +16,7 @@ jobs:
   ping:
     name: Ping Supabase (read-only health check)
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
       - name: Read-only keepalive query
         id: ping

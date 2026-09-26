@@ -20,6 +20,7 @@ permissions:
 jobs:
   sweep:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     env:
       BASE: ${{ secrets.SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
       ANON: ${{ secrets.SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY }}

@@ -7,6 +7,22 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [v1.17.4] — 2026-09-26
+
+CI hardening after the 2026-09-25 workflow audit (53 runs: 47 pass, 4 fail, 2 cancelled).
+
+### Added
+- `scripts/check-migration-safety.mjs` + fast `lint` job in Migration Drift Check: flags
+  `DROP POLICY/FUNCTION/TRIGGER/INDEX/VIEW/TYPE` without `IF EXISTS` in seconds, before Postgres boots.
+
+### Changed
+- Code Guards: pinned, sha256-verified ripgrep 14.1.1 binary instead of apt-get (apt fallback).
+- Bun pinned to 1.2.18 in unit-tests, enrollment-bypass, lighthouse-ci and typecheck-build.
+- `timeout-minutes` added to deploy-functions (30), dependency-audit, reconcile-payments,
+  pdf-proxy-keepalive and supabase-keepalive.
+
+---
+
 ## [v1.17.3] — 2026-09-25
 
 Deep security/functional audit after the live-key switch (database, Edge
