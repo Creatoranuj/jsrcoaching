@@ -73,3 +73,16 @@ describe("friendlyPdfErrorMessage — other failures unchanged", () => {
     expect(friendlyPdfErrorMessage(new Error("stream ended unexpectedly"), cdn)).toMatch(/cut short/i);
   });
 });
+
+describe("foreign Supabase project PDFs", () => {
+  it("tells the user to re-upload instead of retry for an old-project 403", async () => {
+    const { friendlyPdfErrorMessage, FOREIGN_STORAGE_MSG } = await import("../lib/pdfErrorMessage");
+    const src = "https://cmbattmjwriiesibayfk.supabase.co/storage/v1/object/public/content/lessons/a.pdf";
+    expect(friendlyPdfErrorMessage({ status: 403 }, src)).toBe(FOREIGN_STORAGE_MSG);
+  });
+  it("keeps the normal 403 message for the current project", async () => {
+    const { friendlyPdfErrorMessage, FOREIGN_STORAGE_MSG } = await import("../lib/pdfErrorMessage");
+    const src = "https://wegamscqtvqhxowlskfm.supabase.co/storage/v1/object/sign/content/lessons/a.pdf";
+    expect(friendlyPdfErrorMessage({ status: 403 }, src)).not.toBe(FOREIGN_STORAGE_MSG);
+  });
+});

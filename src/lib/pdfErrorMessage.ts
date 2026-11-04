@@ -22,6 +22,28 @@ export function pdfSourceHost(src: string | null | undefined): string | null {
   }
 }
 
+/**
+ * Current Supabase project ref. Files whose URL points at a DIFFERENT
+ * `<ref>.supabase.co` host are leftovers from a previous project: that project
+ * keeps rejecting them, so "tap Retry" can never work — they must be re-uploaded.
+ */
+const CURRENT_SUPABASE_REF = (() => {
+  const envUrl =
+    (typeof import.meta !== "undefined" &&
+      (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_SUPABASE_URL) ||
+    "https://wegamscqtvqhxowlskfm.supabase.co";
+  return /^https?:\/\/([a-z0-9-]+)\.supabase\.(?:co|in)/i.exec(envUrl)?.[1]?.toLowerCase() ?? null;
+})();
+
+export function isForeignSupabaseSource(src: string | null | undefined, currentRef: string | null = CURRENT_SUPABASE_REF): boolean {
+  const host = pdfSourceHost(src);
+  const m = host ? /^([a-z0-9-]+)\.supabase\.(?:co|in)$/i.exec(host) : null;
+  return !!(m && currentRef && m[1].toLowerCase() !== currentRef.toLowerCase());
+}
+
+export const FOREIGN_STORAGE_MSG =
+  "Yeh PDF purane storage par hai aur ab available nahi hai. Admin ko ise dobara upload karna hoga (Retry se theek nahi hoga).";
+
 export const DRIVE_PRIVATE_MSG =
   "This Drive file is private — ask the uploader to enable link sharing.";
 
@@ -67,6 +89,7 @@ export function friendlyPdfErrorMessage(err: unknown, src: string | null | undef
 
   if (status === 403 || status === 404) {
     if (isDrive) return DRIVE_PRIVATE_MSG;
+    if (isForeignSupabaseSource(src)) return FOREIGN_STORAGE_MSG;
     const host = pdfSourceHost(src);
     const where = host ? ` by ${host}` : "";
     const reason = e.statusText ? ` — server said "${e.statusText}"` : "";
